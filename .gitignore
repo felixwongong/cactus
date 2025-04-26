@@ -36,8 +36,6 @@ react/lib/
 react-native-packager-cache-*/
 __generated__/
 .expo-shared/
-react/ios/cactus.xcframework/
-react/ios/Cactus.xcodeproj/
 
 # iOS
 ios/Pods/
@@ -82,7 +80,6 @@ CTestTestfile.cmake
 cmake_install.cmake
 *.o
 *.obj
-*.so
 *.a
 *.lib
 *.dll
@@ -145,5 +142,10 @@ Desktop.ini
 $RECYCLE.BIN/
 
 
-# === Swift ===
+# === Build Copies ===
 swift/Source/cactus.xcframework/
+react/ios/cactus.xcframework/
+react/ios/Cactus.xcodeproj/
+react/ios/CMakelists.txt
+kotlin/src/main/jniLibs/
+react/android/src/main/jniLibs/
