@@ -2,6 +2,19 @@
 
 Cactus is a lightweight, high-performance framework for running AI models on mobile phones. cactus has unified and consistent APIs across React-Natiive, Android/Kotlin, Android/Java, iOS/Swift, iOS/Objective-C++, and Flutter/Dart. For now, leverages GGML backends to support any GGUF model already compatible with Llama.cpp, while we focus on broadly supporting every moblie app development platform, as well as upcoming features like MCP, phone tool use, thinking, prompt-enhancement, higher-level APIs. We are backed by YCombinator, Oxford Seed Fund and Google For Startups. Contributors with any of the above experiences are welcome! However, feel free to submit cool example apps you built with cactus, issues or tests!
 
+## Table of Contents
+
+- [Technical Architecture](#technical-architecture)
+- [Features](#features)
+- [Benchmarks](#benchmarks)
+- [Getting Started](#getting-started)
+  - [React Native](#react-native-shipped)
+  - [Android](#android-currently-testing)
+  - [iOS](#ios-in-developement)
+  - [Flutter](#flutter-in-development)
+  - [C++ (Raw backend)](#c-raw-backend)
+- [License](#license)
+
 ## Technical Architecture
 
 ```
@@ -37,74 +50,193 @@ Cactus is a lightweight, high-performance framework for running AI models on mob
 
 ## Benchmarks 
 
+we created a little chat app for demo, you can try other models and report your finding here, [download the app](https://lnkd.in/dYGR54hn)
 
-## Platform Support
+Gemma 1B INT8:
+- iPhone 13 Pro: ~30 toks/sec 
+- Galaxy S21: ~14 toks/sec 
+- Google Pixel 6a: ~14 toks/sec 
 
-- **React/React Native** (shipped)
-  - TypeScript API
-  - Async/Promise based interface
-  - Event system for token streaming
+SmollLM 135m INT8: 
+- iPhone 13 Pro: ~180 toks/sec
+- Galaxy S21: ~42 toks/sec
+- Google Pixel 6a: ~38 toks/sec
+- Huawei P60 Lite (Gran's phone) ~8toks/sec
 
-- **Android** (currently testing)
-  - API 24+ (Android 7.0+)
-  - ARM64 and x86_64 architectures
-  - JNI interface for Java/Kotlin integration
-
-- **iOS** (in development)
-  - iOS 13.0+
-  - ARM64 architecture
-  - Metal acceleration for Apple Silicon
-  - Swift/Objective-C API
-
-- **Flutter** (in development)
-  - Platform channel communication
-  - Dart API with native performance
-  - iOS and Android support
 
 ## Getting Started
 
-### Installation
-
-#### React Native
+### React Native (shipped)
 
 ```bash
 npm install @cactus/react-native
 # or
 yarn add @cactus/react-native
 
-# In your ios folder
+# For iOS 
 npx pod-install
 ```
+```typescript
+import { initLlama, LlamaContext, downloadModelIfNotExists } from '@cactus/react-native';
 
-#### Android
+// Download model if not exists locally
+const modelPath = await downloadModelIfNotExists({
+  modelUrl: 'https://huggingface.co/unsloth/SmolLM2-135M-Instruct-GGUF/resolve/main/SmolLM2-135M-Instruct-Q8_0.gguf',
+  modelFolderName: 'models',
+  onProgress: (progress) => {
+    console.log(`Download progress: ${progress}%`);
+  }
+});
 
-Add to your `build.gradle`:
+// Load model
+const context = await initLlama({
+  model: modelPath, // Use the downloaded model path
+  n_ctx: 2048,
+  n_batch: 512,
+  n_threads: 4
+});
+
+// Generate completion
+const result = await context.completion({
+  prompt: 'Explain quantum computing in simple terms',
+  temperature: 0.7,
+  top_k: 40,
+  top_p: 0.95,
+  n_predict: 512
+}, (token) => {
+  // Process each token
+  process.stdout.write(token.token);
+});
+
+// Clean up
+await context.release();
+```
+
+For more detailed documentation and examples, see the [React Native README](react/README.md).
+
+### Android (currently testing)
 
 ```gradle
+<!-- Add to your `build.gradle` -->
 dependencies {
     implementation 'com.cactuscompute:cactus-android:x.y.z'
 }
 ```
+```kotlin
+import com.cactus.LlamaContext
 
-#### iOS
+// Load model
+val llamaContext = LlamaContext.createContext(
+    applicationContext,
+    "models/llama-2-7b-chat.gguf",
+    LlamaContextParams(
+        nCtx = 2048,
+        nBatch = 512, 
+        nThreads = 4
+    )
+)
 
-Add to your `Podfile`:
+// Set up completion
+val result = llamaContext.completion(
+    CompletionParams(
+        prompt = "Explain quantum computing in simple terms",
+        temperature = 0.7f,
+        topK = 40,
+        topP = 0.95f,
+        nPredict = 512
+    )
+) { token ->
+    // Stream tokens as they're generated
+    print(token.text)
+}
 
-```ruby
-pod 'Cactus', '^0.0.3'
+// Clean up
+llamaContext.release()
 ```
 
-#### Flutter
+For more detailed documentation and examples, see the [Android README](android/README.md).
+
+### iOS (in developement)
+
+```ruby
+# Simply copy the swift/CactusSwift into your project for now
+```
+```swift
+import Cactus
+
+// Load model
+let context = try CactusContext(
+    modelPath: "models/llama-2-7b-chat.gguf",
+    contextParams: ContextParams(
+        contextSize: 2048,
+        batchSize: 512,
+        threadCount: 4
+    )
+)
+
+// Generate completion
+try context.completion(
+    params: CompletionParams(
+        prompt: "Explain quantum computing in simple terms",
+        temperature: 0.7,
+        topK: 40,
+        topP: 0.95,
+        maxTokens: 512
+    )
+) { token in
+    // Process each token as it's generated
+    print(token.text, terminator: "")
+}
+
+// Clean up
+context.release()
+```
+
+For more detailed documentation and examples, see the [iOS README](swift/README.md).
+
+### Flutter (in development)
 
 ```bash
 flutter pub add cactus_flutter
 ```
+```dart
+import 'package:cactus_flutter/cactus_flutter.dart';
 
-### Basic Usage Example
+// Load model
+final context = await CactusContext.initialize(
+  modelPath: 'models/llama-2-7b-chat.gguf',
+  contextSize: 2048,
+  batchSize: 512,
+  threadCount: 4,
+);
 
-#### C++ (Native)
+// Generate completion
+final result = await context.completion(
+  prompt: 'Explain quantum computing in simple terms',
+  temperature: 0.7,
+  topK: 40,
+  topP: 0.95,
+  maxTokens: 512,
+  onToken: (String token) {
+    // Process each token as it's generated
+    print(token);
+  }
+);
 
-```cpp
+// Clean up
+await context.release();
+```
+
+For more detailed documentation and examples, see the [Flutter README](flutter/README.md).
+
+### C++ (Raw backend)
+```bash
+// Use see the test folder
+chmod +x scripts/test-cactus.sh
+scripts/test-cactus.sh
+```
+
+```cpp 
 #include "cactus.h"
 
 int main() {
@@ -145,101 +277,8 @@ int main() {
 }
 ```
 
-#### React Native (JavaScript/TypeScript)
+For more detailed documentation and examples, see the [C++ README](src/README.md).
 
-```typescript
-import { initLlama, LlamaContext } from '@cactus/react-native';
-
-// Load model
-const context = await initLlama({
-  model: 'models/llama-2-7b-chat.gguf',
-  n_ctx: 2048,
-  n_batch: 512,
-  n_threads: 4
-});
-
-// Generate completion
-const result = await context.completion({
-  prompt: 'Explain quantum computing in simple terms',
-  temperature: 0.7,
-  top_k: 40,
-  top_p: 0.95,
-  n_predict: 512
-}, (token) => {
-  // Process each token
-  process.stdout.write(token.token);
-});
-
-// Clean up
-await context.release();
-```
-
-#### Kotlin (Android)
-
-```kotlin
-import com.cactus.LlamaContext
-
-// Load model
-val llamaContext = LlamaContext.createContext(
-    applicationContext,
-    "models/llama-2-7b-chat.gguf",
-    LlamaContextParams(
-        nCtx = 2048,
-        nBatch = 512, 
-        nThreads = 4
-    )
-)
-
-// Set up completion
-val result = llamaContext.completion(
-    CompletionParams(
-        prompt = "Explain quantum computing in simple terms",
-        temperature = 0.7f,
-        topK = 40,
-        topP = 0.95f,
-        nPredict = 512
-    )
-) { token ->
-    // Stream tokens as they're generated
-    print(token.text)
-}
-
-// Clean up
-llamaContext.release()
-```
-
-#### Swift (iOS)
-
-```swift
-import Cactus
-
-// Load model
-let context = try CactusContext(
-    modelPath: "models/llama-2-7b-chat.gguf",
-    contextParams: ContextParams(
-        contextSize: 2048,
-        batchSize: 512,
-        threadCount: 4
-    )
-)
-
-// Generate completion
-try context.completion(
-    params: CompletionParams(
-        prompt: "Explain quantum computing in simple terms",
-        temperature: 0.7,
-        topK: 40,
-        topP: 0.95,
-        maxTokens: 512
-    )
-) { token in
-    // Process each token as it's generated
-    print(token.text, terminator: "")
-}
-
-// Clean up
-context.release()
-```
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
