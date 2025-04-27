@@ -1,6 +1,33 @@
 ![Logo](assets/banner.jpg)
 
-Cactus is a lightweight, high-performance framework for running AI models on mobile phones. cactus has unified and consistent APIs across React-Natiive, Android/Kotlin, Android/Java, iOS/Swift, iOS/Objective-C++, and Flutter/Dart. For now, leverages GGML backends to support any GGUF model already compatible with Llama.cpp, while we focus on broadly supporting every moblie app development platform, as well as upcoming features like MCP, phone tool use, thinking, prompt-enhancement, higher-level APIs. We are backed by YCombinator, Oxford Seed Fund and Google For Startups. Contributors with any of the above experiences are welcome! However, feel free to submit cool example apps you built with cactus, issues or tests!
+[![Email][gmail-shield]][gmail-url]
+[![Discord][discord-shield]][discord-url]
+![License](https://img.shields.io/github/license/cactus-compute/cactus?style=for-the-badge)
+[![Stars][stars-shield]][github-url]
+[![Forks][forks-shield]][github-url]
+[![Issues][issues-shield]][github-url]
+[![PRs][prs-shield]][github-url]
+
+
+[gmail-shield]: https://img.shields.io/badge/Gmail-red?style=for-the-badge&logo=gmail&logoColor=white
+[gmail-url]: founders@cactuscompute.com
+
+[linkedin-shield]: https://img.shields.io/badge/-LinkedIn-blue.svg?style=for-the-badge&logo=linkedin&colorB=blue
+[linkedin-url]: https://www.linkedin.com/company/106281696
+
+[discord-shield]: https://img.shields.io/badge/Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white
+[discord-url]: https://discord.gg/cBT6jcCF
+
+[website-shield]: https://img.shields.io/badge/Website-black?style=for-the-badge&logo=safari&logoColor=white
+[website-url]: https://cactuscompute.com
+
+[stars-shield]: https://img.shields.io/github/stars/cactus-compute/cactus?style=for-the-badge&color=yellow
+[forks-shield]: https://img.shields.io/github/forks/cactus-compute/cactus?style=for-the-badge&color=blue
+[issues-shield]: https://img.shields.io/github/issues/cactus-compute/cactus?style=for-the-badge
+[prs-shield]: https://img.shields.io/github/issues-pr/cactus-compute/cactus?style=for-the-badge
+[github-url]: https://github.com/cactus-compute/cactus
+
+Cactus is a lightweight, high-performance framework for running AI models on mobile phones. cactus has unified and consistent APIs across React-Natiive, Android/Kotlin, Android/Java, iOS/Swift, iOS/Objective-C++, and Flutter/Dart. For now, leverages GGML backends to support any GGUF model already compatible with [![Llama.cpp](https://img.shields.io/badge/Llama.cpp-000000?style=flat&logo=github&logoColor=white)](https://github.com/ggerganov/llama.cpp), while we focus on broadly supporting every moblie app development platform, as well as upcoming features like MCP, phone tool use, thinking, prompt-enhancement, higher-level APIs. Contributors with any of the above experiences are welcome! However, feel free to submit cool example apps you built with cactus, issues or tests! Cactus Models coming a bit later.
 
 ## Table of Contents
 
@@ -34,7 +61,7 @@ Cactus is a lightweight, high-performance framework for running AI models on mob
 └───────────────┬─────────────────┬───────────────────────┘
                 │                 │                
 ┌───────────────▼─────┐ ┌─────────▼───────────────────────┐
-│   llama.cpp Core     │ │    GGML/GGUF Model Format       │
+│   Llama.cpp Core    │ │    GGML/GGUF Model Format       │
 └─────────────────────┘ └─────────────────────────────────┘
 ```
 - **Features**:
@@ -277,7 +304,7 @@ int main() {
 }
 ```
 
-For more detailed documentation and examples, see the [C++ README](src/README.md).
+For more detailed documentation and examples, see the [C++ README](cactus/README.md).
 
 ## License
 
