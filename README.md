@@ -2,6 +2,7 @@
 
 [![Email][gmail-shield]][gmail-url]
 [![Discord][discord-shield]][discord-url]
+[![Design Docs][docs-shield]][docs-url]
 ![License](https://img.shields.io/github/license/cactus-compute/cactus?style=for-the-badge)
 [![Stars][stars-shield]][github-url]
 [![Forks][forks-shield]][github-url]
@@ -17,6 +18,9 @@
 
 [discord-shield]: https://img.shields.io/badge/Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white
 [discord-url]: https://discord.gg/cBT6jcCF
+
+[docs-shield]: https://img.shields.io/badge/Design_Docs-009485?style=for-the-badge&logo=readthedocs&logoColor=white
+[docs-url]: https://deepwiki.com/cactus-compute/cactus
 
 [website-shield]: https://img.shields.io/badge/Website-black?style=for-the-badge&logo=safari&logoColor=white
 [website-url]: https://cactuscompute.com
@@ -305,7 +309,3 @@ int main() {
 ```
 
 For more detailed documentation and examples, see the [C++ README](cactus/README.md).
-
-## License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
