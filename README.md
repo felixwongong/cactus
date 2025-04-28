@@ -116,28 +116,19 @@ SmollLM 135m INT8:
 ### ✅ React Native (shipped)
 
 ```bash
-npm install @cactus/react-native
+npm install cactus-react-native
 # or
-yarn add @cactus/react-native
+yarn add cactus-react-native
 
 # For iOS 
 npx pod-install
 ```
 ```typescript
-import { initLlama, LlamaContext, downloadModelIfNotExists } from '@cactus/react-native';
-
-// Download model if not exists locally
-const modelPath = await downloadModelIfNotExists({
-  modelUrl: 'https://huggingface.co/unsloth/SmolLM2-135M-Instruct-GGUF/resolve/main/SmolLM2-135M-Instruct-Q8_0.gguf',
-  modelFolderName: 'models',
-  onProgress: (progress) => {
-    console.log(`Download progress: ${progress}%`);
-  }
-});
+import { initLlama, LlamaContext } from 'cactus-react-native';
 
 // Load model
 const context = await initLlama({
-  model: modelPath, // Use the downloaded model path
+  model: 'models/llama-2-7b-chat.gguf', // Path to your model
   n_ctx: 2048,
   n_batch: 512,
   n_threads: 4
