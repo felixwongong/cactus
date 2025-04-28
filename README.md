@@ -120,7 +120,7 @@ npm install cactus-react-native
 # or
 yarn add cactus-react-native
 
-# For iOS 
+# For iOS, install pods if not on Expo
 npx pod-install
 ```
 ```typescript
