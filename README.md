@@ -6,8 +6,6 @@
 ![License](https://img.shields.io/github/license/cactus-compute/cactus?style=for-the-badge)
 [![Stars][stars-shield]][github-url]
 [![Forks][forks-shield]][github-url]
-[![Issues][issues-shield]][github-url]
-[![PRs][prs-shield]][github-url]
 
 
 [gmail-shield]: https://img.shields.io/badge/Gmail-red?style=for-the-badge&logo=gmail&logoColor=white
