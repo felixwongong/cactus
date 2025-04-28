@@ -31,7 +31,25 @@
 [prs-shield]: https://img.shields.io/github/issues-pr/cactus-compute/cactus?style=for-the-badge
 [github-url]: https://github.com/cactus-compute/cactus
 
-Cactus is a lightweight, high-performance framework for running AI models on mobile phones. cactus has unified and consistent APIs across React-Natiive, Android/Kotlin, Android/Java, iOS/Swift, iOS/Objective-C++, and Flutter/Dart. For now, leverages GGML backends to support any GGUF model already compatible with [![Llama.cpp](https://img.shields.io/badge/Llama.cpp-000000?style=flat&logo=github&logoColor=white)](https://github.com/ggerganov/llama.cpp), while we focus on broadly supporting every moblie app development platform, as well as upcoming features like MCP, phone tool use, thinking, prompt-enhancement, higher-level APIs. Contributors with any of the above experiences are welcome! However, feel free to submit cool example apps you built with cactus, issues or tests! Cactus Models coming a bit later.
+Cactus is a lightweight, high-performance framework for running AI models on mobile phones. Cactus has unified and consistent APIs across 
+- React-Native
+- Android/Kotlin
+- Android/Java
+- iOS/Swift
+- iOS/Objective-C++
+- Flutter/Dart
+
+Cactus currently leverages GGML backends to support any GGUF model already compatible with [![Llama.cpp](https://img.shields.io/badge/Llama.cpp-000000?style=flat&logo=github&logoColor=white)](https://github.com/ggerganov/llama.cpp), while we focus on broadly supporting every moblie app development platform, as well as upcoming features like:
+
+- MCP
+- phone tool use
+- thinking
+- prompt-enhancement
+- higher-level APIs
+
+Contributors with any of the above experiences are welcome! Feel free to submit cool example apps you built with Cactus, issues or tests! 
+
+Cactus Models coming soon.
 
 ## Table of Contents
 
@@ -41,7 +59,7 @@ Cactus is a lightweight, high-performance framework for running AI models on mob
 - [Getting Started](#getting-started)
   - [React Native](#react-native-shipped)
   - [Android](#android-currently-testing)
-  - [iOS](#ios-in-developement)
+  - [Swift](#ios-in-developement)
   - [Flutter](#flutter-in-development)
   - [C++ (Raw backend)](#c-raw-backend)
 - [License](#license)
@@ -97,7 +115,7 @@ SmollLM 135m INT8:
 
 ## Getting Started
 
-### React Native (shipped)
+### ✅ React Native (shipped)
 
 ```bash
 npm install @cactus/react-native
@@ -145,7 +163,7 @@ await context.release();
 
 For more detailed documentation and examples, see the [React Native README](react/README.md).
 
-### Android (currently testing)
+### 🚧 Android (currently testing)
 
 ```gradle
 <!-- Add to your `build.gradle` -->
@@ -187,7 +205,7 @@ llamaContext.release()
 
 For more detailed documentation and examples, see the [Android README](android/README.md).
 
-### iOS (in developement)
+### 🚧 Swift (in developement)
 
 ```ruby
 # Simply copy the swift/CactusSwift into your project for now
@@ -225,7 +243,7 @@ context.release()
 
 For more detailed documentation and examples, see the [iOS README](swift/README.md).
 
-### Flutter (in development)
+### 🚧 Flutter (in development)
 
 ```bash
 flutter pub add cactus_flutter
@@ -260,7 +278,7 @@ await context.release();
 
 For more detailed documentation and examples, see the [Flutter README](flutter/README.md).
 
-### C++ (Raw backend)
+### ✅ C++ (Raw backend)
 ```bash
 // Use see the test folder
 chmod +x scripts/test-cactus.sh
