@@ -42,6 +42,7 @@ ios/Pods/
 ios/Podfile.lock
 ios/build/
 ios/DerivedData/
+ios/cactus.xcframework/
 ios/*.xcworkspace
 ios/*.xcuserstate
 ios/*.xcuserdata/
@@ -72,6 +73,7 @@ android/gradle-wrapper.properties
 kotlin/.gradle/
 kotlin/gradle/
 kotlin/.cxx
+android/src/main/jniLibs/
 
 # === C++/CMake ===
 build/
