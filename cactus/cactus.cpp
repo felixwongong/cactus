@@ -1,7 +1,18 @@
 #include "cactus.h"
 
+/**
+ * @file cactus.cpp
+ * @brief Implementation of the Cactus LLM interface
+ * 
+ * This file contains the implementation of the Cactus API, which provides
+ * a high-level interface to llama.cpp for LLM inference.
+ */
+
 namespace cactus {
 
+/**
+ * @brief List of supported KV cache types for quantization
+ */
 const std::vector<lm_ggml_type> kv_cache_types = {
     LM_GGML_TYPE_F32,
     LM_GGML_TYPE_F16,
@@ -23,10 +34,24 @@ lm_ggml_type kv_cache_type_from_str(const std::string & s) {
     throw std::runtime_error("Unsupported cache type: " + s);
 }
 
+/**
+ * @brief Clears a llama batch structure
+ * 
+ * @param batch The batch to clear
+ */
 static void llama_batch_clear(llama_batch *batch) {
     batch->n_tokens = 0;
 }
 
+/**
+ * @brief Adds a token to a llama batch
+ * 
+ * @param batch The batch to add to
+ * @param id Token ID
+ * @param pos Token position
+ * @param seq_ids Sequence IDs
+ * @param logits Whether to compute logits for this token
+ */
 static void llama_batch_add(llama_batch *batch, llama_token id, llama_pos pos, std::vector<llama_seq_id> seq_ids, bool logits) {
     batch->token   [batch->n_tokens] = id;
     batch->pos     [batch->n_tokens] = pos;
@@ -38,8 +63,15 @@ static void llama_batch_add(llama_batch *batch, llama_token id, llama_pos pos, s
     batch->n_tokens += 1;
 }
 
-// NOTE: Edit from https://github.com/ggerganov/llama.cpp/blob/master/examples/server/server.cpp
-
+/**
+ * @brief Log function for different verbosity levels
+ * 
+ * @param level Log level (ERROR, WARNING, INFO, VERBOSE)
+ * @param function Function name where log was called
+ * @param line Line number in source file
+ * @param format Printf-style format string
+ * @param ... Format arguments
+ */
 static void log(const char *level, const char *function, int line,
                        const char *format, ...)
 {
@@ -87,6 +119,13 @@ static void log(const char *level, const char *function, int line,
 #define LOG_WARNING(MSG, ...) log("WARNING", __func__, __LINE__, MSG, ##__VA_ARGS__)
 #define LOG_INFO(MSG, ...) log("INFO", __func__, __LINE__, MSG, ##__VA_ARGS__)
 
+/**
+ * @brief Find the common prefix between two token sequences
+ * 
+ * @param a First token sequence
+ * @param b Second token sequence
+ * @return Length of the common prefix
+ */
 static size_t common_part(const std::vector<llama_token> &a, const std::vector<llama_token> &b)
 {
     size_t i;
@@ -96,12 +135,28 @@ static size_t common_part(const std::vector<llama_token> &a, const std::vector<l
     return i;
 }
 
+/**
+ * @brief Check if a string ends with a suffix
+ * 
+ * @param str String to check
+ * @param suffix Suffix to look for
+ * @return true if str ends with suffix, false otherwise
+ */
 static bool ends_with(const std::string &str, const std::string &suffix)
 {
     return str.size() >= suffix.size() &&
            0 == str.compare(str.size() - suffix.size(), suffix.size(), suffix);
 }
 
+/**
+ * @brief Find a partial stop string in text
+ * 
+ * Used for detecting if text is about to form a stopping string
+ * 
+ * @param stop The complete stop string to check for
+ * @param text Text to check in
+ * @return Position of the partial match if found, npos otherwise
+ */
 static size_t find_partial_stop_string(const std::string &stop,
                                        const std::string &text)
 {
@@ -123,7 +178,13 @@ static size_t find_partial_stop_string(const std::string &stop,
     return std::string::npos;
 }
 
-// format incomplete utf-8 multibyte character for output
+/**
+ * @brief Formats incomplete UTF-8 multibyte characters for output
+ * 
+ * @param ctx The llama context
+ * @param token The token to format
+ * @return Formatted string representation of the token
+ */
 std::string tokens_to_output_formatted_string(const llama_context *ctx, const llama_token token)
 {
     std::string out = token == -1 ? "" : common_token_to_piece(ctx, token);
@@ -139,6 +200,14 @@ std::string tokens_to_output_formatted_string(const llama_context *ctx, const ll
     return out;
 }
 
+/**
+ * @brief Converts a range of tokens to a string
+ * 
+ * @param ctx The llama context
+ * @param begin Iterator to the beginning of the token range
+ * @param end Iterator to the end of the token range
+ * @return String representation of the tokens
+ */
 std::string tokens_to_str(llama_context *ctx, const std::vector<llama_token>::const_iterator begin, const std::vector<llama_token>::const_iterator end)
 {
     std::string ret;
@@ -149,12 +218,22 @@ std::string tokens_to_str(llama_context *ctx, const std::vector<llama_token>::co
     return ret;
 }
 
+/**
+ * @brief Destructor for cactus_context
+ * 
+ * Cleans up resources, including the sampling context
+ */
 cactus_context::~cactus_context() {
     if (ctx_sampling != nullptr) {
         common_sampler_free(ctx_sampling);
     }
 }
 
+/**
+ * @brief Rewinds the context to start a new generation
+ * 
+ * Resets internal state to prepare for a new generation task
+ */
 void cactus_context::rewind() {
     is_interrupted = false;
     params.antiprompt.clear();
@@ -175,6 +254,11 @@ void cactus_context::rewind() {
     params.sampling.n_prev = n_ctx;
 }
 
+/**
+ * @brief Initializes the sampling context
+ * 
+ * @return true if initialization succeeded, false otherwise
+ */
 bool cactus_context::initSampling() {
     if (ctx_sampling != nullptr) {
         common_sampler_free(ctx_sampling);
@@ -183,6 +267,12 @@ bool cactus_context::initSampling() {
     return ctx_sampling != nullptr;
 }
 
+/**
+ * @brief Loads a language model
+ * 
+ * @param params_ Parameters for model loading and initialization
+ * @return true if loading succeeded, false otherwise
+ */
 bool cactus_context::loadModel(common_params &params_)
 {
     params = params_;
@@ -203,6 +293,13 @@ bool cactus_context::loadModel(common_params &params_)
     return true;
 }
 
+/**
+ * @brief Validates if a chat template exists and is valid
+ * 
+ * @param use_jinja Whether to use Jinja templates
+ * @param name Name of the template to validate
+ * @return true if template is valid, false otherwise
+ */
 bool cactus_context::validateModelChatTemplate(bool use_jinja, const char *name) const {
     const char * tmpl = llama_model_chat_template(model, name);
     if (tmpl == nullptr) {
@@ -211,6 +308,17 @@ bool cactus_context::validateModelChatTemplate(bool use_jinja, const char *name)
     return common_chat_verify_template(tmpl, use_jinja);
 }
 
+/**
+ * @brief Formats a chat using Jinja templates
+ * 
+ * @param messages JSON string of chat messages
+ * @param chat_template Optional custom chat template
+ * @param json_schema JSON schema for validation
+ * @param tools JSON string of tools available
+ * @param parallel_tool_calls Whether to allow parallel tool calls
+ * @param tool_choice Tool choice preference
+ * @return Formatted chat parameters
+ */
 common_chat_params cactus_context::getFormattedChatWithJinja(
   const std::string &messages,
   const std::string &chat_template,
@@ -244,6 +352,13 @@ common_chat_params cactus_context::getFormattedChatWithJinja(
     }
 }
 
+/**
+ * @brief Formats a chat using standard templates
+ * 
+ * @param messages JSON string of chat messages
+ * @param chat_template Optional custom chat template
+ * @return Formatted prompt string
+ */
 std::string cactus_context::getFormattedChat(
   const std::string &messages,
   const std::string &chat_template
@@ -261,6 +376,11 @@ std::string cactus_context::getFormattedChat(
     }
 }
 
+/**
+ * @brief Truncates a prompt if it's too long for the context
+ * 
+ * @param prompt_tokens Tokens to truncate
+ */
 void cactus_context::truncatePrompt(std::vector<llama_token> &prompt_tokens) {
     const int n_left = n_ctx - params.n_keep;
     const int n_block_size = n_left / 2;
@@ -283,6 +403,11 @@ void cactus_context::truncatePrompt(std::vector<llama_token> &prompt_tokens) {
     prompt_tokens = new_tokens;
 }
 
+/**
+ * @brief Loads a prompt into the context
+ * 
+ * Tokenizes and prepares a prompt for inference
+ */
 void cactus_context::loadPrompt() {
     std::vector<llama_token> prompt_tokens = ::common_tokenize(ctx, params.prompt, true, true);
     num_prompt_tokens = prompt_tokens.size();
@@ -337,6 +462,11 @@ void cactus_context::loadPrompt() {
     has_next_token = true;
 }
 
+/**
+ * @brief Begins the completion/generation process
+ * 
+ * Sets up internal state for token generation
+ */
 void cactus_context::beginCompletion() {
     // number of tokens to keep when resetting context
     n_remain = params.n_predict;
@@ -344,6 +474,11 @@ void cactus_context::beginCompletion() {
     is_predicting = true;
 }
 
+/**
+ * @brief Generates the next token
+ * 
+ * @return The generated token and its probabilities
+ */
 completion_token_output cactus_context::nextToken()
 {
     completion_token_output result;
@@ -462,6 +597,14 @@ completion_token_output cactus_context::nextToken()
     return result;
 }
 
+/**
+ * @brief Searches for stopping strings in generated text
+ * 
+ * @param text The text to search in
+ * @param last_token_size Size of the last token
+ * @param type Type of stopping to check for
+ * @return Position of the stop string if found, npos otherwise
+ */
 size_t cactus_context::findStoppingStrings(const std::string &text, const size_t last_token_size,
                             const stop_type type)
 {
@@ -494,6 +637,12 @@ size_t cactus_context::findStoppingStrings(const std::string &text, const size_t
     return stop_pos;
 }
 
+/**
+ * @brief Performs a single completion step
+ * 
+ * Generates the next token and updates generated text
+ * @return The generated token and its probabilities
+ */
 completion_token_output cactus_context::doCompletion()
 {
     const completion_token_output token_with_probs = nextToken();
@@ -552,6 +701,12 @@ completion_token_output cactus_context::doCompletion()
     return token_with_probs;
 }
 
+/**
+ * @brief Generates embeddings for the current prompt
+ * 
+ * @param embd_params Parameters for embedding generation
+ * @return Vector of embedding values
+ */
 std::vector<float> cactus_context::getEmbedding(common_params &embd_params)
 {
     static const int n_embd = llama_model_n_embd(llama_get_model(ctx));
@@ -578,6 +733,15 @@ std::vector<float> cactus_context::getEmbedding(common_params &embd_params)
     return out;
 }
 
+/**
+ * @brief Benchmarks the model performance
+ * 
+ * @param pp Prompt processing tokens
+ * @param tg Text generation iterations
+ * @param pl Parallel tokens to predict
+ * @param nr Number of repetitions
+ * @return JSON string with benchmark results
+ */
 std::string cactus_context::bench(int pp, int tg, int pl, int nr)
 {
     if (is_predicting) {
@@ -684,6 +848,12 @@ std::string cactus_context::bench(int pp, int tg, int pl, int nr)
         std::string("]");
 }
 
+/**
+ * @brief Applies LoRA adapters to the model
+ * 
+ * @param lora Vector of LoRA adapter information
+ * @return 0 on success, negative on failure
+ */
 int cactus_context::applyLoraAdapters(std::vector<common_adapter_lora_info> lora) {
     for (auto &la : lora) {
         la.ptr = llama_adapter_lora_init(model, la.path.c_str());
@@ -697,11 +867,19 @@ int cactus_context::applyLoraAdapters(std::vector<common_adapter_lora_info> lora
     return 0;
 }
 
+/**
+ * @brief Removes all LoRA adapters from the model
+ */
 void cactus_context::removeLoraAdapters() {
     this->lora.clear();
     common_set_adapter_lora(ctx, this->lora); // apply empty list
 }
 
+/**
+ * @brief Gets information about currently loaded LoRA adapters
+ * 
+ * @return Vector of LoRA adapter information
+ */
 std::vector<common_adapter_lora_info> cactus_context::getLoadedLoraAdapters() {
     return this->lora;
 }
