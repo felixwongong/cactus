@@ -11,10 +11,46 @@ Thumbs.db
 *.rej
 *.sublime-workspace
 *.sublime-project
-*.vscode/
+.vscode/
 .idea/
 *.iml
+*.ipr
+*.iws
+.history/
+.svn/
+.atom/
+.buildlog/
+migrate_working_dir/
+local.properties
+.settings/
+captures/
 
+# === Node.js & Web ===
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+.npm
+.yarn/cache
+.yarn/unplugged
+.yarn/build-state.yml
+.yarn/install-state.gz
+.pnp.*
+package-lock.json
+yarn.lock
+**/doc/api/
+
+# === React/Expo ===
+.expo/
+.expo-shared/
+dist/
+web-build/
+coverage/
+.env
+.env.*
+*.tsbuildinfo
+lib/
 # === Node/React Native ===
 node_modules/
 npm-debug.log*
@@ -30,50 +66,76 @@ build/
 coverage/
 *.tsbuildinfo
 react/lib/
+react/ios/cactus.xcframework/
+react/ios/CMakelists.txt
+react/android/src/main/
 
-# Metro/React Native cache
+
+# === Flutter/Dart ===
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+**/build/
+**/ios/Flutter/.last_build_id
+flutter/lib/src/types.g.dart
+flutter/pubspec.lock
+lib/generated_plugin_registrant.dart
+app.*.symbols
+app.*.map.json
+pubspec.lock
+flutter/ios/cactus.xcframework
+flutter/ios/CMakelists.txt
+flutter/android/src/main
+
+# === Metro/React Native cache ===
 .cache/
 react-native-packager-cache-*/
 __generated__/
-.expo-shared/
 
-# iOS
+# === iOS ===
 ios/Pods/
 ios/Podfile.lock
 ios/build/
 ios/DerivedData/
-ios/cactus.xcframework/
 ios/*.xcworkspace
 ios/*.xcuserstate
 ios/*.xcuserdata/
 ios/*.moved-aside
 ios/*.xcuserdatad/
 ios/.bundle/
+ios/cactus.xcframework/
+ios/Cactus.xcodeproj/
+ios/CMakelists.txt
 *.pbxuser
 *.mode1v3
 *.mode2v3
 *.perspectivev3
 
-# Android
+# iOS Framework binaries
+*.framework/cactus
+*.framework/ggml-llama.metallib
+*.framework/ggml-llama-sim.metallib
+*.framework/_CodeSignature/
+
+# === Android ===
 android/.gradle/
 android/app/build/
 android/build/
-android/local.properties
-android/.idea/
 android/.cxx/
-android/.DS_Store
-android/.settings/
 android/.externalNativeBuild/
-android/captures/
 android/gradle/
 android/gradlew
 android/gradlew.bat
 android/gradle-wrapper.jar
 android/gradle-wrapper.properties
+kotlin/src/main/
 kotlin/.gradle/
 kotlin/gradle/
 kotlin/.cxx
-android/src/main/jniLibs/
+
 
 # === C++/CMake ===
 build/
@@ -122,35 +184,7 @@ cmake_install.cmake
 # === Misc ===
 /tmp/
 .cache/
-*.log
 *.pid
-
-# === VSCode ===
-.vscode/
-
-# === Xcode ===
-*.xcworkspace
-*.xcuserstate
-*.xcuserdata/
-*.xcuserdatad/
-*.moved-aside
-
-# === macOS ===
-.DS_Store
-.AppleDouble
-.LSOverride
-
-# === Windows ===
-Thumbs.db
-ehthumbs.db
-Desktop.ini
-$RECYCLE.BIN/
-
 
 # === Build Copies ===
 swift/Source/cactus.xcframework/
-react/ios/cactus.xcframework/
-react/ios/Cactus.xcodeproj/
-react/ios/CMakelists.txt
-kotlin/src/main/jniLibs/
-react/android/src/main/jniLibs/
