@@ -330,6 +330,46 @@ extern bool cactus_verbose;
  */
 #define LOG_INFO(MSG, ...) log("INFO", __func__, __LINE__, MSG, ##__VA_ARGS__)
 
+// --- Utility Function Declarations ---
+
+/**
+ * @brief Log function for different verbosity levels
+ * 
+ * @param level Log level (ERROR, WARNING, INFO, VERBOSE)
+ * @param function Function name where log was called
+ * @param line Line number in source file
+ * @param format Printf-style format string
+ * @param ... Format arguments
+ */
+void log(const char *level, const char *function, int line, const char *format, ...);
+
+/**
+ * @brief Clears a llama batch structure
+ */
+void llama_batch_clear(llama_batch *batch);
+
+/**
+ * @brief Adds a token to a llama batch
+ */
+void llama_batch_add(llama_batch *batch, llama_token id, llama_pos pos, const std::vector<llama_seq_id>& seq_ids, bool logits);
+
+/**
+ * @brief Find the common prefix between two token sequences
+ */
+size_t common_part(const std::vector<llama_token> &a, const std::vector<llama_token> &b);
+
+/**
+ * @brief Check if a string ends with a suffix
+ */
+bool ends_with(const std::string &str, const std::string &suffix);
+
+/**
+ * @brief Find a partial stop string in text
+ */
+size_t find_partial_stop_string(const std::string &stop, const std::string &text);
+
+// --- End Utility Function Declarations ---
+
 } // namespace cactus
 
 #endif /* CACTUS_H */

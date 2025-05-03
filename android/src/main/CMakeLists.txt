@@ -6,10 +6,13 @@ set(CMAKE_CXX_STANDARD 17)
 # Use cactus as the C++ source directory
 set(SOURCE_DIR ${CMAKE_SOURCE_DIR}/../../../cactus)
 
+# Ensure the directory containing jni-helpers.h is included
+include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 include_directories(${SOURCE_DIR})
 
 set(
     SOURCE_FILES
+    # Core cactus/llama/ggml sources
     ${SOURCE_DIR}/ggml.c
     ${SOURCE_DIR}/ggml-alloc.c
     ${SOURCE_DIR}/ggml-backend.cpp
@@ -51,14 +54,23 @@ set(
     ${SOURCE_DIR}/common.cpp
     ${SOURCE_DIR}/chat.cpp
     ${SOURCE_DIR}/json-schema-to-grammar.cpp
-    ${SOURCE_DIR}/json.hpp
-    ${SOURCE_DIR}/amx/amx.cpp
-    ${SOURCE_DIR}/amx/mmq.cpp
-    ${SOURCE_DIR}/minja/minja.hpp
-    ${SOURCE_DIR}/minja/chat-template.hpp
     ${SOURCE_DIR}/cactus.cpp
-    ${CMAKE_SOURCE_DIR}/jni-utils.h
-    ${CMAKE_SOURCE_DIR}/jni.cpp
+    
+    # --- Add the new split files here ---
+    ${SOURCE_DIR}/cactus_loader.cpp
+    ${SOURCE_DIR}/cactus_completion.cpp
+    ${SOURCE_DIR}/cactus_context.cpp
+    ${SOURCE_DIR}/cactus_utils.cpp
+    ${SOURCE_DIR}/cactus_chat.cpp
+    ${SOURCE_DIR}/cactus_embedding.cpp
+    ${SOURCE_DIR}/cactus_bench.cpp
+    ${SOURCE_DIR}/cactus_lora.cpp
+    # --- End of new files ---
+
+    # JNI Bridge files (relative to this CMakeLists.txt)
+    # ${CMAKE_CURRENT_SOURCE_DIR}/jni-utils.h # Header, included via include_directories
+    ${CMAKE_CURRENT_SOURCE_DIR}/jni-helpers.cpp # Added helper implementation
+    ${CMAKE_CURRENT_SOURCE_DIR}/jni.cpp         # Main JNI bridge
 )
 
 find_library(LOG_LIB log)
@@ -72,12 +84,24 @@ function(build_library target_name cpu_flags)
 
     target_link_libraries(${target_name} ${LOG_LIB} android)
 
+    # Define LM_GGML_USE_CPU_AARCH64 only for arm64 builds
+    if (${ANDROID_ABI} STREQUAL "arm64-v8a")
     target_compile_options(${target_name} PRIVATE -DLM_GGML_USE_CPU -DLM_GGML_USE_CPU_AARCH64 -pthread ${cpu_flags})
+    else()
+        target_compile_options(${target_name} PRIVATE -DLM_GGML_USE_CPU -pthread ${cpu_flags})
+    endif()
+
+    # Add specific x86_64 flags if this target is being built
+    if (${target_name} STREQUAL "cactus_x86_64")
+        target_compile_options(${target_name} PRIVATE -msse4.2 -mpopcnt)
+    endif()
 
     if (${CMAKE_BUILD_TYPE} STREQUAL "Debug")
         target_compile_options(${target_name} PRIVATE -DCACTUS_ANDROID_ENABLE_LOGGING)
     endif ()
 
+    # Optimization and Linking Flags (applied to all builds including Debug for simplicity here)
+    # Consider moving -O3 -DNDEBUG only to Release builds if needed
         target_compile_options(${target_name} PRIVATE -O3 -DNDEBUG)
         target_compile_options(${target_name} PRIVATE -fvisibility=hidden -fvisibility-inlines-hidden)
         target_compile_options(${target_name} PRIVATE -ffunction-sections -fdata-sections)
@@ -99,6 +123,9 @@ if (${ANDROID_ABI} STREQUAL "arm64-v8a")
     build_library("cactus_v8_2_dotprod_i8mm" "-march=armv8.2-a+dotprod+i8mm")
 
 elseif (${ANDROID_ABI} STREQUAL "x86_64")
-    build_library("cactus_x86_64" "-march=x86-64" "-mtune=intel" "-msse4.2" "-mpopcnt")
+    # Only pass -march here -- REMOVED
+    # build_library("cactus_x86_64" "-march=x86-64") 
+    # Build without specific march/mtune flags for x86_64
+    build_library("cactus_x86_64" "") 
 
 endif ()

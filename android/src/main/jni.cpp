@@ -8,649 +8,724 @@
 #include <string>
 #include <thread>
 #include <unordered_map>
-#include "json-schema-to-grammar.h"
-#include "llama.h"
-#include "llama-impl.h"
-#include "ggml.h"
+#include <vector>
+#include <stdexcept> // For exception handling
+
+// Core library includes
 #include "cactus.h"
-#include "jni-utils.h"
+#include "llama.h"
+// #include "llama-impl.h" // Probably not needed directly
+#include "ggml.h"
+#include "common.h" // Needed for common_params, common_tokenize, etc.
+#include "json-schema-to-grammar.h" // Needed for schema conversion
+
+// JNI Helpers
+#include "jni-helpers.h"
+
 #define UNUSED(x) (void)(x)
 #define TAG "CACTUS_ANDROID_JNI"
 
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO,     TAG, __VA_ARGS__)
 #define LOGW(...) __android_log_print(ANDROID_LOG_WARN,     TAG, __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR,    TAG, __VA_ARGS__)
-static inline int min(int a, int b) {
-    return (a < b) ? a : b;
-}
 
-static void cactus_log_callback_default(lm_ggml_log_level level, const char * fmt, void * data) {
-    if (level == LM_GGML_LOG_LEVEL_ERROR)     __android_log_print(ANDROID_LOG_ERROR, TAG, fmt, data);
-    else if (level == LM_GGML_LOG_LEVEL_INFO) __android_log_print(ANDROID_LOG_INFO, TAG, fmt, data);
-    else if (level == LM_GGML_LOG_LEVEL_WARN) __android_log_print(ANDROID_LOG_WARN, TAG, fmt, data);
-    else __android_log_print(ANDROID_LOG_DEFAULT, TAG, fmt, data);
-}
+// Global map to hold context pointers, mapping jlong (from Kotlin) to C++ pointers
+static std::unordered_map<jlong, cactus::cactus_context*> context_map;
 
+// Global pointer for callback context (simplistic approach, might need improvement for multi-context)
+static NativeCallbackContext* g_callback_context = nullptr;
+
+// --- Forward declare the C++ callback function wrappers ---
+static bool native_progress_callback(float progress, void * user_data);
+static void native_log_callback(lm_ggml_log_level level, const char * text, void * user_data);
+
+// --- JNIEXPORT Functions ---
 extern "C" {
 
-// Method to create WritableMap
-static inline jobject createWriteableMap(JNIEnv *env) {
-    jclass mapClass = env->FindClass("com/facebook/react/bridge/Arguments");
-    jmethodID init = env->GetStaticMethodID(mapClass, "createMap", "()Lcom/facebook/react/bridge/WritableMap;");
-    jobject map = env->CallStaticObjectMethod(mapClass, init);
-    return map;
-}
-
-// Method to put string into WritableMap
-static inline void putString(JNIEnv *env, jobject map, const char *key, const char *value) {
-    jclass mapClass = env->FindClass("com/facebook/react/bridge/WritableMap");
-    jmethodID putStringMethod = env->GetMethodID(mapClass, "putString", "(Ljava/lang/String;Ljava/lang/String;)V");
-
-    jstring jKey = env->NewStringUTF(key);
-    jstring jValue = env->NewStringUTF(value);
-
-    env->CallVoidMethod(map, putStringMethod, jKey, jValue);
-}
-
-// Method to put int into WritableMap
-static inline void putInt(JNIEnv *env, jobject map, const char *key, int value) {
-    jclass mapClass = env->FindClass("com/facebook/react/bridge/WritableMap");
-    jmethodID putIntMethod = env->GetMethodID(mapClass, "putInt", "(Ljava/lang/String;I)V");
-
-    jstring jKey = env->NewStringUTF(key);
-
-    env->CallVoidMethod(map, putIntMethod, jKey, value);
-}
-
-// Method to put double into WritableMap
-static inline void putDouble(JNIEnv *env, jobject map, const char *key, double value) {
-    jclass mapClass = env->FindClass("com/facebook/react/bridge/WritableMap");
-    jmethodID putDoubleMethod = env->GetMethodID(mapClass, "putDouble", "(Ljava/lang/String;D)V");
-
-    jstring jKey = env->NewStringUTF(key);
-
-    env->CallVoidMethod(map, putDoubleMethod, jKey, value);
-}
-
-// Method to put boolean into WritableMap
-static inline void putBoolean(JNIEnv *env, jobject map, const char *key, bool value) {
-    jclass mapClass = env->FindClass("com/facebook/react/bridge/WritableMap");
-    jmethodID putBooleanMethod = env->GetMethodID(mapClass, "putBoolean", "(Ljava/lang/String;Z)V");
-
-    jstring jKey = env->NewStringUTF(key);
-
-    env->CallVoidMethod(map, putBooleanMethod, jKey, value);
-}
-
-// Method to put WriteableMap into WritableMap
-static inline void putMap(JNIEnv *env, jobject map, const char *key, jobject value) {
-    jclass mapClass = env->FindClass("com/facebook/react/bridge/WritableMap");
-    jmethodID putMapMethod = env->GetMethodID(mapClass, "putMap", "(Ljava/lang/String;Lcom/facebook/react/bridge/ReadableMap;)V");
-
-    jstring jKey = env->NewStringUTF(key);
-
-    env->CallVoidMethod(map, putMapMethod, jKey, value);
-}
-
-// Method to create WritableArray
-static inline jobject createWritableArray(JNIEnv *env) {
-    jclass mapClass = env->FindClass("com/facebook/react/bridge/Arguments");
-    jmethodID init = env->GetStaticMethodID(mapClass, "createArray", "()Lcom/facebook/react/bridge/WritableArray;");
-    jobject map = env->CallStaticObjectMethod(mapClass, init);
-    return map;
-}
-
-// Method to push int into WritableArray
-static inline void pushInt(JNIEnv *env, jobject arr, int value) {
-    jclass mapClass = env->FindClass("com/facebook/react/bridge/WritableArray");
-    jmethodID pushIntMethod = env->GetMethodID(mapClass, "pushInt", "(I)V");
-
-    env->CallVoidMethod(arr, pushIntMethod, value);
-}
-
-// Method to push double into WritableArray
-static inline void pushDouble(JNIEnv *env, jobject arr, double value) {
-    jclass mapClass = env->FindClass("com/facebook/react/bridge/WritableArray");
-    jmethodID pushDoubleMethod = env->GetMethodID(mapClass, "pushDouble", "(D)V");
-
-    env->CallVoidMethod(arr, pushDoubleMethod, value);
-}
-
-// Method to push string into WritableArray
-static inline void pushString(JNIEnv *env, jobject arr, const char *value) {
-    jclass mapClass = env->FindClass("com/facebook/react/bridge/WritableArray");
-    jmethodID pushStringMethod = env->GetMethodID(mapClass, "pushString", "(Ljava/lang/String;)V");
-
-    jstring jValue = env->NewStringUTF(value);
-    env->CallVoidMethod(arr, pushStringMethod, jValue);
-}
-
-// Method to push WritableMap into WritableArray
-static inline void pushMap(JNIEnv *env, jobject arr, jobject value) {
-    jclass mapClass = env->FindClass("com/facebook/react/bridge/WritableArray");
-    jmethodID pushMapMethod = env->GetMethodID(mapClass, "pushMap", "(Lcom/facebook/react/bridge/ReadableMap;)V");
-
-    env->CallVoidMethod(arr, pushMapMethod, value);
-}
-
-// Method to put WritableArray into WritableMap
-static inline void putArray(JNIEnv *env, jobject map, const char *key, jobject value) {
-    jclass mapClass = env->FindClass("com/facebook/react/bridge/WritableMap");
-    jmethodID putArrayMethod = env->GetMethodID(mapClass, "putArray", "(Ljava/lang/String;Lcom/facebook/react/bridge/ReadableArray;)V");
-
-    jstring jKey = env->NewStringUTF(key);
-
-    env->CallVoidMethod(map, putArrayMethod, jKey, value);
-}
-
-JNIEXPORT jobject JNICALL
-Java_com_cactus_LlamaContext_modelInfo(
-    JNIEnv *env,
-    jobject thiz,
-    jstring model_path_str,
-    jobjectArray skip
-) {
-    UNUSED(thiz);
-
-    const char *model_path_chars = env->GetStringUTFChars(model_path_str, nullptr);
-
-    std::vector<std::string> skip_vec;
-    int skip_len = env->GetArrayLength(skip);
-    for (int i = 0; i < skip_len; i++) {
-        jstring skip_str = (jstring) env->GetObjectArrayElement(skip, i);
-        const char *skip_chars = env->GetStringUTFChars(skip_str, nullptr);
-        skip_vec.push_back(skip_chars);
-        env->ReleaseStringUTFChars(skip_str, skip_chars);
-    }
-
-    struct lm_gguf_init_params params = {
-        /*.no_alloc = */ false,
-        /*.ctx      = */ NULL,
-    };
-    struct lm_gguf_context * ctx = lm_gguf_init_from_file(model_path_chars, params);
-
-    if (!ctx) {
-        LOGI("%s: failed to load '%s'\n", __func__, model_path_chars);
-        return nullptr;
-    }
-
-    auto info = createWriteableMap(env);
-    putInt(env, info, "version", lm_gguf_get_version(ctx));
-    putInt(env, info, "alignment", lm_gguf_get_alignment(ctx));
-    putInt(env, info, "data_offset", lm_gguf_get_data_offset(ctx));
-    {
-        const int n_kv = lm_gguf_get_n_kv(ctx);
-
-        for (int i = 0; i < n_kv; ++i) {
-            const char * key = lm_gguf_get_key(ctx, i);
-
-            bool skipped = false;
-            if (skip_len > 0) {
-                for (int j = 0; j < skip_len; j++) {
-                    if (skip_vec[j] == key) {
-                        skipped = true;
-                        break;
-                    }
-                }
-            }
-
-            if (skipped) {
-                continue;
-            }
-
-            const std::string value = lm_gguf_kv_to_str(ctx, i);
-            putString(env, info, key, value.c_str());
-        }
-    }
-
-    env->ReleaseStringUTFChars(model_path_str, model_path_chars);
-    lm_gguf_free(ctx);
-
-    return reinterpret_cast<jobject>(info);
-}
-
-struct callback_context {
-    JNIEnv *env;
-    cactus::cactus_context *llama;
-    jobject callback;
-};
-
-std::unordered_map<long, cactus::cactus_context *> context_map;
+// --- Context Management ---    
 
 JNIEXPORT jlong JNICALL
-Java_com_cactus_LlamaContext_initContext(
+Java_com_cactus_android_LlamaContext_initContextNative_00024CactusAndroidLib_1debug(
     JNIEnv *env,
-    jobject thiz,
+    jclass clazz,
     jstring model_path_str,
-    jstring chat_template,
-    jstring reasoning_format,
+    jstring chat_template_str,
+    jstring reasoning_format_str, // Assuming string for simplicity, could be enum int
     jboolean embedding,
     jint embd_normalize,
     jint n_ctx,
     jint n_batch,
     jint n_ubatch,
     jint n_threads,
-    jint n_gpu_layers, // TODO: Support this
+    jint n_gpu_layers,
     jboolean flash_attn,
-    jstring cache_type_k,
-    jstring cache_type_v,
+    jstring cache_type_k_str,
+    jstring cache_type_v_str,
     jboolean use_mlock,
     jboolean use_mmap,
     jboolean vocab_only,
-    jstring lora_str,
-    jfloat lora_scaled,
-    jobject lora_list,
+    // LoRA handling needs redesign - passing Map/List instead of String/RN Array
+    // jstring lora_str, 
+    // jfloat lora_scaled,
+    jobject lora_list, // Assuming List<Map<String, Object>>: [{path: String, scaled: Float}, ...]
     jfloat rope_freq_base,
     jfloat rope_freq_scale,
     jint pooling_type,
-    jobject load_progress_callback
+    jobject load_progress_callback // Kotlin interface object
 ) {
-    UNUSED(thiz);
+    UNUSED(clazz);
 
+    // 1. Convert Java types to C++ types
+    std::string model_path = javaStringToCppString(env, model_path_str);
+    std::string chat_template = javaStringToCppString(env, chat_template_str);
+    std::string reasoning_format = javaStringToCppString(env, reasoning_format_str);
+    std::string cache_type_k = javaStringToCppString(env, cache_type_k_str);
+    std::string cache_type_v = javaStringToCppString(env, cache_type_v_str);
+    // std::string lora_path = javaStringToCppString(env, lora_str);
+
+    // 2. Set up common_params
     common_params defaultParams;
-
+    // Basic params
+    defaultParams.model = model_path;
+    defaultParams.chat_template = chat_template;
+    defaultParams.embedding = embedding;
+    defaultParams.n_ctx = n_ctx;
+    defaultParams.n_batch = n_batch;
+    defaultParams.n_ubatch = n_ubatch;
+    defaultParams.n_gpu_layers = n_gpu_layers;
+    defaultParams.flash_attn = flash_attn;
+    defaultParams.use_mlock = use_mlock;
+    defaultParams.use_mmap = use_mmap;
     defaultParams.vocab_only = vocab_only;
-    if(vocab_only) {
-        defaultParams.warmup = false;
-    }
+    if (vocab_only) defaultParams.warmup = false;
 
-    const char *model_path_chars = env->GetStringUTFChars(model_path_str, nullptr);
-    defaultParams.model = model_path_chars;
-
-    const char *chat_template_chars = env->GetStringUTFChars(chat_template, nullptr);
-    defaultParams.chat_template = chat_template_chars;
-
-    const char *reasoning_format_chars = env->GetStringUTFChars(reasoning_format, nullptr);
-    if (strcmp(reasoning_format_chars, "deepseek") == 0) {
+    // Enum/special params
+    if (strcmp(reasoning_format.c_str(), "deepseek") == 0) {
         defaultParams.reasoning_format = COMMON_REASONING_FORMAT_DEEPSEEK;
     } else {
         defaultParams.reasoning_format = COMMON_REASONING_FORMAT_NONE;
     }
-
-    defaultParams.n_ctx = n_ctx;
-    defaultParams.n_batch = n_batch;
-    defaultParams.n_ubatch = n_ubatch;
-
-    if (pooling_type != -1) {
-        defaultParams.pooling_type = static_cast<enum llama_pooling_type>(pooling_type);
-    }
-
-    defaultParams.embedding = embedding;
-    if (embd_normalize != -1) {
-        defaultParams.embd_normalize = embd_normalize;
-    }
-    if (embedding) {
-        // For non-causal models, batch size must be equal to ubatch size
-        defaultParams.n_ubatch = defaultParams.n_batch;
-    }
+    if (pooling_type != -1) defaultParams.pooling_type = static_cast<enum llama_pooling_type>(pooling_type);
+    if (embd_normalize != -1) defaultParams.embd_normalize = embd_normalize;
+    if (embedding) defaultParams.n_ubatch = defaultParams.n_batch; // Required for non-causal
 
     int max_threads = std::thread::hardware_concurrency();
-    // Use 2 threads by default on 4-core devices, 4 threads on more cores
-    int default_n_threads = max_threads == 4 ? 2 : min(4, max_threads);
+    int default_n_threads = max_threads == 4 ? 2 : std::min(4, max_threads);
     defaultParams.cpuparams.n_threads = n_threads > 0 ? n_threads : default_n_threads;
 
-    defaultParams.n_gpu_layers = n_gpu_layers;
-    defaultParams.flash_attn = flash_attn;
-
-    const char *cache_type_k_chars = env->GetStringUTFChars(cache_type_k, nullptr);
-    const char *cache_type_v_chars = env->GetStringUTFChars(cache_type_v, nullptr);
-    defaultParams.cache_type_k = cactus::kv_cache_type_from_str(cache_type_k_chars);
-    defaultParams.cache_type_v = cactus::kv_cache_type_from_str(cache_type_v_chars);
-
-    defaultParams.use_mlock = use_mlock;
-    defaultParams.use_mmap = use_mmap;
+    try {
+        defaultParams.cache_type_k = cactus::kv_cache_type_from_str(cache_type_k);
+        defaultParams.cache_type_v = cactus::kv_cache_type_from_str(cache_type_v);
+    } catch (const std::runtime_error& e) {
+        jniThrowNativeException(env, "java/lang/IllegalArgumentException", e.what());
+        return -1;
+    }
 
     defaultParams.rope_freq_base = rope_freq_base;
     defaultParams.rope_freq_scale = rope_freq_scale;
 
+    // 3. Create cactus context instance
     auto llama = new cactus::cactus_context();
     llama->is_load_interrupted = false;
     llama->loading_progress = 0;
 
+    // 4. Handle Callbacks (Progress)
+    NativeCallbackContext* callback_ctx = nullptr;
     if (load_progress_callback != nullptr) {
-        defaultParams.progress_callback = [](float progress, void * user_data) {
-            callback_context *cb_ctx = (callback_context *)user_data;
-            JNIEnv *env = cb_ctx->env;
-            auto llama = cb_ctx->llama;
-            jobject callback = cb_ctx->callback;
-            int percentage = (int) (100 * progress);
-            if (percentage > llama->loading_progress) {
-                llama->loading_progress = percentage;
-                jclass callback_class = env->GetObjectClass(callback);
-                jmethodID onLoadProgress = env->GetMethodID(callback_class, "onLoadProgress", "(I)V");
-                env->CallVoidMethod(callback, onLoadProgress, percentage);
-            }
-            return !llama->is_load_interrupted;
-        };
+        callback_ctx = new NativeCallbackContext();
+        env->GetJavaVM(&callback_ctx->jvm);
+        callback_ctx->callbackObjectRef = env->NewGlobalRef(load_progress_callback);
 
-        callback_context *cb_ctx = new callback_context;
-        cb_ctx->env = env;
-        cb_ctx->llama = llama;
-        cb_ctx->callback = env->NewGlobalRef(load_progress_callback);
-        defaultParams.progress_callback_user_data = cb_ctx;
+        defaultParams.progress_callback = native_progress_callback;
+        defaultParams.progress_callback_user_data = callback_ctx;
     }
 
-    bool is_model_loaded = llama->loadModel(defaultParams);
-
-    env->ReleaseStringUTFChars(model_path_str, model_path_chars);
-    env->ReleaseStringUTFChars(chat_template, chat_template_chars);
-    env->ReleaseStringUTFChars(reasoning_format, reasoning_format_chars);
-    env->ReleaseStringUTFChars(cache_type_k, cache_type_k_chars);
-    env->ReleaseStringUTFChars(cache_type_v, cache_type_v_chars);
+    // 5. Call the core C++ library function
+    bool is_model_loaded = false;
+    try {
+        is_model_loaded = llama->loadModel(defaultParams);
+    } catch (const std::exception& e) {
+        LOGE("Exception during model loading: %s", e.what());
+        if (callback_ctx) {
+            env->DeleteGlobalRef(callback_ctx->callbackObjectRef);
+            delete callback_ctx;
+        }
+        delete llama;
+        jniThrowNativeException(env, "java/lang/RuntimeException", e.what());
+        return -1;
+    }
 
     LOGI("[CACTUS] is_model_loaded %s", (is_model_loaded ? "true" : "false"));
+
     if (is_model_loaded) {
+        // Check for unsupported embedding case
         if (embedding && llama_model_has_encoder(llama->model) && llama_model_has_decoder(llama->model)) {
-            LOGI("[CACTUS] computing embeddings in encoder-decoder models is not supported");
+             LOGE("[CACTUS] computing embeddings in encoder-decoder models is not supported");
             llama_free(llama->ctx);
             return -1;
         }
-        context_map[(long) llama->ctx] = llama;
-    } else {
-        llama_free(llama->ctx);
-    }
 
-    std::vector<common_adapter_lora_info> lora;
-    const char *lora_chars = env->GetStringUTFChars(lora_str, nullptr);
-    if (lora_chars != nullptr && lora_chars[0] != '\0') {
-        common_adapter_lora_info la;
-        la.path = lora_chars;
-        la.scale = lora_scaled;
-        lora.push_back(la);
-    }
-
+        // LoRA Adapters - Requires parsing lora_list (List<Map<String, Object>>)
+        std::vector<common_adapter_lora_info> lora_adapters;
     if (lora_list != nullptr) {
-        // lora_adapters: ReadableArray<ReadableMap>
-        int lora_list_size = readablearray::size(env, lora_list);
-        for (int i = 0; i < lora_list_size; i++) {
-            jobject lora_adapter = readablearray::getMap(env, lora_list, i);
-            jstring path = readablemap::getString(env, lora_adapter, "path", nullptr);
-            if (path != nullptr) {
-                const char *path_chars = env->GetStringUTFChars(path, nullptr);
-                common_adapter_lora_info la;
-                la.path = path_chars;
-                la.scale = readablemap::getFloat(env, lora_adapter, "scaled", 1.0f);
-                lora.push_back(la);
-                env->ReleaseStringUTFChars(path, path_chars);
-            }
+            // TODO: Implement parsing of Java List<Map<String, Object>> into lora_adapters vector
+            // Need jni-helpers for List iteration and Map reading
+            // Example structure:
+            // jsize list_size = env->CallIntMethod(lora_list, list_size_method_id);
+            // for (jsize i = 0; i < list_size; ++i) {
+            //    jobject map_obj = env->CallObjectMethod(lora_list, list_get_method_id, i);
+            //    jstring path_jstr = (jstring) env->CallObjectMethod(map_obj, map_get_method_id, env->NewStringUTF("path"));
+            //    jobject scaled_obj = env->CallObjectMethod(map_obj, map_get_method_id, env->NewStringUTF("scaled"));
+            //    // Convert path_jstr to std::string
+            //    // Convert scaled_obj (Float/Double) to float
+            //    // Add to lora_adapters vector
+            //    // Cleanup local refs
+            // }
         }
-    }
-    env->ReleaseStringUTFChars(lora_str, lora_chars);
-    int result = llama->applyLoraAdapters(lora);
-    if (result != 0) {
-      LOGI("[Cactus] Failed to apply lora adapters");
+        int lora_result = llama->applyLoraAdapters(lora_adapters);
+        if (lora_result != 0) {
+            LOGE("[Cactus] Failed to apply lora adapters");
+             if (callback_ctx) {
+                env->DeleteGlobalRef(callback_ctx->callbackObjectRef);
+                delete callback_ctx;
+             }
       llama_free(llama->ctx);
       return -1;
     }
 
-    return reinterpret_cast<jlong>(llama->ctx);
-}
-
-
-JNIEXPORT void JNICALL
-Java_com_cactus_LlamaContext_interruptLoad(
-    JNIEnv *env,
-    jobject thiz,
-    jlong context_ptr
-) {
-    UNUSED(thiz);
-    auto llama = context_map[(long) context_ptr];
-    if (llama) {
-        llama->is_load_interrupted = true;
+        // Store context
+        jlong context_ptr = reinterpret_cast<jlong>(llama->ctx);
+        context_map[context_ptr] = llama;
+        // Attach callback context if it exists
+        if (callback_ctx) {
+            // How to associate this callback context with the llama context?
+            // Maybe add a `void* user_data` to cactus_context?
+            // Or store it in a separate map keyed by context_ptr?
+            // For now, assume it's somehow linked or globally accessible for the callback.
+            // This needs refinement based on how callbacks will be managed.
+        }
+        return context_ptr;
+    } else {
+        if (callback_ctx) {
+            env->DeleteGlobalRef(callback_ctx->callbackObjectRef);
+            delete callback_ctx;
+        }
+        delete llama; // Destructor calls llama_free(ctx) if needed
+        jniThrowNativeException(env, "java/lang/RuntimeException", "Model loading failed (unknown reason)");
+        return -1; // Indicate failure
     }
 }
 
+JNIEXPORT void JNICALL
+Java_com_cactus_android_LlamaContext_interruptLoad(
+    JNIEnv *env,
+    jobject thiz,
+    jlong context_ptr
+) {
+    UNUSED(env); UNUSED(thiz);
+    // This is tricky - the load happens within initContext.
+    // We need a way to signal the cactus_context being created during load.
+    // Maybe iterate through the map if only one load happens at a time?
+    // Or the caller needs to provide the pointer *during* the load?
+    // For now, assume we look it up *after* load, which isn't quite right.
+    auto it = context_map.find(context_ptr);
+    if (it != context_map.end()) {
+        it->second->is_load_interrupted = true;
+    } else {
+        // If called during load, the context might not be in the map yet.
+        LOGW("interruptLoad called for context not yet fully initialized or not found: %ld", context_ptr);
+        // Maybe set a global flag? This is problematic for concurrent loads.
+    }
+}
+
+JNIEXPORT void JNICALL
+Java_com_cactus_android_LlamaContext_freeContext(
+    JNIEnv *env,
+    jobject thiz,
+    jlong context_ptr
+) {
+    UNUSED(env); UNUSED(thiz);
+    auto it = context_map.find(context_ptr);
+    if (it != context_map.end()) {
+        cactus::cactus_context* llama = it->second;
+        context_map.erase(it);
+        // TODO: Clean up associated callback context if stored separately
+        // if (g_callback_context && reinterpret_cast<jlong>(llama->ctx) == context_ptr) { // Example check
+        //     env->DeleteGlobalRef(g_callback_context->callbackObjectRef);
+        //     delete g_callback_context;
+        //     g_callback_context = nullptr;
+        // }
+        llama_free(llama->ctx);
+        LOGI("Freed context: %ld", context_ptr);
+    } else {
+        LOGW("Attempting to free non-existent or already freed context pointer: %ld", context_ptr);
+    }
+}
+
+// --- Model Information ---    
+
 JNIEXPORT jobject JNICALL
-Java_com_cactus_LlamaContext_loadModelDetails(
+Java_com_cactus_android_LlamaContext_modelInfoNative(
+    JNIEnv *env,
+    jclass clazz,
+    jstring model_path_str,
+    jobjectArray skip_array // String[]
+) {
+    UNUSED(env); UNUSED(clazz);
+    // 1. Convert Java types to C++
+    std::string model_path = javaStringToCppString(env, model_path_str);
+    std::vector<std::string> skip_vec = javaStringArrayToCppVector(env, skip_array);
+
+    // 2. Call underlying gguf functions
+    struct lm_gguf_init_params params = { false, NULL };
+    struct lm_gguf_context * gguf_ctx = lm_gguf_init_from_file(model_path.c_str(), params);
+
+    if (!gguf_ctx) {
+        LOGE("%s: failed to load GGUF '%s'", __func__, model_path.c_str());
+        jniThrowNativeException(env, "java/io/IOException", "Failed to load model file GGUF info");
+        return nullptr;
+    }
+
+    // 3. Create Java HashMap to return
+    jobject infoMap = createJavaHashMap(env);
+    if (!infoMap) { // Check if HashMap creation failed
+        lm_gguf_free(gguf_ctx);
+        jniThrowNativeException(env, "java/lang/RuntimeException", "Failed to create HashMap for model info");
+        return nullptr;
+    }
+
+    // 4. Populate the HashMap using helpers
+    try {
+        putJavaIntInMap(env, infoMap, "version", lm_gguf_get_version(gguf_ctx));
+        putJavaLongInMap(env, infoMap, "alignment", (jlong)lm_gguf_get_alignment(gguf_ctx));
+        putJavaLongInMap(env, infoMap, "data_offset", (jlong)lm_gguf_get_data_offset(gguf_ctx));
+
+        const int n_kv = lm_gguf_get_n_kv(gguf_ctx);
+        putJavaIntInMap(env, infoMap, "kv_count", n_kv);
+
+        for (int i = 0; i < n_kv; ++i) {
+            const char* key = lm_gguf_get_key(gguf_ctx, i);
+            if (!key) continue; // Skip if key is null
+
+            // Skip logic
+            bool skipped = false;
+            for (const auto& skip_entry : skip_vec) {
+                if (skip_entry == key) {
+                    skipped = true;
+                    break;
+                }
+            }
+            if (skipped) continue;
+
+            // Convert value and put in map
+            const std::string value = lm_gguf_kv_to_str(gguf_ctx, i);
+            putJavaStringInMap(env, infoMap, key, value.c_str());
+    }
+    } catch (const std::exception& e) {
+        lm_gguf_free(gguf_ctx);
+        LOGE("Exception while populating modelInfo map: %s", e.what());
+        jniThrowNativeException(env, "java/lang/RuntimeException", e.what());
+        return nullptr; // Return null instead of partially filled map
+    }
+
+    // 5. Cleanup C++ resources
+    lm_gguf_free(gguf_ctx);
+
+    // 6. Return the Java HashMap
+    return infoMap; // jobject representing HashMap<String, Object>
+}
+
+JNIEXPORT jobject JNICALL
+Java_com_cactus_android_LlamaContext_loadModelDetails(
     JNIEnv *env,
     jobject thiz,
     jlong context_ptr
 ) {
     UNUSED(thiz);
-    auto llama = context_map[(long) context_ptr];
+    auto it = context_map.find(context_ptr);
+    if (it == context_map.end()) {
+        jniThrowNativeException(env, "java/lang/IllegalStateException", "Context pointer invalid or freed");
+        return nullptr;
+    }
+    cactus::cactus_context* llama = it->second;
+    if (!llama->model) {
+         jniThrowNativeException(env, "java/lang/IllegalStateException", "Model not loaded in context");
+         return nullptr;
+    }
 
+    jobject result = createJavaHashMap(env);
+    jobject meta = createJavaHashMap(env);
+    jobject chat_templates = createJavaHashMap(env);
+    jobject minja_templates = createJavaHashMap(env);
+
+    if (!result || !meta || !chat_templates || !minja_templates) {
+        jniThrowNativeException(env, "java/lang/RuntimeException", "Failed to create HashMaps for model details");
+        // Clean up any maps that *were* created
+        if (result) env->DeleteLocalRef(result);
+        if (meta) env->DeleteLocalRef(meta);
+        if (chat_templates) env->DeleteLocalRef(chat_templates);
+        if (minja_templates) env->DeleteLocalRef(minja_templates);
+        return nullptr;
+    }
+
+    try {
+        // Basic Info
+        char desc[1024];
+        llama_model_desc(llama->model, desc, sizeof(desc));
+        putJavaStringInMap(env, result, "desc", desc);
+        putJavaDoubleInMap(env, result, "size", (jdouble)llama_model_size(llama->model)); // size_t -> double
+        putJavaDoubleInMap(env, result, "nEmbd", (jdouble)llama_model_n_embd(llama->model)); // int -> double ? Maybe long?
+        putJavaDoubleInMap(env, result, "nParams", (jdouble)llama_model_n_params(llama->model)); // uint64_t -> double
+
+        // Metadata
     int count = llama_model_meta_count(llama->model);
-    auto meta = createWriteableMap(env);
     for (int i = 0; i < count; i++) {
         char key[256];
         llama_model_meta_key_by_index(llama->model, i, key, sizeof(key));
         char val[4096];
         llama_model_meta_val_str_by_index(llama->model, i, val, sizeof(val));
-
-        putString(env, meta, key, val);
+            putJavaStringInMap(env, meta, key, val);
     }
+        putJavaObjectInMap(env, result, "metadata", meta);
 
-    auto result = createWriteableMap(env);
+        // Chat Template Info
+        putJavaBooleanInMap(env, chat_templates, "isChatTemplateSupported", llama->validateModelChatTemplate(false, nullptr)); // Deprecated one
+        putJavaBooleanInMap(env, chat_templates, "llamaChat", llama->validateModelChatTemplate(false, nullptr)); // Legacy name
+        
+        // Minja Templates
+        putJavaBooleanInMap(env, minja_templates, "default", llama->validateModelChatTemplate(true, nullptr));
+        putJavaBooleanInMap(env, minja_templates, "toolUse", llama->validateModelChatTemplate(true, "tool_use"));
 
-    char desc[1024];
-    llama_model_desc(llama->model, desc, sizeof(desc));
-
-    putString(env, result, "desc", desc);
-    putDouble(env, result, "size", llama_model_size(llama->model));
-    putDouble(env, result, "nEmbd", llama_model_n_embd(llama->model));
-    putDouble(env, result, "nParams", llama_model_n_params(llama->model));
-    auto chat_templates = createWriteableMap(env);
-    putBoolean(env, chat_templates, "llamaChat", llama->validateModelChatTemplate(false, nullptr));
-
-    auto minja = createWriteableMap(env);
-    putBoolean(env, minja, "default", llama->validateModelChatTemplate(true, nullptr));
-
-    auto default_caps = createWriteableMap(env);
-
+        // Default Minja Caps
+        auto default_caps_map = createJavaHashMap(env);
+        if (default_caps_map && llama->templates) { // Check templates ptr
     auto default_tmpl = llama->templates.get()->template_default.get();
+            if (default_tmpl) {
     auto default_tmpl_caps = default_tmpl->original_caps();
-    putBoolean(env, default_caps, "tools", default_tmpl_caps.supports_tools);
-    putBoolean(env, default_caps, "toolCalls", default_tmpl_caps.supports_tool_calls);
-    putBoolean(env, default_caps, "parallelToolCalls", default_tmpl_caps.supports_parallel_tool_calls);
-    putBoolean(env, default_caps, "toolResponses", default_tmpl_caps.supports_tool_responses);
-    putBoolean(env, default_caps, "systemRole", default_tmpl_caps.supports_system_role);
-    putBoolean(env, default_caps, "toolCallId", default_tmpl_caps.supports_tool_call_id);
-    putMap(env, minja, "defaultCaps", default_caps);
-
-    putBoolean(env, minja, "toolUse", llama->validateModelChatTemplate(true, "tool_use"));
+                 putJavaBooleanInMap(env, default_caps_map, "tools", default_tmpl_caps.supports_tools);
+                 putJavaBooleanInMap(env, default_caps_map, "toolCalls", default_tmpl_caps.supports_tool_calls);
+                 putJavaBooleanInMap(env, default_caps_map, "parallelToolCalls", default_tmpl_caps.supports_parallel_tool_calls);
+                 putJavaBooleanInMap(env, default_caps_map, "toolResponses", default_tmpl_caps.supports_tool_responses);
+                 putJavaBooleanInMap(env, default_caps_map, "systemRole", default_tmpl_caps.supports_system_role);
+                 putJavaBooleanInMap(env, default_caps_map, "toolCallId", default_tmpl_caps.supports_tool_call_id);
+                 putJavaObjectInMap(env, minja_templates, "defaultCaps", default_caps_map);
+            } else { env->DeleteLocalRef(default_caps_map); } // clean up if tmpl null
+        } else if (default_caps_map) { env->DeleteLocalRef(default_caps_map); } // clean up if map created but templates null
+        
+        // Tool Use Minja Caps
+        auto tool_use_caps_map = createJavaHashMap(env);
+        if (tool_use_caps_map && llama->templates) {
     auto tool_use_tmpl = llama->templates.get()->template_tool_use.get();
     if (tool_use_tmpl != nullptr) {
-      auto tool_use_caps = createWriteableMap(env);
       auto tool_use_tmpl_caps = tool_use_tmpl->original_caps();
-      putBoolean(env, tool_use_caps, "tools", tool_use_tmpl_caps.supports_tools);
-      putBoolean(env, tool_use_caps, "toolCalls", tool_use_tmpl_caps.supports_tool_calls);
-      putBoolean(env, tool_use_caps, "parallelToolCalls", tool_use_tmpl_caps.supports_parallel_tool_calls);
-      putBoolean(env, tool_use_caps, "systemRole", tool_use_tmpl_caps.supports_system_role);
-      putBoolean(env, tool_use_caps, "toolResponses", tool_use_tmpl_caps.supports_tool_responses);
-      putBoolean(env, tool_use_caps, "toolCallId", tool_use_tmpl_caps.supports_tool_call_id);
-      putMap(env, minja, "toolUseCaps", tool_use_caps);
+                putJavaBooleanInMap(env, tool_use_caps_map, "tools", tool_use_tmpl_caps.supports_tools);
+                putJavaBooleanInMap(env, tool_use_caps_map, "toolCalls", tool_use_tmpl_caps.supports_tool_calls);
+                putJavaBooleanInMap(env, tool_use_caps_map, "parallelToolCalls", tool_use_tmpl_caps.supports_parallel_tool_calls);
+                putJavaBooleanInMap(env, tool_use_caps_map, "systemRole", tool_use_tmpl_caps.supports_system_role);
+                putJavaBooleanInMap(env, tool_use_caps_map, "toolResponses", tool_use_tmpl_caps.supports_tool_responses);
+                putJavaBooleanInMap(env, tool_use_caps_map, "toolCallId", tool_use_tmpl_caps.supports_tool_call_id);
+                putJavaObjectInMap(env, minja_templates, "toolUseCaps", tool_use_caps_map);
+             } else { env->DeleteLocalRef(tool_use_caps_map); } // clean up if tmpl null
+        } else if (tool_use_caps_map) { env->DeleteLocalRef(tool_use_caps_map); } // clean up if map created but templates null
+
+        putJavaObjectInMap(env, chat_templates, "minja", minja_templates);
+        putJavaObjectInMap(env, result, "chatTemplates", chat_templates);
+
+    } catch (const std::exception& e) {
+        LOGE("Exception during loadModelDetails: %s", e.what());
+        jniThrowNativeException(env, "java/lang/RuntimeException", e.what());
+        // Clean up maps before returning null
+        env->DeleteLocalRef(result); 
+        env->DeleteLocalRef(meta); 
+        env->DeleteLocalRef(chat_templates); 
+        env->DeleteLocalRef(minja_templates);
+        // Need to check/delete caps maps too if they were created
+        return nullptr;
     }
 
-    putMap(env, chat_templates, "minja", minja);
-    putMap(env, result, "metadata", meta);
-    putMap(env, result, "chatTemplates", chat_templates);
+    // Clean up intermediate maps (only keep 'result')
+    env->DeleteLocalRef(meta);
+    env->DeleteLocalRef(chat_templates);
+    env->DeleteLocalRef(minja_templates);
+    // Need to check/delete caps maps too if they were created and put
 
-    // deprecated
-    putBoolean(env, result, "isChatTemplateSupported", llama->validateModelChatTemplate(false, nullptr));
-
-    return reinterpret_cast<jobject>(result);
-}
-
-JNIEXPORT jobject JNICALL
-Java_com_cactus_LlamaContext_getFormattedChatWithJinja(
-    JNIEnv *env,
-    jobject thiz,
-    jlong context_ptr,
-    jstring messages,
-    jstring chat_template,
-    jstring json_schema,
-    jstring tools,
-    jboolean parallel_tool_calls,
-    jstring tool_choice
-) {
-    UNUSED(thiz);
-    auto llama = context_map[(long) context_ptr];
-
-    const char *messages_chars = env->GetStringUTFChars(messages, nullptr);
-    const char *tmpl_chars = env->GetStringUTFChars(chat_template, nullptr);
-    const char *json_schema_chars = env->GetStringUTFChars(json_schema, nullptr);
-    const char *tools_chars = env->GetStringUTFChars(tools, nullptr);
-    const char *tool_choice_chars = env->GetStringUTFChars(tool_choice, nullptr);
-
-    auto result = createWriteableMap(env);
-    try {
-        auto formatted = llama->getFormattedChatWithJinja(
-            messages_chars,
-            tmpl_chars,
-            json_schema_chars,
-            tools_chars,
-            parallel_tool_calls,
-            tool_choice_chars
-        );
-        putString(env, result, "prompt", formatted.prompt.c_str());
-        putInt(env, result, "chat_format", static_cast<int>(formatted.format));
-        putString(env, result, "grammar", formatted.grammar.c_str());
-        putBoolean(env, result, "grammar_lazy", formatted.grammar_lazy);
-        auto grammar_triggers = createWritableArray(env);
-        for (const auto &trigger : formatted.grammar_triggers) {
-            auto trigger_map = createWriteableMap(env);
-            putInt(env, trigger_map, "type", trigger.type);
-            putString(env, trigger_map, "value", trigger.value.c_str());
-            putInt(env, trigger_map, "token", trigger.token);
-            pushMap(env, grammar_triggers, trigger_map);
-        }
-        putArray(env, result, "grammar_triggers", grammar_triggers);
-        auto preserved_tokens = createWritableArray(env);
-        for (const auto &token : formatted.preserved_tokens) {
-            pushString(env, preserved_tokens, token.c_str());
-        }
-        putArray(env, result, "preserved_tokens", preserved_tokens);
-        auto additional_stops = createWritableArray(env);
-        for (const auto &stop : formatted.additional_stops) {
-            pushString(env, additional_stops, stop.c_str());
-        }
-        putArray(env, result, "additional_stops", additional_stops);
-    } catch (const std::runtime_error &e) {
-        LOGI("[Cactus] Error: %s", e.what());
-        putString(env, result, "_error", e.what());
-    }
-    env->ReleaseStringUTFChars(tools, tools_chars);
-    env->ReleaseStringUTFChars(messages, messages_chars);
-    env->ReleaseStringUTFChars(chat_template, tmpl_chars);
-    env->ReleaseStringUTFChars(json_schema, json_schema_chars);
-    env->ReleaseStringUTFChars(tool_choice, tool_choice_chars);
-    return reinterpret_cast<jobject>(result);
-}
-
-JNIEXPORT jobject JNICALL
-Java_com_cactus_LlamaContext_getFormattedChat(
-    JNIEnv *env,
-    jobject thiz,
-    jlong context_ptr,
-    jstring messages,
-    jstring chat_template
-) {
-    UNUSED(thiz);
-    auto llama = context_map[(long) context_ptr];
-
-    const char *messages_chars = env->GetStringUTFChars(messages, nullptr);
-    const char *tmpl_chars = env->GetStringUTFChars(chat_template, nullptr);
-
-    std::string formatted_chat = llama->getFormattedChat(messages_chars, tmpl_chars);
-
-    env->ReleaseStringUTFChars(messages, messages_chars);
-    env->ReleaseStringUTFChars(chat_template, tmpl_chars);
-
-    return env->NewStringUTF(formatted_chat.c_str());
-}
-
-JNIEXPORT jobject JNICALL
-Java_com_cactus_LlamaContext_loadSession(
-    JNIEnv *env,
-    jobject thiz,
-    jlong context_ptr,
-    jstring path
-) {
-    UNUSED(thiz);
-    auto llama = context_map[(long) context_ptr];
-    const char *path_chars = env->GetStringUTFChars(path, nullptr);
-
-    auto result = createWriteableMap(env);
-    size_t n_token_count_out = 0;
-    llama->embd.resize(llama->params.n_ctx);
-    if (!llama_state_load_file(llama->ctx, path_chars, llama->embd.data(), llama->embd.capacity(), &n_token_count_out)) {
-      env->ReleaseStringUTFChars(path, path_chars);
-
-      putString(env, result, "error", "Failed to load session");
-      return reinterpret_cast<jobject>(result);
-    }
-    llama->embd.resize(n_token_count_out);
-    env->ReleaseStringUTFChars(path, path_chars);
-
-    const std::string text = cactus::tokens_to_str(llama->ctx, llama->embd.cbegin(), llama->embd.cend());
-    putInt(env, result, "tokens_loaded", n_token_count_out);
-    putString(env, result, "prompt", text.c_str());
-    return reinterpret_cast<jobject>(result);
-}
-
-JNIEXPORT jint JNICALL
-Java_com_cactus_LlamaContext_saveSession(
-    JNIEnv *env,
-    jobject thiz,
-    jlong context_ptr,
-    jstring path,
-    jint size
-) {
-    UNUSED(thiz);
-    auto llama = context_map[(long) context_ptr];
-
-    const char *path_chars = env->GetStringUTFChars(path, nullptr);
-
-    std::vector<llama_token> session_tokens = llama->embd;
-    int default_size = session_tokens.size();
-    int save_size = size > 0 && size <= default_size ? size : default_size;
-    if (!llama_state_save_file(llama->ctx, path_chars, session_tokens.data(), save_size)) {
-      env->ReleaseStringUTFChars(path, path_chars);
-      return -1;
-    }
-
-    env->ReleaseStringUTFChars(path, path_chars);
-    return session_tokens.size();
-}
-
-static inline jobject tokenProbsToMap(
-  JNIEnv *env,
-  cactus::cactus_context *llama,
-  std::vector<cactus::completion_token_output> probs
-) {
-    auto result = createWritableArray(env);
-    for (const auto &prob : probs) {
-        auto probsForToken = createWritableArray(env);
-        for (const auto &p : prob.probs) {
-            std::string tokStr = cactus::tokens_to_output_formatted_string(llama->ctx, p.tok);
-            auto probResult = createWriteableMap(env);
-            putString(env, probResult, "tok_str", tokStr.c_str());
-            putDouble(env, probResult, "prob", p.prob);
-            pushMap(env, probsForToken, probResult);
-        }
-        std::string tokStr = cactus::tokens_to_output_formatted_string(llama->ctx, prob.tok);
-        auto tokenResult = createWriteableMap(env);
-        putString(env, tokenResult, "content", tokStr.c_str());
-        putArray(env, tokenResult, "probs", probsForToken);
-        pushMap(env, result, tokenResult);
-    }
     return result;
 }
 
+// --- Chat Formatting ---    
+
 JNIEXPORT jobject JNICALL
-Java_com_cactus_LlamaContext_doCompletion(
+Java_com_cactus_android_LlamaContext_getFormattedChatWithJinja(
     JNIEnv *env,
     jobject thiz,
     jlong context_ptr,
-    jstring prompt,
-    jint chat_format,
-    jstring grammar,
-    jstring json_schema,
+    jstring messages_json_str,
+    jstring chat_template_str,
+    jstring json_schema_str,
+    jstring tools_json_str,
+    jboolean parallel_tool_calls,
+    jstring tool_choice_str
+) {
+    UNUSED(thiz);
+    auto it = context_map.find(context_ptr);
+    if (it == context_map.end()) {
+        jniThrowNativeException(env, "java/lang/IllegalStateException", "Context pointer invalid or freed");
+        return nullptr;
+    }
+    cactus::cactus_context* llama = it->second;
+
+    // Convert inputs
+    std::string messages_json = javaStringToCppString(env, messages_json_str);
+    std::string chat_template = javaStringToCppString(env, chat_template_str);
+    std::string json_schema = javaStringToCppString(env, json_schema_str);
+    std::string tools_json = javaStringToCppString(env, tools_json_str);
+    std::string tool_choice = javaStringToCppString(env, tool_choice_str);
+
+    jobject result = createJavaHashMap(env);
+    if (!result) {
+        jniThrowNativeException(env, "java/lang/RuntimeException", "Failed to create HashMap for formatted chat");
+        return nullptr;
+    }
+
+    try {
+        common_chat_params formatted = llama->getFormattedChatWithJinja(
+            messages_json,
+            chat_template,
+            json_schema,
+            tools_json,
+            parallel_tool_calls,
+            tool_choice
+        );
+
+        // Populate result map
+        putJavaStringInMap(env, result, "prompt", formatted.prompt.c_str());
+        putJavaIntInMap(env, result, "chat_format", static_cast<int>(formatted.format));
+        putJavaStringInMap(env, result, "grammar", formatted.grammar.c_str());
+        putJavaBooleanInMap(env, result, "grammar_lazy", formatted.grammar_lazy);
+
+        // Grammar Triggers (List<Map<String, Object>>)
+        jobject grammar_triggers_list = createJavaArrayList(env, formatted.grammar_triggers.size());
+        if (grammar_triggers_list) {
+        for (const auto &trigger : formatted.grammar_triggers) {
+                jobject trigger_map = createJavaHashMap(env, 3);
+                if (trigger_map) {
+                    putJavaIntInMap(env, trigger_map, "type", trigger.type);
+                    putJavaStringInMap(env, trigger_map, "value", trigger.value.c_str());
+                    putJavaIntInMap(env, trigger_map, "token", trigger.token); // Assuming llama_token fits in jint
+                    addJavaObjectToList(env, grammar_triggers_list, trigger_map);
+                    env->DeleteLocalRef(trigger_map); // Added map to list
+                }
+            }
+            putJavaObjectInMap(env, result, "grammar_triggers", grammar_triggers_list);
+            env->DeleteLocalRef(grammar_triggers_list); // Added list to result map
+        }
+
+        // Preserved Tokens (List<String>)
+        jobject preserved_tokens_list = cppVectorToJavaStringArray(env, formatted.preserved_tokens);
+        if (preserved_tokens_list) {
+            putJavaObjectInMap(env, result, "preserved_tokens", preserved_tokens_list);
+            env->DeleteLocalRef(preserved_tokens_list);
+        }
+
+        // Additional Stops (List<String>)
+        jobject additional_stops_list = cppVectorToJavaStringArray(env, formatted.additional_stops);
+        if (additional_stops_list) {
+             putJavaObjectInMap(env, result, "additional_stops", additional_stops_list);
+             env->DeleteLocalRef(additional_stops_list);
+        }
+
+    } catch (const std::exception &e) {
+        LOGE("[Cactus] Error formatting chat with Jinja: %s", e.what());
+        jniThrowNativeException(env, "java/lang/RuntimeException", e.what());
+        env->DeleteLocalRef(result);
+        return nullptr;
+    }
+
+    return result;
+}
+
+JNIEXPORT jstring JNICALL
+Java_com_cactus_android_LlamaContext_getFormattedChat(
+    JNIEnv *env,
+    jobject thiz,
+    jlong context_ptr,
+    jstring messages_json_str,
+    jstring chat_template_str
+) {
+    UNUSED(thiz);
+     auto it = context_map.find(context_ptr);
+    if (it == context_map.end()) {
+        jniThrowNativeException(env, "java/lang/IllegalStateException", "Context pointer invalid or freed");
+        return nullptr;
+    }
+    cactus::cactus_context* llama = it->second;
+
+    std::string messages_json = javaStringToCppString(env, messages_json_str);
+    std::string chat_template = javaStringToCppString(env, chat_template_str);
+
+    try {
+        std::string formatted_chat = llama->getFormattedChat(messages_json, chat_template);
+        return cppStringToJavaString(env, formatted_chat);
+    } catch (const std::exception &e) {
+        LOGE("[Cactus] Error formatting chat: %s", e.what());
+        jniThrowNativeException(env, "java/lang/RuntimeException", e.what());
+        return nullptr;
+    }
+}
+
+// --- Session Management ---    
+
+JNIEXPORT jobject JNICALL
+Java_com_cactus_android_LlamaContext_loadSession(
+    JNIEnv *env,
+    jobject thiz,
+    jlong context_ptr,
+    jstring path_str
+) {
+    UNUSED(thiz);
+    auto it = context_map.find(context_ptr);
+    if (it == context_map.end()) {
+        jniThrowNativeException(env, "java/lang/IllegalStateException", "Context pointer invalid or freed");
+        return nullptr;
+    }
+    cactus::cactus_context* llama = it->second;
+
+    std::string path = javaStringToCppString(env, path_str);
+
+    jobject result = createJavaHashMap(env, 2);
+    if (!result) {
+        jniThrowNativeException(env, "java/lang/RuntimeException", "Failed to create HashMap for session load result");
+        return nullptr;
+    }
+
+    size_t n_token_count_out = 0;
+    // Ensure embd vector has enough capacity *before* calling load
+    // llama->params.n_ctx should be set during initContext
+    if (llama->params.n_ctx == 0) { // Safety check
+         jniThrowNativeException(env, "java/lang/IllegalStateException", "Context size (n_ctx) is zero, cannot load session");
+         env->DeleteLocalRef(result);
+         return nullptr;
+    }
+    try {
+        // Resize based on context size, actual loaded tokens might be less.
+    llama->embd.resize(llama->params.n_ctx);
+        // llama_state_load_file expects a non-const pointer to the data.
+        if (!llama_state_load_file(llama->ctx, path.c_str(), llama->embd.data(), llama->embd.capacity(), &n_token_count_out)) {
+            jniThrowNativeException(env, "java/io/IOException", "Failed to load session file");
+            env->DeleteLocalRef(result);
+            return nullptr;
+        }
+        // Resize down to the actual number of tokens loaded.
+    llama->embd.resize(n_token_count_out);
+
+        // Convert loaded tokens back to string for the 'prompt'
+    const std::string text = cactus::tokens_to_str(llama->ctx, llama->embd.cbegin(), llama->embd.cend());
+
+        putJavaLongInMap(env, result, "tokens_loaded", (jlong)n_token_count_out);
+        putJavaStringInMap(env, result, "prompt", text.c_str());
+
+    } catch (const std::exception& e) {
+        LOGE("Exception during loadSession: %s", e.what());
+        jniThrowNativeException(env, "java/lang/RuntimeException", e.what());
+        env->DeleteLocalRef(result);
+        return nullptr;
+    }
+
+    return result;
+}
+
+JNIEXPORT jint JNICALL
+Java_com_cactus_android_LlamaContext_saveSession(
+    JNIEnv *env,
+    jobject thiz,
+    jlong context_ptr,
+    jstring path_str,
+    jint size_to_save // Max tokens to save, 0 or negative for all
+) {
+    UNUSED(thiz);
+    auto it = context_map.find(context_ptr);
+    if (it == context_map.end()) {
+        jniThrowNativeException(env, "java/lang/IllegalStateException", "Context pointer invalid or freed");
+        return -1;
+    }
+    cactus::cactus_context* llama = it->second;
+
+    std::string path = javaStringToCppString(env, path_str);
+
+    try {
+        // llama_state_save_file expects a non-const pointer
+        std::vector<llama_token> session_tokens = llama->embd; // Make a copy if needed? Docs are unclear if it modifies.
+        int current_size = session_tokens.size();
+        int save_size = (size_to_save > 0 && size_to_save <= current_size) ? size_to_save : current_size;
+
+        if (save_size == 0) { // Don't try to save if no tokens
+            LOGW("Save session called with 0 tokens to save.");
+            return 0;
+        }
+
+        if (!llama_state_save_file(llama->ctx, path.c_str(), session_tokens.data(), save_size)) {
+            jniThrowNativeException(env, "java/io/IOException", "Failed to save session file");
+      return -1;
+    }
+        return save_size; // Return number of tokens actually saved
+    } catch (const std::exception& e) {
+        LOGE("Exception during saveSession: %s", e.what());
+        jniThrowNativeException(env, "java/lang/RuntimeException", e.what());
+        return -1;
+    }
+}
+
+
+// --- Completion ---    
+
+// Helper to convert C++ token probs to Java List<Map<String, Object>>
+jobject convertTokenProbsToJavaList(JNIEnv *env, cactus::cactus_context *llama, const std::vector<cactus::completion_token_output>& probs) {
+    jobject resultList = createJavaArrayList(env, probs.size());
+    if (!resultList) return nullptr;
+
+    for (const auto &prob_output : probs) {
+        jobject tokenResultMap = createJavaHashMap(env, 2);
+        if (!tokenResultMap) continue; // Skip if map creation fails
+
+        std::string tokenStr = cactus::tokens_to_output_formatted_string(llama->ctx, prob_output.tok);
+        putJavaStringInMap(env, tokenResultMap, "content", tokenStr.c_str());
+
+        jobject probsForTokenList = createJavaArrayList(env, prob_output.probs.size());
+        if (probsForTokenList) {
+            for (const auto &p : prob_output.probs) {
+                jobject probResultMap = createJavaHashMap(env, 2);
+                if (probResultMap) {
+            std::string tokStr = cactus::tokens_to_output_formatted_string(llama->ctx, p.tok);
+                    putJavaStringInMap(env, probResultMap, "tok_str", tokStr.c_str());
+                    putJavaDoubleInMap(env, probResultMap, "prob", p.prob);
+                    addJavaObjectToList(env, probsForTokenList, probResultMap);
+                    env->DeleteLocalRef(probResultMap);
+                }
+            }
+            putJavaObjectInMap(env, tokenResultMap, "probs", probsForTokenList);
+            env->DeleteLocalRef(probsForTokenList);
+        }
+        addJavaObjectToList(env, resultList, tokenResultMap);
+        env->DeleteLocalRef(tokenResultMap);
+    }
+    return resultList;
+}
+
+
+JNIEXPORT jobject JNICALL
+Java_com_cactus_android_LlamaContext_doCompletionNative(
+    JNIEnv *env,
+    jclass clazz,
+    jlong context_ptr,
+    jstring prompt_str,
+    jint chat_format, // Assuming passed as int matching common_chat_format enum
+    jstring grammar_str, 
+    // jstring json_schema_str, // Removed, handle schema->grammar conversion caller-side or inside Jinja formatting
     jboolean grammar_lazy,
-    jobject grammar_triggers,
-    jobject preserved_tokens,
+    jobject grammar_triggers_list, // Java List<Map<String, Object>>
+    jobject preserved_tokens_list, // Java List<String> (or maybe Set<Integer> if tokens are passed?)
     jfloat temperature,
-    jint n_threads,
+    jint n_threads, // Overrides the init setting for this run
     jint n_predict,
     jint n_probs,
     jint penalty_last_n,
@@ -667,36 +742,50 @@ Java_com_cactus_LlamaContext_doCompletion(
     jfloat xtc_probability,
     jfloat typical_p,
     jint seed,
-    jobjectArray stop,
+    jobjectArray stop_array, // String[]
     jboolean ignore_eos,
-    jobjectArray logit_bias,
+    jobject logit_bias_map, // Map<Integer, Float> (Token ID -> Bias)
     jfloat   dry_multiplier,
     jfloat   dry_base,
     jint dry_allowed_length,
     jint dry_penalty_last_n,
     jfloat top_n_sigma,
-    jobjectArray dry_sequence_breakers,
-    jobject partial_completion_callback
+    jobjectArray dry_sequence_breakers_array, // String[]
+    jobject partial_completion_callback // Kotlin interface object
 ) {
-    UNUSED(thiz);
-    auto llama = context_map[(long) context_ptr];
+    UNUSED(clazz);
+    auto it = context_map.find(context_ptr);
+    if (it == context_map.end()) {
+        jniThrowNativeException(env, "java/lang/IllegalStateException", "Context pointer invalid or freed");
+        return nullptr;
+    }
+    cactus::cactus_context* llama = it->second;
 
-    llama->rewind();
+    if (llama->is_predicting) {
+        jniThrowNativeException(env, "java/lang/IllegalStateException", "Completion already in progress");
+        return nullptr;
+    }
+    llama->is_predicting = true; // Set flag
+    llama->is_interrupted = false; // Reset interruption flag
 
-    //llama_reset_timings(llama->ctx);
+    // --- 1. Setup Parameters --- 
+    try {
+        llama->rewind(); // Reset generation state
+        // llama_reset_timings(llama->ctx); // Reset timings if desired
 
-    auto prompt_chars = env->GetStringUTFChars(prompt, nullptr);
-    llama->params.prompt = prompt_chars;
+        // Convert basic inputs
+        llama->params.prompt = javaStringToCppString(env, prompt_str);
     llama->params.sampling.seed = (seed == -1) ? time(NULL) : seed;
 
+        // Thread override
     int max_threads = std::thread::hardware_concurrency();
-    // Use 2 threads by default on 4-core devices, 4 threads on more cores
-    int default_n_threads = max_threads == 4 ? 2 : min(4, max_threads);
+        int default_n_threads = max_threads == 4 ? 2 : std::min(4, max_threads);
     llama->params.cpuparams.n_threads = n_threads > 0 ? n_threads : default_n_threads;
 
     llama->params.n_predict = n_predict;
     llama->params.sampling.ignore_eos = ignore_eos;
 
+        // Sampling params
     auto & sparams = llama->params.sampling;
     sparams.temp = temperature;
     sparams.penalty_last_n = penalty_last_n;
@@ -719,392 +808,530 @@ Java_com_cactus_LlamaContext_doCompletion(
     sparams.dry_penalty_last_n = dry_penalty_last_n;
     sparams.top_n_sigma = top_n_sigma;
 
-    // grammar
-    auto grammar_chars = env->GetStringUTFChars(grammar, nullptr);
-    if (grammar_chars && grammar_chars[0] != '\0') {
-      sparams.grammar = grammar_chars;
+        // Grammar
+        std::string grammar_cpp = javaStringToCppString(env, grammar_str);
+        sparams.grammar.clear(); // Clear previous grammar
+        if (!grammar_cpp.empty()) {
+            sparams.grammar = grammar_cpp;
     }
     sparams.grammar_lazy = grammar_lazy;
 
-    if (preserved_tokens != nullptr) {
-        int preserved_tokens_size = readablearray::size(env, preserved_tokens);
-        for (int i = 0; i < preserved_tokens_size; i++) {
-            jstring preserved_token = readablearray::getString(env, preserved_tokens, i);
-            auto ids = common_tokenize(llama->ctx, env->GetStringUTFChars(preserved_token, nullptr), /* add_special= */ false, /* parse_special= */ true);
-            if (ids.size() == 1) {
-                sparams.preserved_tokens.insert(ids[0]);
-            } else {
-                LOGI("[Cactus] Not preserved because more than 1 token (wrong chat template override?): %s", env->GetStringUTFChars(preserved_token, nullptr));
-            }
+        // Preserved Tokens (Assuming List<String> for now)
+        sparams.preserved_tokens.clear();
+        if (preserved_tokens_list != nullptr) {
+             // TODO: Iterate Java List<String>, tokenize each, add single tokens to sparams.preserved_tokens (std::set)
+             // std::vector<std::string> preserved_strs = javaStringListToCppVector(env, preserved_tokens_list);
+             // for (const auto& token_str : preserved_strs) {
+             //     auto ids = common_tokenize(llama->ctx, token_str, false, true);
+             //     if (ids.size() == 1) sparams.preserved_tokens.insert(ids[0]);
+             //     else LOGW("Preserved token '%s' maps to %zu tokens, skipping", token_str.c_str(), ids.size());
+             // }
         }
-    }
 
-    if (grammar_triggers != nullptr) {
-        int grammar_triggers_size = readablearray::size(env, grammar_triggers);
-        for (int i = 0; i < grammar_triggers_size; i++) {
-            auto trigger_map = readablearray::getMap(env, grammar_triggers, i);
-            const auto type = static_cast<common_grammar_trigger_type>(readablemap::getInt(env, trigger_map, "type", 0));
-            jstring trigger_word = readablemap::getString(env, trigger_map, "value", nullptr);
-            auto word = env->GetStringUTFChars(trigger_word, nullptr);
-
-            if (type == COMMON_GRAMMAR_TRIGGER_TYPE_WORD) {
-                auto ids = common_tokenize(llama->ctx, word, /* add_special= */ false, /* parse_special= */ true);
-                if (ids.size() == 1) {
-                    auto token = ids[0];
-                    if (std::find(sparams.preserved_tokens.begin(), sparams.preserved_tokens.end(), (llama_token) token) == sparams.preserved_tokens.end()) {
-                        throw std::runtime_error("Grammar trigger word should be marked as preserved token");
-                    }
-                    common_grammar_trigger trigger;
-                    trigger.type = COMMON_GRAMMAR_TRIGGER_TYPE_TOKEN;
-                    trigger.value = word;
-                    trigger.token = token;
-                    sparams.grammar_triggers.push_back(std::move(trigger));
-                } else {
-                    sparams.grammar_triggers.push_back({COMMON_GRAMMAR_TRIGGER_TYPE_WORD, word});
-                }
-            } else {
-                common_grammar_trigger trigger;
-                trigger.type = type;
-                trigger.value = word;
-                if (type == COMMON_GRAMMAR_TRIGGER_TYPE_TOKEN) {
-                    const auto token = (llama_token) readablemap::getInt(env, trigger_map, "token", 0);
-                    trigger.token = token;
-                }
-                sparams.grammar_triggers.push_back(std::move(trigger));
-            }
+        // Grammar Triggers (Assuming List<Map<String, Object>>)
+        sparams.grammar_triggers.clear();
+        if (grammar_triggers_list != nullptr) {
+            // TODO: Iterate Java List<Map>, extract type/value/token, handle tokenization for WORD type, add to sparams.grammar_triggers
+            // Check if WORD triggers are in preserved_tokens set.
         }
-    }
 
-    auto json_schema_chars = env->GetStringUTFChars(json_schema, nullptr);
-    if ((!grammar_chars || grammar_chars[0] == '\0') && json_schema_chars && json_schema_chars[0] != '\0') {
-        auto schema = json::parse(json_schema_chars);
-        sparams.grammar = json_schema_to_grammar(schema);
-    }
-    env->ReleaseStringUTFChars(json_schema, json_schema_chars);
-
-
+        // Logit Bias (Assuming Map<Integer, Float>)
     const llama_model * model = llama_get_model(llama->ctx);
     const llama_vocab * vocab = llama_model_get_vocab(model);
-
-    sparams.logit_bias.clear();
-    if (ignore_eos) {
-        sparams.logit_bias[llama_vocab_eos(vocab)].bias = -INFINITY;
-    }
-
-    // dry break seq
-
-    jint size = env->GetArrayLength(dry_sequence_breakers);
-    std::vector<std::string> dry_sequence_breakers_vector;
-
-    for (jint i = 0; i < size; i++) {
-        jstring javaString = (jstring)env->GetObjectArrayElement(dry_sequence_breakers, i);
-        const char *nativeString = env->GetStringUTFChars(javaString, 0);
-        dry_sequence_breakers_vector.push_back(std::string(nativeString));
-        env->ReleaseStringUTFChars(javaString, nativeString);
-        env->DeleteLocalRef(javaString);
-    }
-
-    sparams.dry_sequence_breakers = dry_sequence_breakers_vector;
-
-    // logit bias
-    const int n_vocab = llama_vocab_n_tokens(vocab);
-    jsize logit_bias_len = env->GetArrayLength(logit_bias);
-
-    for (jsize i = 0; i < logit_bias_len; i++) {
-        jdoubleArray el = (jdoubleArray) env->GetObjectArrayElement(logit_bias, i);
-        if (el && env->GetArrayLength(el) == 2) {
-            jdouble* doubleArray = env->GetDoubleArrayElements(el, 0);
-
-            llama_token tok = static_cast<llama_token>(doubleArray[0]);
-            if (tok >= 0 && tok < n_vocab) {
-                if (doubleArray[1] != 0) {  // If the second element is not false (0)
-                    sparams.logit_bias[tok].bias = doubleArray[1];
-                } else {
-                    sparams.logit_bias[tok].bias = -INFINITY;
+        sparams.logit_bias.clear(); // Clear the vector first
+        if (logit_bias_map != nullptr) {
+            // Convert Java Map to C++ map
+            std::map<llama_token, float> bias_map_cpp = javaMapTokenFloatToCppMap(env, logit_bias_map);
+            // Iterate C++ map and add to the vector of structs
+            for (const auto& pair : bias_map_cpp) {
+                sparams.logit_bias.push_back({pair.first, pair.second});
+            }
+        }
+        // Apply ignore_eos bias *after* loading map from Java
+        if (ignore_eos) {
+            // Check if EOS token already has a bias, update it if so, otherwise add it.
+            bool eos_found = false;
+            llama_token eos_tok = llama_vocab_eos(vocab);
+            for (auto& bias_entry : sparams.logit_bias) {
+                if (bias_entry.token == eos_tok) {
+                    bias_entry.bias = -INFINITY;
+                    eos_found = true;
+                    break;
                 }
             }
-
-            env->ReleaseDoubleArrayElements(el, doubleArray, 0);
+            if (!eos_found) {
+                sparams.logit_bias.push_back({eos_tok, -INFINITY});
+            }
         }
-        env->DeleteLocalRef(el);
+
+        // Stop words
+        llama->params.antiprompt = javaStringArrayToCppVector(env, stop_array);
+
+        // Dry sequence breakers
+        sparams.dry_sequence_breakers = javaStringArrayToCppVector(env, dry_sequence_breakers_array);
+
+    } catch (const std::exception& e) {
+         LOGE("Exception during parameter setup for doCompletion: %s", e.what());
+         llama->is_predicting = false;
+         jniThrowNativeException(env, "java/lang/IllegalArgumentException", e.what());
+         return nullptr;
     }
 
-    llama->params.antiprompt.clear();
-    int stop_len = env->GetArrayLength(stop);
-    for (int i = 0; i < stop_len; i++) {
-        jstring stop_str = (jstring) env->GetObjectArrayElement(stop, i);
-        const char *stop_chars = env->GetStringUTFChars(stop_str, nullptr);
-        llama->params.antiprompt.push_back(stop_chars);
-        env->ReleaseStringUTFChars(stop_str, stop_chars);
-    }
-
+    // --- 2. Initialize Sampling & Load Prompt --- 
     if (!llama->initSampling()) {
-        auto result = createWriteableMap(env);
-        putString(env, result, "error", "Failed to initialize sampling");
-        return reinterpret_cast<jobject>(result);
+        LOGE("Failed to initialize sampling");
+        llama->is_predicting = false;
+        jniThrowNativeException(env, "java/lang/RuntimeException", "Failed to initialize sampling");
+        return nullptr;
     }
+    
+    try {
     llama->beginCompletion();
     llama->loadPrompt();
+    } catch (const std::exception& e) {
+         LOGE("Exception during prompt loading: %s", e.what());
+         llama->is_predicting = false;
+         jniThrowNativeException(env, "java/lang/RuntimeException", e.what());
+         return nullptr;
+    }
 
     size_t sent_count = 0;
     size_t sent_token_probs_index = 0;
 
+    // --- 3. Setup Partial Completion Callback --- 
+    NativeCallbackContext* completion_callback_ctx = nullptr;
+    jmethodID partialCompletionMethodId = nullptr; // Store locally for the loop
+    if (partial_completion_callback != nullptr) {
+        // TODO: Refactor callback context handling.
+        // This assumes a global or per-context callback setup done elsewhere (e.g., initContext)
+        // We need the jvm, global ref to the callback object, and the method ID.
+        // completion_callback_ctx = g_callback_context; // Example: retrieve context
+        // partialCompletionMethodId = completion_callback_ctx->partialCompletionMethodId; // Example: retrieve ID
+        // if (!completion_callback_ctx || !partialCompletionMethodId) {
+        //     LOGE("Partial completion callback setup failed");
+        //     // Decide whether to continue without callbacks or throw
+        // }
+    }
+
+    // --- 4. Generation Loop --- 
     while (llama->has_next_token && !llama->is_interrupted) {
-        const cactus::completion_token_output token_with_probs = llama->doCompletion();
+        cactus::completion_token_output token_with_probs;
+        try {
+             token_with_probs = llama->doCompletion();
+        } catch (const std::exception& e) {
+            LOGE("Exception during llama->doCompletion(): %s", e.what());
+            // Continue? Break? Throw? For now, break the loop.
+            llama->is_interrupted = true; // Mark as interrupted due to error
+            break;
+        }
+        
         if (token_with_probs.tok == -1 || llama->incomplete) {
             continue;
         }
         const std::string token_text = common_token_to_piece(llama->ctx, token_with_probs.tok);
 
+        // Stop string handling (mostly same as before)
         size_t pos = std::min(sent_count, llama->generated_text.size());
-
         const std::string str_test = llama->generated_text.substr(pos);
         bool is_stop_full = false;
-        size_t stop_pos =
-            llama->findStoppingStrings(str_test, token_text.size(), cactus::STOP_FULL);
+        size_t stop_pos = llama->findStoppingStrings(str_test, token_text.size(), cactus::STOP_FULL);
+        
         if (stop_pos != std::string::npos) {
             is_stop_full = true;
-            llama->generated_text.erase(
-                llama->generated_text.begin() + pos + stop_pos,
-                llama->generated_text.end());
-            pos = std::min(sent_count, llama->generated_text.size());
+            llama->generated_text.erase(llama->generated_text.begin() + pos + stop_pos, llama->generated_text.end());
+            pos = std::min(sent_count, llama->generated_text.size()); // Recalculate pos
         } else {
             is_stop_full = false;
-            stop_pos = llama->findStoppingStrings(str_test, token_text.size(),
-                cactus::STOP_PARTIAL);
+            stop_pos = llama->findStoppingStrings(str_test, token_text.size(), cactus::STOP_PARTIAL);
         }
 
-        if (
-            stop_pos == std::string::npos ||
-            // Send rest of the text if we are at the end of the generation
-            (!llama->has_next_token && !is_stop_full && stop_pos > 0)
-        ) {
+        if (stop_pos == std::string::npos || (!llama->has_next_token && !is_stop_full && stop_pos > 0)) {
             const std::string to_send = llama->generated_text.substr(pos, std::string::npos);
-
+            if (!to_send.empty()) {
             sent_count += to_send.size();
 
-            std::vector<cactus::completion_token_output> probs_output = {};
+                // --- Send Partial Completion Callback --- 
+                if (completion_callback_ctx && partialCompletionMethodId) {
+                    JNIEnv* callbackEnv = nullptr;
+                    bool attached = false;
+                    int getEnvStat = completion_callback_ctx->jvm->GetEnv((void**)&callbackEnv, JNI_VERSION_1_6);
+                    if (getEnvStat == JNI_EDETACHED) {
+                        if (completion_callback_ctx->jvm->AttachCurrentThread(&callbackEnv, nullptr) == 0) {
+                            attached = true;
+                        } else {
+                            LOGE("Failed to attach thread for partial completion callback");
+                            callbackEnv = nullptr;
+                        }
+                    } else if (getEnvStat != JNI_OK) {
+                         LOGE("Failed to get JNI env for partial completion callback");
+                         callbackEnv = nullptr;
+                    }
 
-            auto tokenResult = createWriteableMap(env);
-            putString(env, tokenResult, "token", to_send.c_str());
+                    if (callbackEnv) {
+                        jobject partialResultMap = createJavaHashMap(callbackEnv, 2);
+                        if (partialResultMap) {
+                            putJavaStringInMap(callbackEnv, partialResultMap, "token", to_send.c_str());
 
+                            // Handle token probabilities if requested
             if (llama->params.sampling.n_probs > 0) {
+                                // Calculate probs for the *sent* tokens
               const std::vector<llama_token> to_send_toks = common_tokenize(llama->ctx, to_send, false);
-              size_t probs_pos = std::min(sent_token_probs_index, llama->generated_token_probs.size());
-              size_t probs_stop_pos = std::min(sent_token_probs_index + to_send_toks.size(), llama->generated_token_probs.size());
-              if (probs_pos < probs_stop_pos) {
-                  probs_output = std::vector<cactus::completion_token_output>(llama->generated_token_probs.begin() + probs_pos, llama->generated_token_probs.begin() + probs_stop_pos);
+                                size_t probs_start_pos = std::min(sent_token_probs_index, llama->generated_token_probs.size());
+                                size_t probs_end_pos = std::min(sent_token_probs_index + to_send_toks.size(), llama->generated_token_probs.size());
+                                std::vector<cactus::completion_token_output> probs_output;
+                                if (probs_start_pos < probs_end_pos) {
+                                    probs_output.assign(llama->generated_token_probs.begin() + probs_start_pos, llama->generated_token_probs.begin() + probs_end_pos);
               }
-              sent_token_probs_index = probs_stop_pos;
+                                sent_token_probs_index = probs_end_pos;
 
-              putArray(env, tokenResult, "completion_probabilities", tokenProbsToMap(env, llama, probs_output));
-            }
-
-            jclass cb_class = env->GetObjectClass(partial_completion_callback);
-            jmethodID onPartialCompletion = env->GetMethodID(cb_class, "onPartialCompletion", "(Lcom/facebook/react/bridge/WritableMap;)V");
-            env->CallVoidMethod(partial_completion_callback, onPartialCompletion, tokenResult);
+                                jobject probsList = convertTokenProbsToJavaList(callbackEnv, llama, probs_output);
+                                if (probsList) {
+                                    putJavaObjectInMap(callbackEnv, partialResultMap, "completion_probabilities", probsList);
+                                    callbackEnv->DeleteLocalRef(probsList);
+                                }
+                            }
+                            // Call the Kotlin callback method
+                            callbackEnv->CallVoidMethod(completion_callback_ctx->callbackObjectRef, partialCompletionMethodId, partialResultMap);
+                            checkAndClearException(callbackEnv, "partialCompletion callback");
+                            callbackEnv->DeleteLocalRef(partialResultMap);
         }
+                        if (attached) {
+                            completion_callback_ctx->jvm->DetachCurrentThread();
+                        }
+                    }
+                } // end if callback context valid
+            } // end if !to_send.empty()
+        } // end if send partial
+    } // end while loop
+
+    // --- 5. Finalize and Prepare Result --- 
+    llama_perf_context_print(llama->ctx); // Print perf to logcat
+    llama->is_predicting = false; // Reset flag
+
+    jobject result = createJavaHashMap(env, 10); // Create final result map
+    if (!result) {
+        jniThrowNativeException(env, "java/lang/RuntimeException", "Failed to create final result HashMap");
+        return nullptr;
     }
 
-    env->ReleaseStringUTFChars(grammar, grammar_chars);
-    env->ReleaseStringUTFChars(prompt, prompt_chars);
-    llama_perf_context_print(llama->ctx);
-    llama->is_predicting = false;
+    try {
+        // Base result text
+        putJavaStringInMap(env, result, "text", llama->generated_text.c_str());
 
-    auto toolCalls = createWritableArray(env);
+        // Parse tool calls if generation wasn't interrupted
+        jobject toolCallsList = createJavaArrayList(env, 0);
+        if (!llama->is_interrupted && toolCallsList) {
     std::string reasoningContent = "";
-    std::string content;
-    auto toolCallsSize = 0;
-    if (!llama->is_interrupted) {
+            std::string content = "";
         try {
             common_chat_msg message = common_chat_parse(llama->generated_text, static_cast<common_chat_format>(chat_format));
             if (!message.reasoning_content.empty()) {
                 reasoningContent = message.reasoning_content;
+                    putJavaStringInMap(env, result, "reasoning_content", reasoningContent.c_str());
             }
             content = message.content;
+                 putJavaStringInMap(env, result, "content", content.c_str()); // Always put content, even if empty?
+
             for (const auto &tc : message.tool_calls) {
-                auto toolCall = createWriteableMap(env);
-                putString(env, toolCall, "type", "function");
-                auto functionMap = createWriteableMap(env);
-                putString(env, functionMap, "name", tc.name.c_str());
-                putString(env, functionMap, "arguments", tc.arguments.c_str());
-                putMap(env, toolCall, "function", functionMap);
+                    jobject toolCallMap = createJavaHashMap(env, 3);
+                    if (toolCallMap) {
+                        putJavaStringInMap(env, toolCallMap, "type", "function"); // Assuming always function
+                        jobject functionMap = createJavaHashMap(env, 2);
+                        if (functionMap) {
+                            putJavaStringInMap(env, functionMap, "name", tc.name.c_str());
+                            putJavaStringInMap(env, functionMap, "arguments", tc.arguments.c_str());
+                            putJavaObjectInMap(env, toolCallMap, "function", functionMap);
+                            env->DeleteLocalRef(functionMap);
+                        }
                 if (!tc.id.empty()) {
-                    putString(env, toolCall, "id", tc.id.c_str());
+                            putJavaStringInMap(env, toolCallMap, "id", tc.id.c_str());
                 }
-                pushMap(env, toolCalls, toolCall);
-                toolCallsSize++;
+                        addJavaObjectToList(env, toolCallsList, toolCallMap);
+                        env->DeleteLocalRef(toolCallMap);
+                    }
+                }
+                if (env->CallIntMethod(toolCallsList, env->GetMethodID(env->GetObjectClass(toolCallsList), "size", "()I")) > 0) {
+                     putJavaObjectInMap(env, result, "tool_calls", toolCallsList);
             }
+
         } catch (const std::exception &e) {
-            // LOGI("Error parsing tool calls: %s", e.what());
+                LOGW("Error parsing tool calls from generated text: %s", e.what());
+                // Don't fail the whole completion, just skip tool calls
+            }
+            env->DeleteLocalRef(toolCallsList); // Delete if empty or after putting in map
         }
+        else if (toolCallsList) { // Clean up if interrupted
+             env->DeleteLocalRef(toolCallsList);
     }
 
-    auto result = createWriteableMap(env);
-    putString(env, result, "text", llama->generated_text.c_str());
-    if (!content.empty()) {
-        putString(env, result, "content", content.c_str());
-    }
-    if (!reasoningContent.empty()) {
-        putString(env, result, "reasoning_content", reasoningContent.c_str());
-    }
-    if (toolCallsSize > 0) {
-        putArray(env, result, "tool_calls", toolCalls);
-    }
-    putArray(env, result, "completion_probabilities", tokenProbsToMap(env, llama, llama->generated_token_probs));
-    putInt(env, result, "tokens_predicted", llama->num_tokens_predicted);
-    putInt(env, result, "tokens_evaluated", llama->num_prompt_tokens);
-    putInt(env, result, "truncated", llama->truncated);
-    putInt(env, result, "stopped_eos", llama->stopped_eos);
-    putInt(env, result, "stopped_word", llama->stopped_word);
-    putInt(env, result, "stopped_limit", llama->stopped_limit);
-    putString(env, result, "stopping_word", llama->stopping_word.c_str());
-    putInt(env, result, "tokens_cached", llama->n_past);
+        // Completion Probabilities (overall)
+        jobject fullProbsList = convertTokenProbsToJavaList(env, llama, llama->generated_token_probs);
+        if (fullProbsList) {
+             putJavaObjectInMap(env, result, "completion_probabilities", fullProbsList);
+             env->DeleteLocalRef(fullProbsList);
+        }
 
+        // Completion Stats
+        putJavaIntInMap(env, result, "tokens_predicted", llama->num_tokens_predicted);
+        putJavaIntInMap(env, result, "tokens_evaluated", llama->num_prompt_tokens);
+        putJavaBooleanInMap(env, result, "truncated", llama->truncated);
+        putJavaBooleanInMap(env, result, "stopped_eos", llama->stopped_eos);
+        putJavaBooleanInMap(env, result, "stopped_word", llama->stopped_word);
+        putJavaBooleanInMap(env, result, "stopped_limit", llama->stopped_limit);
+        putJavaStringInMap(env, result, "stopping_word", llama->stopping_word.c_str());
+        putJavaIntInMap(env, result, "tokens_cached", llama->n_past); // n_past is size_t
+
+        // Timings
     const auto timings_token = llama_perf_context(llama -> ctx);
+        jobject timingsResultMap = createJavaHashMap(env, 8);
+        if (timingsResultMap) {
+            putJavaIntInMap(env, timingsResultMap, "prompt_n", timings_token.n_p_eval);
+            putJavaLongInMap(env, timingsResultMap, "prompt_ms", timings_token.t_p_eval_ms);
+            if (timings_token.n_p_eval > 0) {
+                putJavaDoubleInMap(env, timingsResultMap, "prompt_per_token_ms", (double)timings_token.t_p_eval_ms / timings_token.n_p_eval);
+                putJavaDoubleInMap(env, timingsResultMap, "prompt_per_second", 1e3 / ((double)timings_token.t_p_eval_ms / timings_token.n_p_eval));
+            } else {
+                 putJavaDoubleInMap(env, timingsResultMap, "prompt_per_token_ms", 0.0);
+                 putJavaDoubleInMap(env, timingsResultMap, "prompt_per_second", 0.0);
+            }
+            putJavaIntInMap(env, timingsResultMap, "predicted_n", timings_token.n_eval);
+            putJavaLongInMap(env, timingsResultMap, "predicted_ms", timings_token.t_eval_ms);
+             if (timings_token.n_eval > 0) {
+                putJavaDoubleInMap(env, timingsResultMap, "predicted_per_token_ms", (double)timings_token.t_eval_ms / timings_token.n_eval);
+                putJavaDoubleInMap(env, timingsResultMap, "predicted_per_second", 1e3 / ((double)timings_token.t_eval_ms / timings_token.n_eval));
+            } else {
+                 putJavaDoubleInMap(env, timingsResultMap, "predicted_per_token_ms", 0.0);
+                 putJavaDoubleInMap(env, timingsResultMap, "predicted_per_second", 0.0);
+            }
+            putJavaObjectInMap(env, result, "timings", timingsResultMap);
+            env->DeleteLocalRef(timingsResultMap);
+        }
 
-    auto timingsResult = createWriteableMap(env);
-    putInt(env, timingsResult, "prompt_n", timings_token.n_p_eval);
-    putInt(env, timingsResult, "prompt_ms", timings_token.t_p_eval_ms);
-    putInt(env, timingsResult, "prompt_per_token_ms", timings_token.t_p_eval_ms / timings_token.n_p_eval);
-    putDouble(env, timingsResult, "prompt_per_second", 1e3 / timings_token.t_p_eval_ms * timings_token.n_p_eval);
-    putInt(env, timingsResult, "predicted_n", timings_token.n_eval);
-    putInt(env, timingsResult, "predicted_ms", timings_token.t_eval_ms);
-    putInt(env, timingsResult, "predicted_per_token_ms", timings_token.t_eval_ms / timings_token.n_eval);
-    putDouble(env, timingsResult, "predicted_per_second", 1e3 / timings_token.t_eval_ms * timings_token.n_eval);
-
-    putMap(env, result, "timings", timingsResult);
-
-    return reinterpret_cast<jobject>(result);
-}
-
-JNIEXPORT void JNICALL
-Java_com_cactus_LlamaContext_stopCompletion(
-        JNIEnv *env, jobject thiz, jlong context_ptr) {
-    UNUSED(env);
-    UNUSED(thiz);
-    auto llama = context_map[(long) context_ptr];
-    llama->is_interrupted = true;
-}
-
-JNIEXPORT jboolean JNICALL
-Java_com_cactus_LlamaContext_isPredicting(
-        JNIEnv *env, jobject thiz, jlong context_ptr) {
-    UNUSED(env);
-    UNUSED(thiz);
-    auto llama = context_map[(long) context_ptr];
-    return llama->is_predicting;
-}
-
-JNIEXPORT jobject JNICALL
-Java_com_cactus_LlamaContext_tokenize(
-        JNIEnv *env, jobject thiz, jlong context_ptr, jstring text) {
-    UNUSED(thiz);
-    auto llama = context_map[(long) context_ptr];
-
-    const char *text_chars = env->GetStringUTFChars(text, nullptr);
-
-    const std::vector<llama_token> toks = common_tokenize(
-        llama->ctx,
-        text_chars,
-        false
-    );
-
-    jobject result = createWritableArray(env);
-    for (const auto &tok : toks) {
-      pushInt(env, result, tok);
+    } catch (const std::exception& e) {
+         LOGE("Exception during final result processing: %s", e.what());
+         jniThrowNativeException(env, "java/lang/RuntimeException", e.what());
+         env->DeleteLocalRef(result);
+         return nullptr;
     }
 
-    env->ReleaseStringUTFChars(text, text_chars);
     return result;
 }
 
-JNIEXPORT jstring JNICALL
-Java_com_cactus_LlamaContext_detokenize(
-        JNIEnv *env, jobject thiz, jlong context_ptr, jintArray tokens) {
-    UNUSED(thiz);
-    auto llama = context_map[(long) context_ptr];
 
-    jsize tokens_len = env->GetArrayLength(tokens);
-    jint *tokens_ptr = env->GetIntArrayElements(tokens, 0);
-    std::vector<llama_token> toks;
-    for (int i = 0; i < tokens_len; i++) {
-        toks.push_back(tokens_ptr[i]);
+JNIEXPORT void JNICALL
+Java_com_cactus_android_LlamaContext_stopCompletion(
+    JNIEnv *env,
+    jobject thiz,
+    jlong context_ptr
+) {
+    UNUSED(env); UNUSED(thiz);
+    auto it = context_map.find(context_ptr);
+    if (it != context_map.end()) {
+        it->second->is_interrupted = true;
+    } else {
+         LOGW("stopCompletion called on invalid context pointer: %ld", context_ptr);
     }
-
-    auto text = cactus::tokens_to_str(llama->ctx, toks.cbegin(), toks.cend());
-
-    env->ReleaseIntArrayElements(tokens, tokens_ptr, 0);
-
-    return env->NewStringUTF(text.c_str());
 }
 
 JNIEXPORT jboolean JNICALL
-Java_com_cactus_LlamaContext_isEmbeddingEnabled(
-        JNIEnv *env, jobject thiz, jlong context_ptr) {
-    UNUSED(env);
-    UNUSED(thiz);
-    auto llama = context_map[(long) context_ptr];
-    return llama->params.embedding;
+Java_com_cactus_android_LlamaContext_isPredicting(
+    JNIEnv *env,
+    jobject thiz,
+    jlong context_ptr
+) {
+    UNUSED(env); UNUSED(thiz);
+    auto it = context_map.find(context_ptr);
+    if (it != context_map.end()) {
+        return it->second->is_predicting;
+}
+    // Should we throw if context invalid?
+    LOGW("isPredicting called on invalid context pointer: %ld", context_ptr);
+    return false;
 }
 
-JNIEXPORT jobject JNICALL
-Java_com_cactus_LlamaContext_embedding(
-        JNIEnv *env, jobject thiz,
-        jlong context_ptr,
-        jstring text,
-        jint embd_normalize
+// --- Tokenization ---    
+
+JNIEXPORT jobject JNICALL // Returns List<Integer>
+Java_com_cactus_android_LlamaContext_tokenize(
+    JNIEnv *env,
+    jobject thiz,
+    jlong context_ptr,
+    jstring text_str,
+    jboolean add_bos,       // Added parameter, common_tokenize needs it
+    jboolean parse_special // Added parameter
 ) {
     UNUSED(thiz);
-    auto llama = context_map[(long) context_ptr];
+     auto it = context_map.find(context_ptr);
+    if (it == context_map.end()) {
+        jniThrowNativeException(env, "java/lang/IllegalStateException", "Context pointer invalid or freed");
+        return nullptr;
+    }
+    cactus::cactus_context* llama = it->second;
 
-    common_params embdParams;
-    embdParams.embedding = true;
-    embdParams.embd_normalize = llama->params.embd_normalize;
+    std::string text = javaStringToCppString(env, text_str);
+
+    try {
+        // Use common_tokenize, which handles special tokens based on parse_special
+    const std::vector<llama_token> toks = common_tokenize(
+        llama->ctx,
+            text,
+            add_bos,       // Add BOS token?
+            parse_special  // Parse special tokens?
+    );
+
+        jobject resultList = createJavaArrayList(env, toks.size());
+        if (!resultList) {
+            jniThrowNativeException(env, "java/lang/RuntimeException", "Failed to create ArrayList for tokens");
+            return nullptr;
+        }
+    for (const auto &tok : toks) {
+            addJavaIntToList(env, resultList, tok);
+    }
+        return resultList;
+    } catch (const std::exception& e) {
+        LOGE("Exception during tokenize: %s", e.what());
+        jniThrowNativeException(env, "java/lang/RuntimeException", e.what());
+        return nullptr;
+    }
+}
+
+JNIEXPORT jstring JNICALL
+Java_com_cactus_android_LlamaContext_detokenize(
+    JNIEnv *env,
+    jobject thiz,
+    jlong context_ptr,
+    jintArray tokens_array // int[]
+) {
+    UNUSED(thiz);
+    auto it = context_map.find(context_ptr);
+    if (it == context_map.end()) {
+        jniThrowNativeException(env, "java/lang/IllegalStateException", "Context pointer invalid or freed");
+        return nullptr;
+    }
+    cactus::cactus_context* llama = it->second;
+
+    std::vector<int> tokens_vec = javaIntArrayToCppVector(env, tokens_array);
+    // Convert vector<int> to vector<llama_token> (assuming direct cast is okay)
+    std::vector<llama_token> llama_tokens(tokens_vec.begin(), tokens_vec.end());
+
+    try {
+        // Use cactus helper which likely handles utf-8 reconstruction better
+        auto text = cactus::tokens_to_str(llama->ctx, llama_tokens.cbegin(), llama_tokens.cend());
+        return cppStringToJavaString(env, text);
+    } catch (const std::exception& e) {
+         LOGE("Exception during detokenize: %s", e.what());
+        jniThrowNativeException(env, "java/lang/RuntimeException", e.what());
+        return nullptr;
+    }
+}
+
+// --- Embeddings ---    
+
+JNIEXPORT jboolean JNICALL
+Java_com_cactus_android_LlamaContext_isEmbeddingEnabled(
+    JNIEnv *env,
+    jobject thiz,
+    jlong context_ptr
+) {
+    UNUSED(env); UNUSED(thiz);
+     auto it = context_map.find(context_ptr);
+    if (it == context_map.end()) {
+        // Throw or return false? Returning false might be safer.
+        LOGW("isEmbeddingEnabled called on invalid context pointer: %ld", context_ptr);
+        return false;
+    }
+    return it->second->params.embedding;
+}
+
+JNIEXPORT jobject JNICALL // Returns Map<String, Object> { "embedding": List<Double>, "prompt_tokens": List<String> }
+Java_com_cactus_android_LlamaContext_embedding(
+    JNIEnv *env,
+    jobject thiz,
+        jlong context_ptr,
+    jstring text_str,
+    jint embd_normalize // Override normalize setting (-1 to use context default)
+) {
+    UNUSED(thiz);
+    auto it = context_map.find(context_ptr);
+    if (it == context_map.end()) {
+        jniThrowNativeException(env, "java/lang/IllegalStateException", "Context pointer invalid or freed");
+        return nullptr;
+    }
+    cactus::cactus_context* llama = it->second;
+
+    if (!llama->params.embedding) {
+         jniThrowNativeException(env, "java/lang/IllegalStateException", "Embedding mode not enabled for this context");
+         return nullptr;
+    }
+
+    std::string text = javaStringToCppString(env, text_str);
+
+    jobject result = createJavaHashMap(env, 2);
+     if (!result) {
+        jniThrowNativeException(env, "java/lang/RuntimeException", "Failed to create HashMap for embedding result");
+        return nullptr;
+    }
+
+    try {
+        // Use a temporary params copy to potentially override normalization
+        common_params embdParams = llama->params; // Copy existing params
+        embdParams.embedding = true; // Ensure it's set
     if (embd_normalize != -1) {
       embdParams.embd_normalize = embd_normalize;
     }
 
-    const char *text_chars = env->GetStringUTFChars(text, nullptr);
-
     llama->rewind();
+        llama_perf_context_reset(llama->ctx); // Reset timings for embedding
 
-    llama_perf_context_reset(llama->ctx);
+        llama->params.prompt = text; // Set prompt in the *main* context params
+        llama->params.n_predict = 0; // No prediction needed
 
-    llama->params.prompt = text_chars;
-
-    llama->params.n_predict = 0;
-
-    auto result = createWriteableMap(env);
-    if (!llama->initSampling()) {
-        putString(env, result, "error", "Failed to initialize sampling");
-        return reinterpret_cast<jobject>(result);
+        if (!llama->initSampling()) { // Still need to init sampling?
+            jniThrowNativeException(env, "java/lang/RuntimeException", "Failed to initialize sampling for embedding");
+            env->DeleteLocalRef(result);
+            return nullptr;
     }
 
     llama->beginCompletion();
     llama->loadPrompt();
-    llama->doCompletion();
+        // llama->doCompletion(); // Do we need one step? cactus->getEmbedding implies it might be done inside
 
     std::vector<float> embedding = llama->getEmbedding(embdParams);
 
-    auto embeddings = createWritableArray(env);
+        // Convert embedding to Java List<Double>
+        jobject embeddingsList = createJavaArrayList(env, embedding.size());
+        if (embeddingsList) {
     for (const auto &val : embedding) {
-      pushDouble(env, embeddings, (double) val);
+                addJavaDoubleToList(env, embeddingsList, (jdouble) val);
     }
-    putArray(env, result, "embedding", embeddings);
+            putJavaObjectInMap(env, result, "embedding", embeddingsList);
+            env->DeleteLocalRef(embeddingsList);
+        }
 
-    auto promptTokens = createWritableArray(env);
+        // Convert prompt tokens (llama->embd) to Java List<String>
+        jobject promptTokensList = createJavaArrayList(env, llama->embd.size());
+        if (promptTokensList) {
     for (const auto &tok : llama->embd) {
-      pushString(env, promptTokens, common_token_to_piece(llama->ctx, tok).c_str());
+                addJavaStringToList(env, promptTokensList, common_token_to_piece(llama->ctx, tok).c_str());
     }
-    putArray(env, result, "prompt_tokens", promptTokens);
+            putJavaObjectInMap(env, result, "prompt_tokens", promptTokensList);
+             env->DeleteLocalRef(promptTokensList);
+        }
 
-    env->ReleaseStringUTFChars(text, text_chars);
+    } catch (const std::exception& e) {
+         LOGE("Exception during embedding: %s", e.what());
+         jniThrowNativeException(env, "java/lang/RuntimeException", e.what());
+         env->DeleteLocalRef(result);
+         return nullptr;
+    }
+
     return result;
 }
 
+// --- Benchmarking ---    
+
 JNIEXPORT jstring JNICALL
-Java_com_cactus_LlamaContext_bench(
+Java_com_cactus_android_LlamaContext_bench(
     JNIEnv *env,
     jobject thiz,
     jlong context_ptr,
@@ -1114,141 +1341,256 @@ Java_com_cactus_LlamaContext_bench(
     jint nr
 ) {
     UNUSED(thiz);
-    auto llama = context_map[(long) context_ptr];
+    auto it = context_map.find(context_ptr);
+    if (it == context_map.end()) {
+        jniThrowNativeException(env, "java/lang/IllegalStateException", "Context pointer invalid or freed");
+        return nullptr;
+    }
+    cactus::cactus_context* llama = it->second;
+
+    try {
     std::string result = llama->bench(pp, tg, pl, nr);
-    return env->NewStringUTF(result.c_str());
+        return cppStringToJavaString(env, result);
+    } catch (const std::exception& e) {
+        LOGE("Exception during bench: %s", e.what());
+        jniThrowNativeException(env, "java/lang/RuntimeException", e.what());
+        return nullptr;
+    }
 }
+
+// --- LoRA ---    
 
 JNIEXPORT jint JNICALL
-Java_com_cactus_LlamaContext_applyLoraAdapters(
-    JNIEnv *env, jobject thiz, jlong context_ptr, jobjectArray loraAdapters) {
+Java_com_cactus_android_LlamaContext_applyLoraAdapters(
+    JNIEnv *env,
+    jobject thiz,
+    jlong context_ptr,
+    jobject lora_adapters_list // Assuming List<Map<String, Object>>
+) {
     UNUSED(thiz);
-    auto llama = context_map[(long) context_ptr];
+    auto it = context_map.find(context_ptr);
+    if (it == context_map.end()) {
+        jniThrowNativeException(env, "java/lang/IllegalStateException", "Context pointer invalid or freed");
+        return -1;
+    }
+    cactus::cactus_context* llama = it->second;
 
-    // lora_adapters: ReadableArray<ReadableMap>
     std::vector<common_adapter_lora_info> lora_adapters;
-    int lora_adapters_size = readablearray::size(env, loraAdapters);
-    for (int i = 0; i < lora_adapters_size; i++) {
-        jobject lora_adapter = readablearray::getMap(env, loraAdapters, i);
-        jstring path = readablemap::getString(env, lora_adapter, "path", nullptr);
-        if (path != nullptr) {
-          const char *path_chars = env->GetStringUTFChars(path, nullptr);
-          env->ReleaseStringUTFChars(path, path_chars);
-          float scaled = readablemap::getFloat(env, lora_adapter, "scaled", 1.0f);
-          common_adapter_lora_info la;
-          la.path = path_chars;
-          la.scale = scaled;
-          lora_adapters.push_back(la);
-        }
+    if (lora_adapters_list != nullptr) {
+         // TODO: Implement parsing of Java List<Map<String, Object>> into lora_adapters vector
     }
+
+    try {
     return llama->applyLoraAdapters(lora_adapters);
-}
-
-JNIEXPORT void JNICALL
-Java_com_cactus_LlamaContext_removeLoraAdapters(
-    JNIEnv *env, jobject thiz, jlong context_ptr) {
-    UNUSED(env);
-    UNUSED(thiz);
-    auto llama = context_map[(long) context_ptr];
-    llama->removeLoraAdapters();
-}
-
-JNIEXPORT jobject JNICALL
-Java_com_cactus_LlamaContext_getLoadedLoraAdapters(
-    JNIEnv *env, jobject thiz, jlong context_ptr) {
-    UNUSED(thiz);
-    auto llama = context_map[(long) context_ptr];
-    auto loaded_lora_adapters = llama->getLoadedLoraAdapters();
-    auto result = createWritableArray(env);
-    for (common_adapter_lora_info &la : loaded_lora_adapters) {
-        auto map = createWriteableMap(env);
-        putString(env, map, "path", la.path.c_str());
-        putDouble(env, map, "scaled", la.scale);
-        pushMap(env, result, map);
+    } catch (const std::exception& e) {
+        LOGE("Exception applying LoRA: %s", e.what());
+        jniThrowNativeException(env, "java/lang/RuntimeException", e.what());
+        return -1;
     }
-    return result;
 }
 
 JNIEXPORT void JNICALL
-Java_com_cactus_LlamaContext_freeContext(
-        JNIEnv *env, jobject thiz, jlong context_ptr) {
-    UNUSED(env);
-    UNUSED(thiz);
-    auto llama = context_map[(long) context_ptr];
-    context_map.erase((long) llama->ctx);
-    delete llama;
-}
-
-struct log_callback_context {
-    JavaVM *jvm;
-    jobject callback;
-};
-
-static void cactus_log_callback_to_j(lm_ggml_log_level level, const char * text, void * data) {
-    auto level_c = "";
-    if (level == LM_GGML_LOG_LEVEL_ERROR) {
-        __android_log_print(ANDROID_LOG_ERROR, TAG, text, nullptr);
-        level_c = "error";
-    } else if (level == LM_GGML_LOG_LEVEL_INFO) {
-        __android_log_print(ANDROID_LOG_INFO, TAG, text, nullptr);
-        level_c = "info";
-    } else if (level == LM_GGML_LOG_LEVEL_WARN) {
-        __android_log_print(ANDROID_LOG_WARN, TAG, text, nullptr);
-        level_c = "warn";
+Java_com_cactus_android_LlamaContext_removeLoraAdapters(
+    JNIEnv *env,
+    jobject thiz,
+    jlong context_ptr
+) {
+    UNUSED(env); UNUSED(thiz);
+    auto it = context_map.find(context_ptr);
+    if (it != context_map.end()) {
+        try {
+            it->second->removeLoraAdapters();
+        } catch (const std::exception& e) {
+             LOGE("Exception removing LoRA: %s", e.what());
+            jniThrowNativeException(env, "java/lang/RuntimeException", e.what());
+        }
     } else {
-        __android_log_print(ANDROID_LOG_DEFAULT, TAG, text, nullptr);
+         LOGW("removeLoraAdapters called on invalid context pointer: %ld", context_ptr);
     }
+}
 
-    log_callback_context *cb_ctx = (log_callback_context *) data;
+JNIEXPORT jobject JNICALL // Returns List<Map<String, Object>>
+Java_com_cactus_android_LlamaContext_getLoadedLoraAdapters(
+    JNIEnv *env,
+    jobject thiz,
+    jlong context_ptr
+) {
+    UNUSED(thiz);
+    auto it = context_map.find(context_ptr);
+    if (it == context_map.end()) {
+        jniThrowNativeException(env, "java/lang/IllegalStateException", "Context pointer invalid or freed");
+        return nullptr;
+}
+    cactus::cactus_context* llama = it->second;
+
+    try {
+        auto loaded_lora_adapters = llama->getLoadedLoraAdapters();
+        jobject resultList = createJavaArrayList(env, loaded_lora_adapters.size());
+        if (!resultList) {
+             jniThrowNativeException(env, "java/lang/RuntimeException", "Failed to create ArrayList for LoRA adapters");
+             return nullptr;
+        }
+        for (const auto &la : loaded_lora_adapters) {
+            jobject map = createJavaHashMap(env, 2);
+            if (map) {
+                putJavaStringInMap(env, map, "path", la.path.c_str());
+                putJavaDoubleInMap(env, map, "scaled", la.scale); // scale is float
+                addJavaObjectToList(env, resultList, map);
+                env->DeleteLocalRef(map);
+            }
+        }
+        return resultList;
+    } catch (const std::exception& e) {
+        LOGE("Exception getting loaded LoRA: %s", e.what());
+        jniThrowNativeException(env, "java/lang/RuntimeException", e.what());
+        return nullptr;
+    }
+}
+
+// --- Logging ---    
+
+// C++ function to be called by llama_log_set
+static void native_log_callback(lm_ggml_log_level level, const char * text, void * user_data) {
+    if (!user_data) return;
+    NativeCallbackContext* cb_ctx = static_cast<NativeCallbackContext*>(user_data);
 
     JNIEnv *env;
-    bool need_detach = false;
-    int getEnvResult = cb_ctx->jvm->GetEnv((void**)&env, JNI_VERSION_1_6);
+    bool attached = false;
+    int getEnvStat = cb_ctx->jvm->GetEnv((void**)&env, JNI_VERSION_1_6);
 
-    if (getEnvResult == JNI_EDETACHED) {
-        if (cb_ctx->jvm->AttachCurrentThread(&env, nullptr) == JNI_OK) {
-            need_detach = true;
+    if (getEnvStat == JNI_EDETACHED) {
+        if (cb_ctx->jvm->AttachCurrentThread(&env, nullptr) == 0) {
+            attached = true;
         } else {
+            LOGE("Failed to attach thread for log callback");
             return;
         }
-    } else if (getEnvResult != JNI_OK) {
+    } else if (getEnvStat != JNI_OK) {
+         LOGE("Failed to get JNI env for log callback");
         return;
     }
 
-    jobject callback = cb_ctx->callback;
-    jclass cb_class = env->GetObjectClass(callback);
-    jmethodID emitNativeLog = env->GetMethodID(cb_class, "emitNativeLog", "(Ljava/lang/String;Ljava/lang/String;)V");
+    // Map lm_ggml_log_level to a string or int for Java/Kotlin
+    const char* level_str;
+    switch(level) {
+        case LM_GGML_LOG_LEVEL_ERROR: level_str = "ERROR"; break;
+        case LM_GGML_LOG_LEVEL_WARN:  level_str = "WARN"; break;
+        case LM_GGML_LOG_LEVEL_INFO:  level_str = "INFO"; break;
+        default: level_str = "DEBUG"; // Or VERBOSE?
+    }
 
-    jstring level_str = env->NewStringUTF(level_c);
-    jstring text_str = env->NewStringUTF(text);
-    env->CallVoidMethod(callback, emitNativeLog, level_str, text_str);
-    env->DeleteLocalRef(level_str);
-    env->DeleteLocalRef(text_str);
+    jstring jLevel = env->NewStringUTF(level_str);
+    jstring jText = env->NewStringUTF(text);
 
-    if (need_detach) {
+    // TODO: Find the correct method ID for the log callback in the Kotlin interface
+    // if (cb_ctx->logMethodId && jLevel && jText) {
+    //    env->CallVoidMethod(cb_ctx->callbackObjectRef, cb_ctx->logMethodId, jLevel, jText);
+    //    checkAndClearException(env, "log callback");
+    // } else {
+    //    LOGE("Log callback method ID invalid or string creation failed");
+    // }
+    // Fallback: Print to android log if JNI call fails
+    __android_log_print(ANDROID_LOG_INFO, TAG, "[%s] %s", level_str, text);
+
+    if(jLevel) env->DeleteLocalRef(jLevel);
+    if(jText) env->DeleteLocalRef(jText);
+
+    if (attached) {
         cb_ctx->jvm->DetachCurrentThread();
     }
 }
 
 JNIEXPORT void JNICALL
-Java_com_cactus_LlamaContext_setupLog(JNIEnv *env, jobject thiz, jobject logCallback) {
-    UNUSED(thiz);
+Java_com_cactus_android_LlamaContext_setupLog(JNIEnv *env, jclass clazz, jobject logCallback) {
+    UNUSED(env); UNUSED(clazz);
+    if (g_callback_context) {
+        LOGW("Log callback already set up. Replacing.");
+        // Clean up old one?
+        env->DeleteGlobalRef(g_callback_context->callbackObjectRef);
+        delete g_callback_context;
+        g_callback_context = nullptr;
+    }
 
-    log_callback_context *cb_ctx = new log_callback_context;
+    if (!logCallback) {
+        LOGI("Disabling custom JNI log callback.");
+         // llama_log_set(lm_ggml_log_callback_default, NULL); // Use llama's default if needed
+        return; // Or maybe set back to default Android log?
+    }
 
-    JavaVM *jvm;
-    env->GetJavaVM(&jvm);
-    cb_ctx->jvm = jvm;
-    cb_ctx->callback = env->NewGlobalRef(logCallback);
+    g_callback_context = new NativeCallbackContext();
+    env->GetJavaVM(&g_callback_context->jvm);
+    g_callback_context->callbackObjectRef = env->NewGlobalRef(logCallback);
 
-    llama_log_set(cactus_log_callback_to_j, cb_ctx);
+    // TODO: Find the method ID for the log callback method on the 'logCallback' object
+    // jclass callbackClass = env->GetObjectClass(logCallback);
+    // g_callback_context->logMethodId = env->GetMethodID(callbackClass, "onNativeLog", "(Ljava/lang/String;Ljava/lang/String;)V"); // Example signature
+    // env->DeleteLocalRef(callbackClass);
+    // if (!g_callback_context->logMethodId) {
+    //    LOGE("Failed to find log callback method. Custom logging disabled.");
+    //    env->DeleteGlobalRef(g_callback_context->callbackObjectRef);
+    //    delete g_callback_context;
+    //    g_callback_context = nullptr;
+    //    return;
+    // }
+
+    llama_log_set(native_log_callback, g_callback_context);
+    LOGI("Custom JNI log callback enabled.");
 }
 
 JNIEXPORT void JNICALL
-Java_com_cactus_LlamaContext_unsetLog(JNIEnv *env, jobject thiz) {
-    UNUSED(env);
-    UNUSED(thiz);
-    llama_log_set(cactus_log_callback_default, NULL);
+Java_com_cactus_android_LlamaContext_unsetLog(JNIEnv *env, jclass clazz) {
+    UNUSED(env); UNUSED(clazz);
+    if (g_callback_context) {
+         env->DeleteGlobalRef(g_callback_context->callbackObjectRef);
+         delete g_callback_context;
+         g_callback_context = nullptr;
+         llama_log_set(nullptr, NULL); // Disable llama logging callback
+         LOGI("Custom JNI log callback disabled.");
+    } else {
+         LOGI("Custom JNI log callback was not set.");
+    }
+    // Optionally set back to a default logger if desired:
+    // llama_log_set(lm_ggml_log_callback_default, NULL);
 }
+
+// --- Utility --- 
+
+// C++ function wrapper for progress callback
+static bool native_progress_callback(float progress, void * user_data) {
+    if (!user_data) return true; // Continue if no context
+     NativeCallbackContext* cb_ctx = static_cast<NativeCallbackContext*>(user_data);
+
+    JNIEnv *env;
+    bool attached = false;
+    int getEnvStat = cb_ctx->jvm->GetEnv((void**)&env, JNI_VERSION_1_6);
+    if (getEnvStat == JNI_EDETACHED) {
+        if (cb_ctx->jvm->AttachCurrentThread(&env, nullptr) == 0) attached = true;
+        else { LOGE("Failed to attach thread for progress callback"); return false; /* Stop load */ }
+    } else if (getEnvStat != JNI_OK) {
+         LOGE("Failed to get JNI env for progress callback"); return false; /* Stop load */
+    }
+
+    bool continue_load = true;
+    // TODO: Call the Kotlin progress callback method
+    // if (cb_ctx->progressMethodId) {
+    //    jboolean should_continue = env->CallBooleanMethod(cb_ctx->callbackObjectRef, cb_ctx->progressMethodId, (jint)(progress * 100));
+    //    checkAndClearException(env, "progress callback");
+    //    continue_load = (should_continue == JNI_TRUE);
+    // } else {
+    //    LOGW("Progress callback method ID invalid");
+    // }
+
+    if (attached) {
+        cb_ctx->jvm->DetachCurrentThread();
+    }
+    // Need to check llama->is_load_interrupted as well? Or rely solely on callback return?
+    auto it = context_map.find(reinterpret_cast<jlong>(cb_ctx)); // How to find the right context?
+    // This linkage is broken without a way to tie user_data back to the cactus_context
+    // if (it != context_map.end()) {
+    //    if (it->second->is_load_interrupted) return false;
+    // }
+    return continue_load;
+}
+
 
 } // extern "C"

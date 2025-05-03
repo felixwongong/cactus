@@ -63,12 +63,15 @@ yarn.lock
 .expo/
 dist/
 build/
-coverage/
+coverage/*
 *.tsbuildinfo
 react/lib/
 react/ios/cactus.xcframework/
+react/ios/cactus.xcodeproj/
 react/ios/CMakelists.txt
-react/android/src/main/
+react/ios/CactusContext.h
+react/ios/CactusContext.mm
+react/android/src/main/jniLibs/
 
 
 # === Flutter/Dart ===
@@ -87,7 +90,8 @@ app.*.symbols
 app.*.map.json
 pubspec.lock
 flutter/ios/cactus.xcframework
-flutter/ios/CMakelists.txt
+flutter/ios/classes/CactusContext.h
+flutter/ios/classes/CactusContext.mm
 flutter/android/src/main
 
 # === Metro/React Native cache ===
@@ -122,19 +126,13 @@ ios/CMakelists.txt
 
 # === Android ===
 android/.gradle/
+.gradle
 android/app/build/
 android/build/
 android/.cxx/
 android/.externalNativeBuild/
-android/gradle/
-android/gradlew
-android/gradlew.bat
 android/gradle-wrapper.jar
 android/gradle-wrapper.properties
-kotlin/src/main/
-kotlin/.gradle/
-kotlin/gradle/
-kotlin/.cxx
 
 
 # === C++/CMake ===

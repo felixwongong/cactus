@@ -152,167 +152,89 @@ await context.release();
 
 For more detailed documentation and examples, see the [React Native README](react/README.md).
 
-### 🚧 Android (currently testing)
+### ✅ Android (Kotlin/Java)
 
-```gradle
-<!-- Add to your `build.gradle` -->
-dependencies {
-    implementation 'com.cactuscompute:cactus-android:x.y.z'
+**1. Add Repository to `settings.gradle.kts`:**
+
+```kotlin
+// settings.gradle.kts
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS) // Optional but recommended
+    repositories {
+        google()
+        mavenCentral()
+        // Add GitHub Packages repository for Cactus
+        maven {
+            name = "GitHubPackagesCactusCompute"
+            url = uri("https://maven.pkg.github.com/cactus-compute/cactus")
+        }
+    }
 }
 ```
+
+**2. Add Dependency to Module's `build.gradle.kts`:**
+
 ```kotlin
-import com.cactus.LlamaContext
-
-// Load model
-val llamaContext = LlamaContext.createContext(
-    applicationContext,
-    "models/llama-2-7b-chat.gguf",
-    LlamaContextParams(
-        nCtx = 2048,
-        nBatch = 512, 
-        nThreads = 4
-    )
-)
-
-// Set up completion
-val result = llamaContext.completion(
-    CompletionParams(
-        prompt = "Explain quantum computing in simple terms",
-        temperature = 0.7f,
-        topK = 40,
-        topP = 0.95f,
-        nPredict = 512
-    )
-) { token ->
-    // Stream tokens as they're generated
-    print(token.text)
+// app/build.gradle.kts
+dependencies {
+    // Replace x.y.z with the desired version (e.g., 0.0.1)
+    implementation("io.github.cactus-compute:cactus-android:x.y.z")
 }
+```
 
-// Clean up
-llamaContext.release()
+**3. Basic Usage (Kotlin):**
+
+```kotlin
+import com.cactus.android.LlamaContext
+import com.cactus.android.LlamaInitParams
+import com.cactus.android.LlamaCompletionParams
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+
+// In an Activity, ViewModel, or coroutine scope
+
+suspend fun runInference() {
+    var llamaContext: LlamaContext? = null
+    try {
+        // Initialize (off main thread)
+        llamaContext = withContext(Dispatchers.IO) {
+            LlamaContext.create(
+                params = LlamaInitParams(
+                    modelPath = "path/to/your/model.gguf",
+                    nCtx = 2048, nThreads = 4
+                )
+            )
+        }
+
+        // Complete (off main thread)
+        val result = withContext(Dispatchers.IO) {
+            llamaContext?.complete(
+                prompt = "Explain quantum computing in simple terms",
+                params = LlamaCompletionParams(temperature = 0.7f, nPredict = 512)
+            ) { partialResultMap ->
+                val token = partialResultMap["token"] as? String ?: ""
+                print(token) // Process stream on background thread
+                true // Continue generation
+            }
+        }
+        println("\nFinal text: ${result?.text}")
+
+    } catch (e: Exception) {
+        // Handle errors
+        println("Error: ${e.message}")
+    } finally {
+        // Clean up (off main thread)
+        withContext(Dispatchers.IO) {
+             llamaContext?.close()
+        }
+    }
+}
 ```
 
 For more detailed documentation and examples, see the [Android README](android/README.md).
 
 ### 🚧 Swift (in developement)
 
-```ruby
-# Simply copy the swift/CactusSwift into your project for now
+### 🚧 Android (in developement)
+
 ```
-```swift
-import Cactus
-
-// Load model
-let context = try CactusContext(
-    modelPath: "models/llama-2-7b-chat.gguf",
-    contextParams: ContextParams(
-        contextSize: 2048,
-        batchSize: 512,
-        threadCount: 4
-    )
-)
-
-// Generate completion
-try context.completion(
-    params: CompletionParams(
-        prompt: "Explain quantum computing in simple terms",
-        temperature: 0.7,
-        topK: 40,
-        topP: 0.95,
-        maxTokens: 512
-    )
-) { token in
-    // Process each token as it's generated
-    print(token.text, terminator: "")
-}
-
-// Clean up
-context.release()
-```
-
-For more detailed documentation and examples, see the [iOS README](swift/README.md).
-
-### 🚧 Flutter (in development)
-
-```bash
-flutter pub add cactus_flutter
-```
-```dart
-import 'package:cactus_flutter/cactus_flutter.dart';
-
-// Load model
-final context = await CactusContext.initialize(
-  modelPath: 'models/llama-2-7b-chat.gguf',
-  contextSize: 2048,
-  batchSize: 512,
-  threadCount: 4,
-);
-
-// Generate completion
-final result = await context.completion(
-  prompt: 'Explain quantum computing in simple terms',
-  temperature: 0.7,
-  topK: 40,
-  topP: 0.95,
-  maxTokens: 512,
-  onToken: (String token) {
-    // Process each token as it's generated
-    print(token);
-  }
-);
-
-// Clean up
-await context.release();
-```
-
-For more detailed documentation and examples, see the [Flutter README](flutter/README.md).
-
-### ✅ C++ (Raw backend)
-```bash
-// Use see the test folder
-chmod +x scripts/test-cactus.sh
-scripts/test-cactus.sh
-```
-
-```cpp 
-#include "cactus.h"
-
-int main() {
-    // Initialize parameters
-    cactus::common_params params;
-    params.model = "models/llama-2-7b-chat.gguf";
-    params.n_ctx = 2048;
-    params.n_batch = 512;
-    params.n_threads = 4;
-    
-    // Create context and load model
-    cactus::cactus_context ctx;
-    if (!ctx.loadModel(params)) {
-        std::cerr << "Failed to load model" << std::endl;
-        return 1;
-    }
-    
-    // Set up completion parameters
-    params.prompt = "Explain quantum computing in simple terms";
-    params.n_predict = 512;
-    params.sampling.temp = 0.7f;
-    params.sampling.top_k = 40;
-    params.sampling.top_p = 0.95f;
-    
-    // Generate completion
-    ctx.loadPrompt();
-    ctx.beginCompletion();
-    
-    std::string result;
-    while (true) {
-        auto token_output = ctx.doCompletion();
-        if (!ctx.has_next_token) break;
-        std::cout << ctx.generated_text;
-        result += ctx.generated_text;
-    }
-    
-    return 0;
-}
-```
-
-For more detailed documentation and examples, see the [C++ README](cactus/README.md).
