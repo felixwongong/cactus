@@ -100,10 +100,11 @@ Cactus Models coming soon.
 we created a little chat app for demo, you can try other models and report your finding here, [download the app](https://lnkd.in/dYGR54hn)
 
 Gemma 1B INT8:
-- iPhone 13 Pro: ~30 toks/sec 
+- iPhone 16 Pro Max: ~45 toks/sec
+- iPhone 13 Pro: ~30 toks/sec
+- Galaxy S24 plus: ~20 toks/sec 
 - Galaxy S21: ~14 toks/sec 
 - Google Pixel 6a: ~14 toks/sec 
-- Galaxy S24 plus: ~20 toks/sec 
 
 SmollLM 135m INT8: 
 - iPhone 13 Pro: ~180 toks/sec
