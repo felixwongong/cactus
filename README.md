@@ -114,7 +114,7 @@ SmollLM 135m INT8:
 
 ## Getting Started
 
-### ✅ React Native (shipped)
+### ✅ React Native (TypeScript/JavaScript)
 
 ```bash
 npm install cactus-react-native
