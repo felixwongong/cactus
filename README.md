@@ -178,8 +178,7 @@ dependencyResolutionManagement {
 ```kotlin
 // app/build.gradle.kts
 dependencies {
-    // Replace x.y.z with the desired version (e.g., 0.0.1)
-    implementation("io.github.cactus-compute:cactus-android:x.y.z")
+    implementation("io.github.cactus-compute:cactus-android:0.0.1")
 }
 ```
 
