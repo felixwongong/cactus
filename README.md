@@ -235,6 +235,6 @@ For more detailed documentation and examples, see the [Android README](android/R
 
 ### 🚧 Swift (in developement)
 
-### 🚧 Android (in developement)
+### 🚧 Flutter (in developement)
 
 ```
