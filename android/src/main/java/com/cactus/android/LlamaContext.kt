@@ -767,7 +767,7 @@ private fun <T> Map<*, *>?.safeGet(key: String, defaultValue: T): T {
     }
     // Check if the value's type matches the default value's type (simple check)
     // Note: This won't work perfectly for generic types, but covers basic cases like String, Double, Int, Boolean, Map, List
-    if (defaultValue != null && value::class != defaultValue::class && !(value is Number && defaultValue is Number)) {
+    if (defaultValue != null && value::class != defaultValue!!::class && !(value is Number && defaultValue is Number)) {
          // Allow casting between number types (e.g., JNI Double to Kotlin Int/Long/Float)
         if (value is Number && defaultValue is Number) {
              // Attempt numeric conversion
@@ -776,10 +776,10 @@ private fun <T> Map<*, *>?.safeGet(key: String, defaultValue: T): T {
                 is Long -> value.toLong() as? T ?: defaultValue.also { Log.w("LlamaContext.safeGet", "Failed Number cast for '$key' from ${value::class.simpleName} to Long. Returning default.") }
                 is Float -> value.toFloat() as? T ?: defaultValue.also { Log.w("LlamaContext.safeGet", "Failed Number cast for '$key' from ${value::class.simpleName} to Float. Returning default.") }
                 is Double -> value.toDouble() as? T ?: defaultValue.also { Log.w("LlamaContext.safeGet", "Failed Number cast for '$key' from ${value::class.simpleName} to Double. Returning default.") }
-                else -> defaultValue.also { Log.w("LlamaContext.safeGet", "Unsupported Number cast for '$key' to ${defaultValue::class.simpleName}. Returning default.") }
+                else -> defaultValue.also { Log.w("LlamaContext.safeGet", "Unsupported Number cast for '$key' to ${defaultValue!!::class.simpleName}. Returning default.") }
             }
         }
-        Log.w("LlamaContext.safeGet", "Type mismatch for key '$key'. Expected ~${defaultValue::class.simpleName}, got ${value::class.simpleName}. Returning default.")
+        Log.w("LlamaContext.safeGet", "Type mismatch for key '$key'. Expected ~${defaultValue!!::class.simpleName}, got ${value::class.simpleName}. Returning default.")
         return defaultValue
     }
     try {
