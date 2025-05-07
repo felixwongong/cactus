@@ -39,13 +39,8 @@ static NativeCallbackContext* g_callback_context = nullptr;
 static bool native_progress_callback(float progress, void * user_data);
 static void native_log_callback(lm_ggml_log_level level, const char * text, void * user_data);
 
-// --- JNIEXPORT Functions ---
-extern "C" {
-
-// --- Context Management ---    
-
-JNIEXPORT jlong JNICALL
-Java_com_cactus_android_LlamaContext_initContextNative_00024CactusAndroidLib_1debug(
+// --- Common Implementation Function ---
+jlong internal_initContextNative(
     JNIEnv *env,
     jclass clazz,
     jstring model_path_str,
@@ -64,16 +59,13 @@ Java_com_cactus_android_LlamaContext_initContextNative_00024CactusAndroidLib_1de
     jboolean use_mlock,
     jboolean use_mmap,
     jboolean vocab_only,
-    // LoRA handling needs redesign - passing Map/List instead of String/RN Array
-    // jstring lora_str, 
-    // jfloat lora_scaled,
     jobject lora_list, // Assuming List<Map<String, Object>>: [{path: String, scaled: Float}, ...]
     jfloat rope_freq_base,
     jfloat rope_freq_scale,
     jint pooling_type,
     jobject load_progress_callback // Kotlin interface object
 ) {
-    UNUSED(clazz);
+    UNUSED(clazz); // Now unused in the internal function directly
 
     // 1. Convert Java types to C++ types
     std::string model_path = javaStringToCppString(env, model_path_str);
@@ -81,7 +73,6 @@ Java_com_cactus_android_LlamaContext_initContextNative_00024CactusAndroidLib_1de
     std::string reasoning_format = javaStringToCppString(env, reasoning_format_str);
     std::string cache_type_k = javaStringToCppString(env, cache_type_k_str);
     std::string cache_type_v = javaStringToCppString(env, cache_type_v_str);
-    // std::string lora_path = javaStringToCppString(env, lora_str);
 
     // 2. Set up common_params
     common_params defaultParams;
@@ -214,6 +205,80 @@ Java_com_cactus_android_LlamaContext_initContextNative_00024CactusAndroidLib_1de
         jniThrowNativeException(env, "java/lang/RuntimeException", "Model loading failed (unknown reason)");
         return -1; // Indicate failure
     }
+}
+
+// --- JNIEXPORT Functions --- (Now call the internal function)
+extern "C" {
+
+// --- Context Management ---    
+
+JNIEXPORT jlong JNICALL
+Java_com_cactus_android_LlamaContext_initContextNative_00024CactusAndroidLib_1release(
+    JNIEnv *env,
+    jclass clazz,
+    jstring model_path_str,
+    jstring chat_template_str,
+    jstring reasoning_format_str,
+    jboolean embedding,
+    jint embd_normalize,
+    jint n_ctx,
+    jint n_batch,
+    jint n_ubatch,
+    jint n_threads,
+    jint n_gpu_layers,
+    jboolean flash_attn,
+    jstring cache_type_k_str,
+    jstring cache_type_v_str,
+    jboolean use_mlock,
+    jboolean use_mmap,
+    jboolean vocab_only,
+    jobject lora_list,
+    jfloat rope_freq_base,
+    jfloat rope_freq_scale,
+    jint pooling_type,
+    jobject load_progress_callback
+) {
+    // Call the common internal implementation
+    return internal_initContextNative(env, clazz, model_path_str, chat_template_str, reasoning_format_str,
+                                   embedding, embd_normalize, n_ctx, n_batch, n_ubatch, n_threads,
+                                   n_gpu_layers, flash_attn, cache_type_k_str, cache_type_v_str,
+                                   use_mlock, use_mmap, vocab_only, lora_list, rope_freq_base,
+                                   rope_freq_scale, pooling_type, load_progress_callback);
+}
+
+JNIEXPORT jlong JNICALL
+Java_com_cactus_android_LlamaContext_initContextNative_00024CactusAndroidLib_1debug(
+    JNIEnv *env,
+    jclass clazz,
+    jstring model_path_str,
+    jstring chat_template_str,
+    jstring reasoning_format_str,
+    jboolean embedding,
+    jint embd_normalize,
+    jint n_ctx,
+    jint n_batch,
+    jint n_ubatch,
+    jint n_threads,
+    jint n_gpu_layers,
+    jboolean flash_attn,
+    jstring cache_type_k_str,
+    jstring cache_type_v_str,
+    jboolean use_mlock,
+    jboolean use_mmap,
+    jboolean vocab_only,
+    jobject lora_list,
+    jfloat rope_freq_base,
+    jfloat rope_freq_scale,
+    jint pooling_type,
+    jobject load_progress_callback
+) {
+    // Call the common internal implementation
+    // Ensure parameter list EXACTLY matches the _release version's call
+    return internal_initContextNative(env, clazz, model_path_str, chat_template_str, reasoning_format_str,
+                                   embedding, embd_normalize, n_ctx, n_batch, n_ubatch, n_threads,
+                                   n_gpu_layers, flash_attn, cache_type_k_str, cache_type_v_str,
+                                   use_mlock, use_mmap, vocab_only, lora_list, rope_freq_base,
+                                   rope_freq_scale, pooling_type, load_progress_callback);
 }
 
 JNIEXPORT void JNICALL

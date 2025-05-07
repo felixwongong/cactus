@@ -41,11 +41,13 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false // Library code is usually not minified directly
-            proguardFiles(
-                getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro"
-            )
+            isMinifyEnabled = false // Ensure this is false
+            isShrinkResources = false // Add this to be explicit
+            // Comment out ProGuard/R8 application for this build type
+            // proguardFiles(
+            //     getDefaultProguardFile("proguard-android-optimize.txt"),
+            //     "proguard-rules.pro"
+            // )
         }
         debug {
             // Debug specific settings if any
@@ -103,7 +105,7 @@ publishing {
             // groupId updated for GitHub Packages convention
             groupId = "io.github.cactus-compute"
             artifactId = "cactus-android"
-            version = "0.0.1" // Keep version or update as needed
+            version = "0.0.7" 
 
             // Pulls artifacts from the Android 'release' component
             afterEvaluate {

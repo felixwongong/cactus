@@ -481,47 +481,20 @@ class LlamaContext private constructor(
         // Static initialization block to load the native library
         init {
             try {
-                // Try loading optimized versions first, fallback to generic
-                // The exact names depend on your CMakeLists.txt `build_library` calls
-                val libs = arrayOf(
-                    // ARMv8.2 variants (ordered most specific to least)
-                    "cactus_v8_2_dotprod_i8mm",
-                    "cactus_v8_2_i8mm",
-                    "cactus_v8_2_dotprod",
-                    "cactus_v8_2",
-                    // ARMv8 generic
-                    "cactus_v8",
-                    // x86_64 variants
-                    "cactus_x86_64",
-                    // Generic fallback
-                    "cactus"
-                )
-                var loaded = false
-                val errors = mutableListOf<String>()
-                for (lib in libs) {
-                    try {
-                        System.loadLibrary(lib)
-                        Log.i(TAG, "Successfully loaded native library: lib$lib.so")
-                        loaded = true
-                        break // Stop trying once one loads
-                    } catch (e: UnsatisfiedLinkError) {
-                        // This is expected if a specific CPU feature isn't available
-                        errors.add("Failed to load library '$lib': ${e.message}")
-                    }
-                }
-                if (!loaded) {
-                    Log.e(TAG, "-------------------------------------------------")
-                    Log.e(TAG, "FATAL: Could not load any native cactus library variant.")
-                    errors.forEach { Log.e(TAG, "- $it") }
-                    Log.e(TAG, "Please ensure native libraries for the device architecture are bundled.")
-                    Log.e(TAG, "-------------------------------------------------")
-                    // Throw an exception to prevent usage if no library loads
-                     throw UnsatisfiedLinkError("Failed to load any native cactus library variant. Check Logcat for details.")
-                }
+                System.loadLibrary("cactus") // Attempt to load only the base library
+                Log.i(TAG, "Successfully loaded native library: libcactus.so")
+            } catch (e: UnsatisfiedLinkError) {
+                Log.e(TAG, "-------------------------------------------------")
+                Log.e(TAG, "FATAL: Could not load native library 'cactus'.")
+                Log.e(TAG, "Message: ${e.message}")
+                Log.e(TAG, "Please ensure libcactus.so for the device architecture is bundled in the AAR.")
+                Log.e(TAG, "-------------------------------------------------")
+                throw UnsatisfiedLinkError("Failed to load native library 'cactus'. Check Logcat for details: ${e.message}")
             } catch (t: Throwable) {
-                Log.e(TAG, "Exception loading native library", t)
-                // Re-throw if needed, or handle appropriately
+                Log.e(TAG, "Exception loading native library 'cactus'", t)
                 if (t is UnsatisfiedLinkError) throw t
+                // Wrap other Throwables if necessary, or rethrow
+                throw RuntimeException("Unexpected error loading native library 'cactus'", t)
             }
         }
 
