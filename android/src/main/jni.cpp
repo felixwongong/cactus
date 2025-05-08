@@ -40,7 +40,7 @@ static bool native_progress_callback(float progress, void * user_data);
 static void native_log_callback(lm_ggml_log_level level, const char * text, void * user_data);
 
 // --- Common Implementation Function ---
-jlong internal_initContextNative(
+jlong Java_com_cactus_android_LlamaContext_initContextNative(
     JNIEnv *env,
     jclass clazz,
     jstring model_path_str,
@@ -239,7 +239,7 @@ Java_com_cactus_android_LlamaContext_initContextNative_00024CactusAndroidLib_1re
     jobject load_progress_callback
 ) {
     // Call the common internal implementation
-    return internal_initContextNative(env, clazz, model_path_str, chat_template_str, reasoning_format_str,
+    return Java_com_cactus_android_LlamaContext_initContextNative(env, clazz, model_path_str, chat_template_str, reasoning_format_str,
                                    embedding, embd_normalize, n_ctx, n_batch, n_ubatch, n_threads,
                                    n_gpu_layers, flash_attn, cache_type_k_str, cache_type_v_str,
                                    use_mlock, use_mmap, vocab_only, lora_list, rope_freq_base,
@@ -274,7 +274,7 @@ Java_com_cactus_android_LlamaContext_initContextNative_00024CactusAndroidLib_1de
 ) {
     // Call the common internal implementation
     // Ensure parameter list EXACTLY matches the _release version's call
-    return internal_initContextNative(env, clazz, model_path_str, chat_template_str, reasoning_format_str,
+    return Java_com_cactus_android_LlamaContext_initContextNative(env, clazz, model_path_str, chat_template_str, reasoning_format_str,
                                    embedding, embd_normalize, n_ctx, n_batch, n_ubatch, n_threads,
                                    n_gpu_layers, flash_attn, cache_type_k_str, cache_type_v_str,
                                    use_mlock, use_mmap, vocab_only, lora_list, rope_freq_base,

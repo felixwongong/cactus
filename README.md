@@ -114,8 +114,11 @@ SmollLM 135m INT8:
 - Google Pixel 6a: ~38 toks/sec
 - Huawei P60 Lite (Gran's phone) ~8toks/sec
 
+## Examples
+We have ready-to-run-and-deploy examples [here](https://github.com/cactus-compute/cactus/tree/main/examples), you can simply copy, modify and deploy! And reach out if stuck or need hand-holding.
 
 ## Getting Started
+
 
 ### ✅ React Native (TypeScript/JavaScript)
 
@@ -158,6 +161,38 @@ For more detailed documentation and examples, see the [React Native README](reac
 
 ### ✅ Android (Kotlin/Java)
 
+**Important: Credentials Required for GitHub Packages**
+
+Accessing the Cactus Android library via GitHub Packages now requires authentication. You'll need to use a GitHub Personal Access Token (PAT) with the `read:packages` scope.
+
+**Steps to Get and Use Credentials:**
+
+1.  **Generate a GitHub PAT:**
+    *   Go to your GitHub [Developer settings](https://github.com/settings/tokens).
+    *   Click "Generate new token" (select classic or fine-grained).
+    *   Give your token a descriptive name (e.g., `cactus-android-dependency`).
+    *   Select the `read:packages` scope.
+    *   Click "Generate token" and **copy the token immediately**. You won't be able to see it again.
+
+2.  **Store Your Credentials Securely:**
+    Do **not** hardcode your PAT directly into your `settings.gradle.kts` file. Instead, use one of the following methods:
+
+    *   **Using `local.properties` (Recommended for local development):**
+        1.  Create or open the `local.properties` file in your Android project's root directory (the same directory as `gradle.properties`). If it's not there, create it.
+        2.  Add the following lines, replacing `YOUR_GITHUB_USERNAME` with your GitHub username and `YOUR_PAT` with the token you generated:
+            ```properties
+            gpr.user=YOUR_GITHUB_USERNAME
+            gpr.key=YOUR_PAT
+            ```
+        3.  Ensure `local.properties` is listed in your project's `.gitignore` file to prevent committing your credentials.
+
+    *   **Using Environment Variables (Recommended for CI/CD or shared environments):**
+        Set the following environment variables in your build environment:
+        *   `GPR_USER`: Your GitHub username.
+        *   `GPR_KEY`: Your GitHub PAT.
+
+        The `settings.gradle.kts` file is configured to read these from `local.properties` first, then fall back to environment variables.
+
 **1. Add Repository to `settings.gradle.kts`:**
 
 ```kotlin
@@ -171,6 +206,10 @@ dependencyResolutionManagement {
         maven {
             name = "GitHubPackagesCactusCompute"
             url = uri("https://maven.pkg.github.com/cactus-compute/cactus")
+            credentials {
+                username = project.findProperty("gpr.user") as String? ?: System.getenv("GPR_USER")
+                password = project.findProperty("gpr.key") as String? ?: System.getenv("GPR_KEY")
+            }
         }
     }
 }
