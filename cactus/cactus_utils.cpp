@@ -13,7 +13,7 @@ namespace cactus {
 
 // Define the log function itself here
 // Needs access to cactus_verbose if LOG_VERBOSE is used here.
-bool cactus_verbose = true; // Example definition, adjust as needed
+bool cactus_verbose = true; 
 
 void log(const char *level, const char *function, int line,
                 const char *format, ...)

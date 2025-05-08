@@ -18,15 +18,11 @@ bool cactus_context::loadModel(common_params &params_)
     ctx = llama_init.context.get();
     if (model == nullptr)
     {
-        // LOG_ERROR("unable to load model: %s", params_.model.c_str());
         LOG_ERROR("unable to load model: %s", params.model.c_str());
         return false;
     }
     templates = common_chat_templates_init(model, params.chat_template);
     n_ctx = llama_n_ctx(ctx);
-
-    // We can uncomment for debugging or after this fix: https://github.com/ggerganov/llama.cpp/pull/11101
-    // LOG_INFO("%s\n", common_params_get_system_info(params).c_str());
 
     return true;
 }
@@ -45,10 +41,6 @@ bool cactus_context::validateModelChatTemplate(bool use_jinja, const char *name)
     }
     return common_chat_verify_template(tmpl, use_jinja);
 }
-
-
-// --- Add other loading-related functions here ---
-// e.g., kv_cache_type_from_str if it's primarily used during loading/setup
 
 
 /**

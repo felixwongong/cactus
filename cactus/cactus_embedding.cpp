@@ -12,7 +12,7 @@ namespace cactus {
  * @param embd_params Parameters for embedding generation (note: uses internal context params primarily)
  * @return Vector of embedding values
  */
-std::vector<float> cactus_context::getEmbedding(common_params &embd_params) // Original signature had param, but wasn't fully used
+std::vector<float> cactus_context::getEmbedding(common_params &embd_params) 
 {
     // Ensure context and model are valid
     if (!ctx || !model) {
@@ -27,14 +27,8 @@ std::vector<float> cactus_context::getEmbedding(common_params &embd_params) // O
         return std::vector<float>(n_embd, 0.0f); // Return zero vector consistent with original logic
     }
 
-    // Note: The original code called loadPrompt and potentially doCompletion before this.
-    // Assuming the necessary prompt processing and decoding steps have happened 
-    // *before* calling getEmbedding in the JNI layer or elsewhere.
-    // If embedding requires specific state setup, that logic might need adjustment.
-
     float *data = nullptr; // Initialize to nullptr
     const enum llama_pooling_type pooling_type = llama_pooling_type(ctx);
-    // LOG_INFO("Pooling type for embedding: %d\n", pooling_type); // Use LOG_INFO
 
     if (pooling_type == LLAMA_POOLING_TYPE_NONE) {
         // Get embeddings for the last token (assuming standard behavior)
