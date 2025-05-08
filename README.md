@@ -95,24 +95,35 @@ Cactus Models coming soon.
   - Battery-efficient inference
   - Background processing
 
-## Benchmarks 
+## Benchmarks
 
 we created a little chat app for demo, you can try other models and report your finding here, [download the app](https://lnkd.in/dYGR54hn)
 
-Gemma 1B INT8:
-- iPhone 16 Pro Max: ~45 toks/sec
-- iPhone 13 Pro: ~30 toks/sec
-- Galaxy A14: ~6 toks/sec
-- Galaxy S24 plus: ~20 toks/sec 
-- Galaxy S21: ~14 toks/sec 
-- Google Pixel 6a: ~14 toks/sec 
+These are day-to-day usage scores, NOT a controlled environment.
 
-SmollLM 135m INT8: 
-- iPhone 13 Pro: ~180 toks/sec
-- Galaxy A14: ~30 toks/sec
-- Galaxy S21: ~42 toks/sec
-- Google Pixel 6a: ~38 toks/sec
-- Huawei P60 Lite (Gran's phone) ~8toks/sec
+| Device                       | Gemma 3 1B INT8 (toks/sec) | Qwen 2.5 1.5B INT8 (toks/sec) |
+|------------------------------|----------------------------|-------------------------------|
+| iPhone 16 Pro Max            | 45                         | 28                            |
+| iPhone 16 Pro                | N/A                        | 28                            |
+| iPhone 16                    | N/A                        | 27                            |
+| iPhone 15 Pro Max            | N/A                        | 23                            |
+| iPhone 15 Pro                | N/A                        | 23                            |
+| iPhone 15                    | N/A                        | 23                            |
+| iPhone 13 Pro                | 30                         | N/A                           |
+| iPhone 12 mini               | 21                         | N/A                           |
+| Galaxy S25 Ultra             | 25                         | N/A                           |
+| Galaxy S24+                  | 20                         | N/A                           |
+| Galaxy S22 Ultra             | 16                         | N/A                           |
+| Galaxy S21                   | 14                         | N/A                           |
+| Galaxy A14                   | 6                          | N/A                           |
+| Google Pixel 8               | 14                         | N/A                           |
+| Google Pixel 6a              | 14                         | N/A                           |
+| Oneplus 13                   | 34                         | N/A                           |
+| Oneplus 12                   | 23                         | N/A                           |
+| Oneplus Nord CE Lite         | 10                         | N/A                           |
+| Xiaomi Redmi k70 Ultra       | 19                         | N/A                           |
+| Moto G62 5G (Gran's Phone)   | 6                          | N/A                           |
+| Huawei P60 Lite (Gran's phone)| N/A                        | N/A                           |
 
 ## Examples
 We have ready-to-run-and-deploy examples [here](https://github.com/cactus-compute/cactus/tree/main/examples), you can simply copy, modify and deploy! And reach out if stuck or need hand-holding.
