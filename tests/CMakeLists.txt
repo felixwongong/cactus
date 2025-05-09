@@ -26,6 +26,12 @@ find_library(ACCELERATE_LIBRARY Accelerate)
 add_executable(cactus_test
     test.cpp
     ../cactus/cactus.cpp
+    ../cactus/cactus_context.cpp
+    ../cactus/cactus_loader.cpp
+    ../cactus/cactus_completion.cpp
+    ../cactus/cactus_utils.cpp
+    ../cactus/cactus_embedding.cpp
+    ../cactus/cactus_lora.cpp
     ../cactus/llama.cpp
     ../cactus/llama-context.cpp
     ../cactus/llama-model.cpp
