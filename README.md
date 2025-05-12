@@ -137,8 +137,10 @@ We have ready-to-run-and-deploy examples [here](https://github.com/cactus-comput
 ### ✅ React Native (TypeScript/JavaScript)
 
 ```bash
+npm install react-native-fs
 npm install cactus-react-native
 # or
+yarn add react-native-fs
 yarn add cactus-react-native
 
 # For iOS, install pods if not on Expo
