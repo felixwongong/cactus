@@ -20,9 +20,26 @@ A new Flutter FFI plugin project.
   s.source           = { :path => '.' }
   s.source_files = 'Classes/**/*'
   s.dependency 'Flutter'
-  s.platform = :ios, '12.0'
+  s.platform = :ios, '13.0'
+
+  # Link our custom XCFramework
+  s.vendored_frameworks = 'cactus.xcframework'
+
+  # Specify system frameworks and libraries needed by cactus.xcframework
+  s.frameworks = 'Accelerate', 'Foundation', 'Metal', 'MetalKit'
+  s.libraries = 'c++'
 
   # Flutter.framework does not contain a i386 slice.
-  s.pod_target_xcconfig = { 'DEFINES_MODULE' => 'YES', 'EXCLUDED_ARCHS[sdk=iphonesimulator*]' => 'i386' }
+  s.pod_target_xcconfig = {
+    'DEFINES_MODULE' => 'YES',
+    'EXCLUDED_ARCHS[sdk=iphonesimulator*]' => 'i386',
+    'CLANG_CXX_LANGUAGE_STANDARD' => 'c++17',
+    # Ensure the header search paths include the framework's headers if needed for the plugin's own native code
+    # 'HEADER_SEARCH_PATHS' => '"$(PODS_ROOT)/../../ios/cactus.xcframework/ios-arm64/cactus.framework/Headers" "$(PODS_ROOT)/../../ios/cactus.xcframework/ios-arm64_x86_64-simulator/cactus.framework/Headers"',
+    # The above HEADER_SEARCH_PATHS might not be necessary if the framework is linked correctly and its headers are module-mapped.
+  }
   s.swift_version = '5.0'
+
+  # If your cactus.xcframework itself has other Pod dependencies, list them here:
+  # s.dependency 'SomeOtherPod'
 end
