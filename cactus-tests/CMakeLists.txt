@@ -25,6 +25,8 @@ find_library(ACCELERATE_LIBRARY Accelerate)
 # Add source files
 add_executable(cactus_test
     test.cpp
+    test_core_api.cpp
+    test_ffi_api.cpp
     ../cactus/cactus.cpp
     ../cactus/cactus_context.cpp
     ../cactus/cactus_loader.cpp
@@ -32,6 +34,7 @@ add_executable(cactus_test
     ../cactus/cactus_utils.cpp
     ../cactus/cactus_embedding.cpp
     ../cactus/cactus_lora.cpp
+    ../cactus/cactus_ffi.cpp
     ../cactus/llama.cpp
     ../cactus/llama-context.cpp
     ../cactus/llama-model.cpp
