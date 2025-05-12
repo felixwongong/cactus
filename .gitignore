@@ -108,9 +108,6 @@ ios/*.xcuserdata/
 ios/*.moved-aside
 ios/*.xcuserdatad/
 ios/.bundle/
-ios/cactus.xcframework/
-ios/Cactus.xcodeproj/
-ios/CMakelists.txt
 *.pbxuser
 *.mode1v3
 *.mode2v3

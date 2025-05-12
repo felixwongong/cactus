@@ -79,6 +79,14 @@ add_library(cactus SHARED
     ${SOURCE_DIR}/amx/amx.cpp
     ${SOURCE_DIR}/amx/mmq.cpp
     ${SOURCE_DIR}/cactus.cpp
+    ${SOURCE_DIR}/cactus_completion.cpp
+    ${SOURCE_DIR}/cactus_context.cpp
+    ${SOURCE_DIR}/cactus_embedding.cpp
+    ${SOURCE_DIR}/cactus_loader.cpp
+    ${SOURCE_DIR}/cactus_lora.cpp
+    ${SOURCE_DIR}/cactus_utils.cpp
+    ${SOURCE_DIR}/cactus_bench.cpp
+    ${SOURCE_DIR}/cactus_chat.cpp
 )
 
 # Setup include directories, use the cactus directory

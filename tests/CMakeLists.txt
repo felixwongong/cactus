@@ -57,7 +57,6 @@ add_executable(cactus_test
     ../cactus/ggml-quants.c
     ../cactus/ggml-opt.cpp
     ../cactus/ggml-metal.m
-    ../cactus/ggml-metal-impl.h
     ../cactus/ggml-cpu.c
     ../cactus/ggml-cpu.cpp
     ../cactus/ggml-cpu-quants.c
@@ -73,6 +72,11 @@ add_executable(cactus_test
     ../cactus/json-schema-to-grammar.cpp
     ../cactus/unicode.cpp
     ../cactus/unicode-data.cpp
+    ../cactus/sgemm.cpp
+    ../cactus/amx/amx.cpp
+    ../cactus/amx/mmq.cpp
+    ../cactus/cactus_bench.cpp
+    ../cactus/cactus_chat.cpp
 )
 
 # Link libraries

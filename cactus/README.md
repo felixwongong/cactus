@@ -1,6 +1,6 @@
 # Cactus
 
-Cactus is a high-level interface layer built on top of [llama.cpp](https://github.com/ggerganov/llama.cpp) designed to facilitate Large Language Model (LLM) inference in C++ applications.
+Cactus is a high-level interface layer built on top of [llama.cpp](https://github.com/ggerganov/llama.cpp) and porting some [llama.rn](https://github.com/mybigday/llama.rn) APIs designed to facilitate Large Language Model (LLM) inference in C++ applications.
 
 ## Overview
 
