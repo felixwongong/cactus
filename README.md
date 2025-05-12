@@ -1,4 +1,4 @@
-![Logo](assets/banner.jpg)
+![Logo](repo-assets/banner.jpg)
 
 [![Email][gmail-shield]][gmail-url]
 [![Discord][discord-shield]][discord-url]
