@@ -65,12 +65,11 @@ set(
     ${SOURCE_DIR}/cactus_embedding.cpp
     ${SOURCE_DIR}/cactus_bench.cpp
     ${SOURCE_DIR}/cactus_lora.cpp
+    ${SOURCE_DIR}/cactus_ffi.cpp
     # --- End of new files ---
 
-    # JNI Bridge files (relative to this CMakeLists.txt)
-    # ${CMAKE_CURRENT_SOURCE_DIR}/jni-utils.h # Header, included via include_directories
-    ${CMAKE_CURRENT_SOURCE_DIR}/jni-helpers.cpp # Added helper implementation
-    ${CMAKE_CURRENT_SOURCE_DIR}/jni.cpp         # Main JNI bridge
+    ${CMAKE_CURRENT_SOURCE_DIR}/jni-helpers.cpp 
+    ${CMAKE_CURRENT_SOURCE_DIR}/jni.cpp 
 )
 
 find_library(LOG_LIB log)
