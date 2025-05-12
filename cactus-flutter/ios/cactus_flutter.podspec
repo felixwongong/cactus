@@ -20,25 +20,32 @@ A new Flutter FFI plugin project.
   s.source           = { :path => '.' }
   s.source_files = 'Classes/**/*'
   s.dependency 'Flutter'
-  s.platform = :ios, '13.0'
+  s.platform = :ios, '11.0'
 
-  # Link our custom XCFramework
+  # Tell CocoaPods to use Swift version 5.
+  s.swift_version = '5.0'
+
+  # Vendored framework for the C++ library
   s.vendored_frameworks = 'cactus.xcframework'
 
-  # Specify system frameworks and libraries needed by cactus.xcframework
+  # Ensure the plugin links against necessary system frameworks
   s.frameworks = 'Accelerate', 'Foundation', 'Metal', 'MetalKit'
-  s.libraries = 'c++'
+
+  # Since the underlying library is C++, ensure correct C++ settings
+  s.pod_target_xcconfig = {
+    'CLANG_CXX_LANGUAGE_STANDARD' => 'c++17',
+    'CLANG_ENABLE_MODULES' => 'YES', # Usually YES for frameworks
+    # If your C++ code uses exceptions, you might need this:
+    # 'GCC_ENABLE_CPP_EXCEPTIONS' => 'YES',
+    # If your framework or its dependencies use Objective-C ARC:
+    # 'CLANG_ENABLE_OBJC_ARC' => 'YES',
+  }
+  # If your framework also has Objective-C++ code, you might need this too:
+  s.user_target_xcconfig = { 'CLANG_CXX_LIBRARY' => 'libc++' }
 
   # Flutter.framework does not contain a i386 slice.
-  s.pod_target_xcconfig = {
-    'DEFINES_MODULE' => 'YES',
-    'EXCLUDED_ARCHS[sdk=iphonesimulator*]' => 'i386',
-    'CLANG_CXX_LANGUAGE_STANDARD' => 'c++17',
-    # Ensure the header search paths include the framework's headers if needed for the plugin's own native code
-    # 'HEADER_SEARCH_PATHS' => '"$(PODS_ROOT)/../../ios/cactus.xcframework/ios-arm64/cactus.framework/Headers" "$(PODS_ROOT)/../../ios/cactus.xcframework/ios-arm64_x86_64-simulator/cactus.framework/Headers"',
-    # The above HEADER_SEARCH_PATHS might not be necessary if the framework is linked correctly and its headers are module-mapped.
-  }
-  s.swift_version = '5.0'
+  s.pod_target_xcconfig = { 'DEFINES_MODULE' => 'YES', 'EXCLUDED_ARCHS[sdk=iphonesimulator*]' => 'i386' }
+  s.user_target_xcconfig = { 'DEFINES_MODULE' => 'YES', 'EXCLUDED_ARCHS[sdk=iphonesimulator*]' => 'i386' }
 
   # If your cactus.xcframework itself has other Pod dependencies, list them here:
   # s.dependency 'SomeOtherPod'

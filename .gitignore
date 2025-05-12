@@ -81,8 +81,8 @@ cactus-react/android/src/main/jniLibs/
 .pub/
 **/build/
 **/ios/Flutter/.last_build_id
-flutter/lib/src/types.g.dart
-flutter/pubspec.lock
+cactus-flutter/lib/src/types.g.dart
+cactus-flutter/pubspec.lock
 lib/generated_plugin_registrant.dart
 app.*.symbols
 app.*.map.json
@@ -90,7 +90,7 @@ pubspec.lock
 cactus-flutter/ios/cactus.xcframework
 cactus-flutter/ios/classes/CactusContext.h
 cactus-flutter/ios/classes/CactusContext.mm
-cactus-flutter/android/src/main
+cactus-flutter/android/src/main/jniLibs
 
 # === Metro/React Native cache ===
 .cache/
