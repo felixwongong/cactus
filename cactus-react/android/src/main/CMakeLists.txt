@@ -64,6 +64,7 @@ set(
     ${SOURCE_DIR}/cactus_utils.cpp
     ${SOURCE_DIR}/cactus_bench.cpp
     ${SOURCE_DIR}/cactus_chat.cpp
+    ${SOURCE_DIR}/cactus_ffi.cpp
     ${CMAKE_SOURCE_DIR}/jni-utils.h
     ${CMAKE_SOURCE_DIR}/jni.cpp
 )
