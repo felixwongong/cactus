@@ -173,7 +173,7 @@ const result = await context.completion({
 await context.release();
 ```
 
-For more detailed documentation and examples, see the [React Native README](react/README.md).
+For more detailed documentation and examples, see the [React Native README](cactus-react/README.md).
 
 ### ✅ Android (Kotlin/Java)
 
@@ -289,10 +289,10 @@ suspend fun runInference() {
 }
 ```
 
-For more detailed documentation and examples, see the [Android README](android/README.md).
-
-### 🚧 Swift (in developement)
+For more detailed documentation and examples, see the [Android README](cactus-android/README.md).
 
 ### 🚧 Flutter (in developement)
+
+### 🚧 Swift (in developement)
 
 ```
