@@ -65,11 +65,11 @@ dist/
 build/
 coverage/*
 *.tsbuildinfo
-react/lib/
-react/ios/cactus.xcframework/
-react/ios/cactus.xcodeproj/
-react/ios/CMakelists.txt
-react/android/src/main/jniLibs/
+cactus-react/lib/
+cactus-react/ios/cactus.xcframework/
+cactus-react/ios/cactus.xcodeproj/
+cactus-react/ios/CMakelists.txt
+cactus-react/android/src/main/jniLibs/
 
 
 # === Flutter/Dart ===
@@ -87,10 +87,10 @@ lib/generated_plugin_registrant.dart
 app.*.symbols
 app.*.map.json
 pubspec.lock
-flutter/ios/cactus.xcframework
-flutter/ios/classes/CactusContext.h
-flutter/ios/classes/CactusContext.mm
-flutter/android/src/main
+cactus-flutter/ios/cactus.xcframework
+cactus-flutter/ios/classes/CactusContext.h
+cactus-flutter/ios/classes/CactusContext.mm
+cactus-flutter/android/src/main
 
 # === Metro/React Native cache ===
 .cache/
@@ -98,16 +98,16 @@ react-native-packager-cache-*/
 __generated__/
 
 # === iOS ===
-ios/Pods/
-ios/Podfile.lock
-ios/build/
-ios/DerivedData/
-ios/*.xcworkspace
-ios/*.xcuserstate
-ios/*.xcuserdata/
-ios/*.moved-aside
-ios/*.xcuserdatad/
-ios/.bundle/
+cactus-ios/Pods/
+cactus-ios/Podfile.lock
+cactus-ios/build/
+cactus-ios/DerivedData/
+cactus-ios/*.xcworkspace
+cactus-ios/*.xcuserstate
+cactus-ios/*.xcuserdata/
+cactus-ios/*.moved-aside
+cactus-ios/*.xcuserdatad/
+cactus-ios/.bundle/
 *.pbxuser
 *.mode1v3
 *.mode2v3
@@ -120,14 +120,14 @@ ios/.bundle/
 *.framework/_CodeSignature/
 
 # === Android ===
-android/.gradle/
+cactus-android/.gradle/
 .gradle
-android/app/build/
-android/build/
-android/.cxx/
-android/.externalNativeBuild/
-android/gradle-wrapper.jar
-android/gradle-wrapper.properties
+cactus-android/app/build/
+cactus-android/build/
+cactus-android/.cxx/
+cactus-android/.externalNativeBuild/
+cactus-android/gradle-wrapper.jar
+cactus-android/gradle-wrapper.properties
 
 
 # === C++/CMake ===
@@ -178,6 +178,3 @@ cmake_install.cmake
 /tmp/
 .cache/
 *.pid
-
-# === Build Copies ===
-swift/Source/cactus.xcframework/
