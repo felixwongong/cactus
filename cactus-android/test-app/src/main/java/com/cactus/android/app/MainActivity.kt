@@ -25,7 +25,7 @@ class MainActivity : AppCompatActivity() {
     private val TAG = "MainActivity"
 
     // Model download constants
-    private val modelUrl = "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q8_0.gguf"
+    private val modelUrl = "https://huggingface.co/bartowski/SmolLM2-135M-Instruct-GGUF/resolve/main/SmolLM2-135M-Instruct-IQ3_M.gguf"
     private val modelFileName = "QWEN2.5-1.5B-INST-Q8_0.gguf"
     private lateinit var modelFile: File // Will be initialized in onCreate
 
