@@ -15,7 +15,7 @@
 [linkedin-url]: https://www.linkedin.com/company/106281696
 
 [discord-shield]: https://img.shields.io/badge/Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white
-[discord-url]: https://discord.gg/cBT6jcCF
+[discord-url]: https://discord.gg/j4SS7Nwr
 
 [docs-shield]: https://img.shields.io/badge/Design_Docs-009485?style=for-the-badge&logo=readthedocs&logoColor=white
 [docs-url]: https://deepwiki.com/cactus-compute/cactus
