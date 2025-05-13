@@ -1,15 +1,29 @@
+/// Represents a single message in a chat conversation.
 class ChatMessage {
+  /// The role of the entity sending the message (e.g., 'system', 'user', 'assistant').
   final String role;
+  /// The content of the message.
   final String content;
 
+  /// Creates a new chat message.
+  ///
+  /// [role] is the role of the entity sending the message.
+  /// [content] is the textual content of the message.
   ChatMessage({required this.role, required this.content});
 
+  /// Converts the [ChatMessage] to a JSON map.
   Map<String, String> toJson() => {
     'role': role,
     'content': content,
   };
 } 
 
+/// The default ChatML template string used for formatting chat conversations 
+/// if no custom template is provided during context initialization.
+/// 
+/// This template structures messages with `<|im_start|>` and `<|im_end|>` tags,
+/// differentiating between 'system', 'user', and 'assistant' roles.
+/// It also includes a placeholder for adding a generation prompt for the assistant.
 const String defaultChatMLTemplate = """
 {% for message in messages %}
   {% if message.role == 'system' %}

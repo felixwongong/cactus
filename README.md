@@ -141,7 +141,7 @@ Full setup and API details are available in the [Flutter README](cactus-flutter/
 Add `cactus` to your `pubspec.yaml`:
 ```yaml
 dependencies:
-  cactus: ^0.0.1 # Replace with the latest version from pub.dev
+  cactus: ^0.0.2
 ```
 Then run `flutter pub get`.
 

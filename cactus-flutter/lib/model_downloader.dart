@@ -1,6 +1,16 @@
 import 'dart:async';
 import 'dart:io';
 
+/// Downloads a model file from the given [url] to the specified [filePath].
+/// 
+/// This function is used internally by [CactusContext.init] if a `modelUrl` is provided,
+/// but can also be used directly if manual download management is needed.
+/// 
+/// - [url]: The URL from which to download the model.
+/// - [filePath]: The local path where the downloaded model file will be saved.
+/// - [onProgress]: An optional callback to monitor download progress. 
+///   It receives the download progress (0.0 to 1.0, or null if indeterminate) 
+///   and a status message.
 Future<void> downloadModel(
   String url,
   String filePath,

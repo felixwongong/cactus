@@ -10,9 +10,11 @@ import './init_params.dart';
 import './completion.dart';
 import './model_downloader.dart';
 
+// Internal callback management, not part of public API.
 bool Function(String)? _currentOnNewTokenCallback;
 
 @pragma('vm:entry-point') 
+// Internal FFI dispatcher, not part of public API.
 bool _staticTokenCallbackDispatcher(Pointer<Utf8> tokenC) {
   if (_currentOnNewTokenCallback != null) {
     try {
@@ -24,15 +26,27 @@ bool _staticTokenCallbackDispatcher(Pointer<Utf8> tokenC) {
   return true; 
 }
 
+/// Manages a loaded AI model instance and provides methods for interaction.
+///
+/// Use [CactusContext.init] to create and initialize a context.
+/// Always call [free] when the context is no longer needed to release native resources.
 class CactusContext {
-  final bindings.CactusContextHandle _handle;
+  final bindings.CactusContextHandle _handle; // Internal handle, not documented for public API.
 
+  // Private constructor, users should use CactusContext.init().
   CactusContext._(this._handle, String? userProvidedTemplate) 
     // : _chatTemplate = (userProvidedTemplate != null && userProvidedTemplate.isNotEmpty) 
     //                   ? userProvidedTemplate 
     //                   : defaultChatMLTemplate
     ;
 
+  /// Initializes a new [CactusContext] with the given [params].
+  ///
+  /// This involves loading the model (from path or URL) and setting up the native context.
+  /// It can be a long-running operation, especially if a model needs to be downloaded.
+  /// Use [CactusInitParams.onInitProgress] to monitor progress.
+  ///
+  /// Throws an [Exception] if initialization fails.
   static Future<CactusContext> init(CactusInitParams params) async {
     params.onInitProgress?.call(null, 'Initialization started.', false);
 
@@ -140,10 +154,15 @@ class CactusContext {
       calloc.free(cParams);
     }
   }
+
+  /// Releases the native resources associated with this context.
+  /// Should be called when the context is no longer needed.
   void free() {
     bindings.freeContext(_handle);
   }
 
+  /// Converts the given [text] into a list of tokens according to the loaded model's tokenizer.
+  /// Returns an empty list if the input text is empty or tokenization fails.
   List<int> tokenize(String text) {
     if (text.isEmpty) return [];
 
@@ -162,6 +181,8 @@ class CactusContext {
     }
   }
 
+  /// Converts a list of [tokens] back into a string.
+  /// Returns an empty string if the input list is empty or detokenization fails.
   String detokenize(List<int> tokens) {
     if (tokens.isEmpty) return "";
 
@@ -183,6 +204,13 @@ class CactusContext {
     }
   }
 
+  /// Generates an embedding (a list of float values) for the given [text].
+  /// 
+  /// The model must have been initialized with [CactusInitParams.embedding] set to true.
+  /// The nature of the embedding (e.g., pooling strategy) is determined by 
+  /// [CactusInitParams.poolingType] and [CactusInitParams.embdNormalize].
+  /// 
+  /// Returns an empty list if the input text is empty or embedding generation fails.
   List<double> embedding(String text) {
     if (text.isEmpty) return [];
 
@@ -201,10 +229,19 @@ class CactusContext {
     }
   }
 
+  /// Performs text or chat completion based on the provided [params].
+  ///
+  /// This is an asynchronous operation. For streaming results, use the 
+  /// [CactusCompletionParams.onNewToken] callback.
+  ///
+  /// Throws an [Exception] if the native completion call fails.
   Future<CactusCompletionResult> completion(CactusCompletionParams params) async {
     
 
     StringBuffer promptBuffer = StringBuffer();
+    // This prompt formatting logic is based on a standard ChatML structure.
+    // If a custom chat_template was provided during init, the native side would handle it.
+    // This Dart-side formatting is a fallback or default if the native side doesn't use the template for prompt construction.
     for (var message in params.messages) {
       if (message.role == 'system' || message.role == 'user' || message.role == 'assistant') {
         promptBuffer.write('<|im_start|>');
@@ -300,6 +337,10 @@ class CactusContext {
     }
   }
 
+  /// Asynchronously requests the current completion operation to stop.
+  /// 
+  /// This provides a way to interrupt a long-running generation.
+  /// The actual stopping is handled by the native side and may not be immediate.
   void stopCompletion() {
     bindings.stopCompletion(_handle);
   }
