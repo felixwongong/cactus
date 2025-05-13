@@ -5,108 +5,152 @@ import 'package:ffi/ffi.dart';
 final class CactusContextOpaque extends Opaque {}
 typedef CactusContextHandle = Pointer<CactusContextOpaque>;
 
+// ignore: camel_case_types
 final class CactusInitParamsC extends Struct {
+  // ignore: non_constant_identifier_names
   external Pointer<Utf8> model_path;
+  // ignore: non_constant_identifier_names
   external Pointer<Utf8> chat_template; 
 
+  // ignore: non_constant_identifier_names
   @Int32()
   external int n_ctx;
+  // ignore: non_constant_identifier_names
   @Int32()
   external int n_batch;
+  // ignore: non_constant_identifier_names
   @Int32()
   external int n_ubatch;
+  // ignore: non_constant_identifier_names
   @Int32()
   external int n_gpu_layers;
+  // ignore: non_constant_identifier_names
   @Int32()
   external int n_threads;
+  // ignore: non_constant_identifier_names
   @Bool()
   external bool use_mmap;
+  // ignore: non_constant_identifier_names
   @Bool()
   external bool use_mlock;
   @Bool()
   external bool embedding;
+  // ignore: non_constant_identifier_names
   @Int32()
   external int pooling_type;
+  // ignore: non_constant_identifier_names
   @Int32()
   external int embd_normalize;
+  // ignore: non_constant_identifier_names
   @Bool()
   external bool flash_attn;
+  // ignore: non_constant_identifier_names
   external Pointer<Utf8> cache_type_k;
+  // ignore: non_constant_identifier_names
   external Pointer<Utf8> cache_type_v;
 
+  // ignore: non_constant_identifier_names
   external Pointer<NativeFunction<Void Function(Float)>> progress_callback;
 }
 
+// ignore: camel_case_types
 final class CactusCompletionParamsC extends Struct {
   external Pointer<Utf8> prompt;
+  // ignore: non_constant_identifier_names
   @Int32()
   external int n_predict;
+  // ignore: non_constant_identifier_names
   @Int32()
   external int n_threads;
   @Int32()
   external int seed;
   @Double()
   external double temperature;
+  // ignore: non_constant_identifier_names
   @Int32()
   external int top_k;
+  // ignore: non_constant_identifier_names
   @Double()
   external double top_p;
+  // ignore: non_constant_identifier_names
   @Double()
   external double min_p;
+  // ignore: non_constant_identifier_names
   @Double()
   external double typical_p;
+  // ignore: non_constant_identifier_names
   @Int32()
   external int penalty_last_n;
+  // ignore: non_constant_identifier_names
   @Double()
   external double penalty_repeat;
+  // ignore: non_constant_identifier_names
   @Double()
   external double penalty_freq;
+  // ignore: non_constant_identifier_names
   @Double()
   external double penalty_present;
   @Int32()
   external int mirostat;
+  // ignore: non_constant_identifier_names
   @Double()
   external double mirostat_tau;
+  // ignore: non_constant_identifier_names
   @Double()
   external double mirostat_eta;
+  // ignore: non_constant_identifier_names
   @Bool()
   external bool ignore_eos;
+  // ignore: non_constant_identifier_names
   @Int32()
   external int n_probs;
+  // ignore: non_constant_identifier_names
   external Pointer<Pointer<Utf8>> stop_sequences; 
+  // ignore: non_constant_identifier_names
   @Int32()
   external int stop_sequence_count;
   external Pointer<Utf8> grammar;
 
+  // ignore: non_constant_identifier_names
   external Pointer<NativeFunction<Bool Function(Pointer<Utf8>)>> token_callback;
 }
 
+// ignore: camel_case_types
 final class CactusTokenArrayC extends Struct {
   external Pointer<Int32> tokens;
   @Int32()
   external int count;
 }
 
+// ignore: camel_case_types
 final class CactusFloatArrayC extends Struct {
+  // ignore: non_constant_identifier_names
   external Pointer<Float> values; 
   @Int32()
   external int count;
 }
 
+// ignore: camel_case_types
 final class CactusCompletionResultC extends Struct {
   external Pointer<Utf8> text;
+  // ignore: non_constant_identifier_names
   @Int32()
   external int tokens_predicted;
+  // ignore: non_constant_identifier_names
   @Int32()
   external int tokens_evaluated;
   @Bool()
   external bool truncated;
+  // ignore: non_constant_identifier_names
   @Bool()
   external bool stopped_eos;
+  // ignore: non_constant_identifier_names
   @Bool()
   external bool stopped_word;
+  // ignore: non_constant_identifier_names
   @Bool()
   external bool stopped_limit;
+  // ignore: non_constant_identifier_names
   external Pointer<Utf8> stopping_word;
 }
 
