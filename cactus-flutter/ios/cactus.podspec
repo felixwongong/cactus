@@ -1,6 +1,6 @@
 Pod::Spec.new do |s|
   s.name             = 'cactus'
-  s.version          = '0.0.1'
+  s.version          = '0.0.3'
   s.summary          = 'AI Framework to run AI on-device'
   s.description      = <<-DESC
 A Flutter plugin for Cactus Utilities, providing access to native Cactus functionalities.
