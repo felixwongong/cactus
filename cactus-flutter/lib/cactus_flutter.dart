@@ -1,12 +1,10 @@
 import 'dart:async';
 import 'dart:ffi';
-import 'dart:io'; // For HttpClient and File
+import 'dart:io'; 
 import 'dart:isolate';
 
 import 'package:ffi/ffi.dart';
-import 'package:http/http.dart' as http_pkg; // aliased to avoid conflict if any
-// path_provider is not directly used in this file for downloadModel path construction,
-// but the library might use it elsewhere or the caller (example app) will.
+import 'package:http/http.dart' as http_pkg; 
 
 import 'src/ffi_bindings.dart' as bindings;
 
@@ -46,6 +44,22 @@ class CactusInitParams {
     this.cacheTypeV,
     this.progressCallback,
   });
+}
+
+bool Function(String)? _currentOnNewTokenCallback;
+
+
+@pragma('vm:entry-point') // AOT compilation hint
+bool _staticTokenCallbackDispatcher(Pointer<Utf8> tokenC) {
+  if (_currentOnNewTokenCallback != null) {
+    try {
+      return _currentOnNewTokenCallback!(tokenC.toDartString());
+    } catch (e) {
+      print("Error in static onNewToken dispatcher: $e");
+      return false; 
+    }
+  }
+  return true; 
 }
 
 class CactusContext {
@@ -204,6 +218,14 @@ class CactusContext {
 
     Pointer<NativeFunction<Bool Function(Pointer<Utf8>)>> tokenCallbackC = nullptr;
 
+    if (params.onNewToken != null) {
+      _currentOnNewTokenCallback = params.onNewToken; // Store the callback
+      tokenCallbackC = Pointer.fromFunction<Bool Function(Pointer<Utf8>)>(_staticTokenCallbackDispatcher, false);
+    } else {
+      _currentOnNewTokenCallback = null;
+      tokenCallbackC = nullptr;
+    }
+
     try {
       cCompParams.ref.prompt = promptC;
       cCompParams.ref.n_predict = params.nPredict;
@@ -247,6 +269,9 @@ class CactusContext {
 
       return result;
     } finally {
+      
+      _currentOnNewTokenCallback = null;
+
       calloc.free(promptC);
       if (grammarC != nullptr) calloc.free(grammarC);
       if (stopSequencesC != nullptr) {
@@ -287,6 +312,7 @@ class CactusCompletionParams {
   final int nProbs;
   final List<String>? stopSequences;
   final String? grammar;
+  final bool Function(String token)? onNewToken;
 
   CactusCompletionParams({
     required this.prompt,
@@ -309,6 +335,7 @@ class CactusCompletionParams {
     this.nProbs = 0,
     this.stopSequences,
     this.grammar,
+    this.onNewToken,
   });
 }
 
@@ -339,23 +366,7 @@ class CactusCompletionResult {
   }
 }
 
-// Example placeholder for a static progress dispatcher if using NativeCallable
-// This would typically send data over a SendPort to the main isolate.
-// void _staticProgressDispatcher(double progress) {
-//   // This function runs in a different scope/isolate potentially.
-//   // It needs a way to communicate `progress` back to the instance
-//   // of CactusContext or the UI.
-//   print("[Native Progress Dispatcher]: $progress");
-// }
 
-// --- Utility Functions ---
-
-/// Downloads a file from the given [url] to the specified [filePath].
-///
-/// Calls [onProgress] to report download progress and status messages.
-/// [onProgress] provides:
-///   - `progress`: A double between 0.0 and 1.0, or null for indeterminate progress.
-///   - `statusMessage`: A string describing the current state.
 Future<void> downloadModel(
   String url,
   String filePath,
@@ -388,7 +399,7 @@ Future<void> downloadModel(
           );
         } else {
           onProgress?.call(
-            null, // Indeterminate
+            null, 
             'Downloading: ${(receivedBytes / (1024 * 1024)).toStringAsFixed(2)}MB received'
           );
         }
@@ -404,6 +415,6 @@ Future<void> downloadModel(
     httpClient.close();
   } catch (e) {
     onProgress?.call(null, 'Error during download: $e');
-    rethrow; // Rethrow the exception to be handled by the caller
+    rethrow; 
   }
 }
