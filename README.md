@@ -55,10 +55,10 @@ Cactus Models coming soon.
 - [Features](#features)
 - [Benchmarks](#benchmarks)
 - [Getting Started](#getting-started)
+  - [Flutter](#flutter-in-development)
   - [React Native](#react-native-shipped)
   - [Android](#android-currently-testing)
   - [Swift](#ios-in-developement)
-  - [Flutter](#flutter-in-development)
   - [C++ (Raw backend)](#c-raw-backend)
 - [License](#license)
 
@@ -133,6 +133,60 @@ We have ready-to-run-and-deploy examples [here](https://github.com/cactus-comput
 
 ## Getting Started
 
+### ✅ Flutter (Dart)
+
+Full setup and API details are available in the [Flutter README](cactus-flutter/README.md).
+
+**1. Add Dependency:**
+Add `cactus` to your `pubspec.yaml`:
+```yaml
+dependencies:
+  cactus: ^0.0.1 # Replace with the latest version from pub.dev
+```
+Then run `flutter pub get`.
+
+**2. Basic Usage (Dart):**
+```dart
+import 'package:cactus/cactus.dart';
+
+CactusContext? cactusContext;
+
+Future<void> initializeAndRun() async {
+  try {
+    // Initialize from a URL (will be downloaded)
+    final initParams = CactusInitParams(
+      modelUrl: 'YOUR_MODEL_URL_HERE', // e.g., https://huggingface.co/.../phi-2.Q4_K_M.gguf
+      nCtx: 512,
+      nThreads: 4,
+      onInitProgress: (progress, message, isError) {
+        print('Init Progress: $message (${progress != null ? (progress * 100).toStringAsFixed(1) + '%' : 'N/A'})');
+      },
+    );
+    cactusContext = await CactusContext.init(initParams);
+
+    // Perform chat completion
+    final messages = [
+      ChatMessage(role: 'system', content: 'You are a helpful AI assistant.'),
+      ChatMessage(role: 'user', content: 'Explain quantum computing in simple terms.'),
+    ];
+    final completionParams = CactusCompletionParams(
+      messages: messages,
+      temperature: 0.7,
+      onNewToken: (token) {
+        print(token); // Stream tokens
+        return true; // Continue generation
+      },
+    );
+    final result = await cactusContext!.completion(completionParams);
+    print('Generated Text: ${result.text}');
+
+  } catch (e) {
+    print('Error: $e');
+  } finally {
+    cactusContext?.free();
+  }
+}
+```
 
 ### ✅ React Native (TypeScript/JavaScript)
 
@@ -290,8 +344,6 @@ suspend fun runInference() {
 ```
 
 For more detailed documentation and examples, see the [Android README](cactus-android/README.md).
-
-### 🚧 Flutter (in developement)
 
 ### 🚧 Swift (in developement)
 

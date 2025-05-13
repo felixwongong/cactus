@@ -1,13 +1,11 @@
 import 'dart:async';
 import 'dart:ffi';
 import 'dart:io'; 
-// import 'dart:isolate';
 
 import 'package:ffi/ffi.dart';
 import 'package:path_provider/path_provider.dart';
 
 import './ffi_bindings.dart' as bindings;
-import './chat.dart';
 import './init_params.dart';
 import './completion.dart';
 import './model_downloader.dart';
@@ -20,7 +18,6 @@ bool _staticTokenCallbackDispatcher(Pointer<Utf8> tokenC) {
     try {
       return _currentOnNewTokenCallback!(tokenC.toDartString());
     } catch (e) {
-      // print("Error in Dart onNewToken callback dispatcher: $e");
       return false; 
     }
   }
@@ -29,7 +26,6 @@ bool _staticTokenCallbackDispatcher(Pointer<Utf8> tokenC) {
 
 class CactusContext {
   final bindings.CactusContextHandle _handle;
-  // final String _chatTemplate; 
 
   CactusContext._(this._handle, String? userProvidedTemplate) 
     // : _chatTemplate = (userProvidedTemplate != null && userProvidedTemplate.isNotEmpty) 
@@ -106,7 +102,7 @@ class CactusContext {
 
     try {
       cParams.ref.model_path = modelPathC;
-      cParams.ref.chat_template = chatTemplateForC; // C side gets user's or null
+      cParams.ref.chat_template = chatTemplateForC; 
       cParams.ref.n_ctx = params.nCtx;
       cParams.ref.n_batch = params.nBatch;
       cParams.ref.n_ubatch = params.nUbatch;
@@ -120,7 +116,7 @@ class CactusContext {
       cParams.ref.flash_attn = params.flashAttn;
       cParams.ref.cache_type_k = cacheTypeKC;
       cParams.ref.cache_type_v = cacheTypeVC;
-      cParams.ref.progress_callback = progressCallbackC; // Always nullptr now
+      cParams.ref.progress_callback = progressCallbackC; 
 
       final handle = bindings.initContext(cParams);
 
@@ -217,7 +213,7 @@ class CactusContext {
         promptBuffer.write(message.content);
         promptBuffer.write('<|im_end|>\\n');
       } else {
-        // print("Warning: Unknown role '${message.role}' in ChatMessage list. Skipping.");
+  
       }
     }
     promptBuffer.write('<|im_start|>assistant\\n');
