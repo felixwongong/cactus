@@ -1,8 +1,12 @@
 import 'dart:async';
 import 'dart:ffi';
+import 'dart:io'; // For HttpClient and File
 import 'dart:isolate';
 
 import 'package:ffi/ffi.dart';
+import 'package:http/http.dart' as http_pkg; // aliased to avoid conflict if any
+// path_provider is not directly used in this file for downloadModel path construction,
+// but the library might use it elsewhere or the caller (example app) will.
 
 import 'src/ffi_bindings.dart' as bindings;
 
@@ -343,3 +347,63 @@ class CactusCompletionResult {
 //   // of CactusContext or the UI.
 //   print("[Native Progress Dispatcher]: $progress");
 // }
+
+// --- Utility Functions ---
+
+/// Downloads a file from the given [url] to the specified [filePath].
+///
+/// Calls [onProgress] to report download progress and status messages.
+/// [onProgress] provides:
+///   - `progress`: A double between 0.0 and 1.0, or null for indeterminate progress.
+///   - `statusMessage`: A string describing the current state.
+Future<void> downloadModel(
+  String url,
+  String filePath,
+  {void Function(double? progress, String statusMessage)? onProgress}
+) async {
+  onProgress?.call(null, 'Starting download for: ${filePath.split('/').last}');
+  final File modelFile = File(filePath);
+
+  try {
+    final httpClient = HttpClient();
+    final request = await httpClient.getUrl(Uri.parse(url));
+    final response = await request.close();
+
+    if (response.statusCode == 200) {
+      final List<int> bytes = [];
+      final totalBytes = response.contentLength;
+      int receivedBytes = 0;
+
+      onProgress?.call(0.0, 'Connected. Receiving data...');
+
+      await for (var chunk in response) {
+        bytes.addAll(chunk);
+        receivedBytes += chunk.length;
+        if (totalBytes != -1 && totalBytes != 0) {
+          final progress = receivedBytes / totalBytes;
+          onProgress?.call(
+            progress,
+            'Downloading: ${(progress * 100).toStringAsFixed(1)}% ' 
+            '(${(receivedBytes / (1024 * 1024)).toStringAsFixed(2)}MB / ${(totalBytes / (1024 * 1024)).toStringAsFixed(2)}MB)'
+          );
+        } else {
+          onProgress?.call(
+            null, // Indeterminate
+            'Downloading: ${(receivedBytes / (1024 * 1024)).toStringAsFixed(2)}MB received'
+          );
+        }
+      }
+      
+      onProgress?.call(1.0, 'Download complete. Saving file...');
+      await modelFile.writeAsBytes(bytes);
+      onProgress?.call(1.0, 'Model saved successfully to $filePath');
+    } else {
+      throw Exception(
+          'Failed to download model. Status code: ${response.statusCode}');
+    }
+    httpClient.close();
+  } catch (e) {
+    onProgress?.call(null, 'Error during download: $e');
+    rethrow; // Rethrow the exception to be handled by the caller
+  }
+}
