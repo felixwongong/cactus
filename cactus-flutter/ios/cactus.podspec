@@ -11,6 +11,31 @@ A Flutter plugin for Cactus Utilities, providing access to native Cactus functio
 
   s.source           = { :path => '.' }
   s.source_files = 'Classes/**/*'
+  s.resource_bundles = {
+    'CactusBinaries' => ['cactus.xcframework.zip']
+  }
+
+  s.prepare_command = <<-CMD
+    set -e
+    FRAMEWORK_DIR="cactus.xcframework"
+    ZIP_FILE="cactus.xcframework.zip"
+
+    if [ ! -d "$FRAMEWORK_DIR" ]; then
+      echo "$FRAMEWORK_DIR not found. Attempting to unzip $ZIP_FILE..."
+      if [ -f "$ZIP_FILE" ]; then
+        unzip -o "$ZIP_FILE" -d . && \
+        echo "Successfully unzipped $ZIP_FILE to current directory." && \
+        rm -f "$ZIP_FILE" && \
+        echo "Successfully deleted $ZIP_FILE."
+      else
+        echo "Error: $ZIP_FILE not found. Cannot unzip."
+        exit 1
+      fi
+    else
+      echo "$FRAMEWORK_DIR already exists. Skipping unzip."
+    fi
+  CMD
+
   s.dependency 'Flutter'
   s.platform = :ios, '11.0'
   s.swift_version = '5.0'

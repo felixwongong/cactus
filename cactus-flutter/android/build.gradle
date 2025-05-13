@@ -23,6 +23,28 @@ rootProject.allprojects {
 
 apply plugin: "com.android.library"
 
+// Define a task to unzip JNI libraries
+task unzipJniLibsTask(type: Copy) {
+    def jniLibsDir = file("src/main/jniLibs")
+    def jniLibsZipFile = file("jniLibs.zip")
+    onlyIf { jniLibsZipFile.exists() && !file("${jniLibsDir}/arm64-v8a").exists() } 
+
+    from zipTree(jniLibsZipFile)
+    into jniLibsDir
+
+    doLast {
+        println "Executed unzipJniLibsTask: Copied JNI libs from ${jniLibsZipFile.name} to ${jniLibsDir}."
+        // Attempt to delete the zip file after successful extraction
+        if (jniLibsZipFile.exists()) {
+            if (jniLibsZipFile.delete()) {
+                println "Successfully deleted ${jniLibsZipFile.name}."
+            } else {
+                println "Warning: Failed to delete ${jniLibsZipFile.name}."
+            }
+        }
+    }
+}
+
 android {
     namespace = "com.cactus.flutter"
 
@@ -41,5 +63,9 @@ android {
 
     defaultConfig {
         minSdk = 21
+    }
+
+    afterEvaluate { project ->
+        project.tasks.findByName("preBuild")?.dependsOn(unzipJniLibsTask)
     }
 }

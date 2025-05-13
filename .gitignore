@@ -87,8 +87,8 @@ lib/generated_plugin_registrant.dart
 app.*.symbols
 app.*.map.json
 pubspec.lock
-# cactus-flutter/ios/cactus.xcframework
-# cactus-flutter/android/src/main/jniLibs
+cactus-flutter/ios/cactus.xcframework
+cactus-flutter/android/src/main/jniLibs
 
 # === Metro/React Native cache ===
 .cache/

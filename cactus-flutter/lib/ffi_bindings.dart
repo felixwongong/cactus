@@ -147,7 +147,7 @@ typedef FreeCompletionResultMembersDart = void Function(Pointer<CactusCompletion
 String _getLibraryPath() {
   const String libName = 'cactus'; 
   if (Platform.isIOS) {
-    return libName; 
+    return '$libName.framework/$libName'; 
   }
   if (Platform.isMacOS) {
     return '$libName.framework/$libName'; 
