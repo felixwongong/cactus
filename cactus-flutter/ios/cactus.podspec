@@ -1,4 +1,3 @@
-
 Pod::Spec.new do |s|
   s.name             = 'cactus'
   s.version          = '0.0.1'
@@ -8,7 +7,7 @@ A Flutter plugin for Cactus Utilities, providing access to native Cactus functio
                        DESC
   s.homepage         = 'http://cactuscompute.com' 
   s.license          = { :file => '../LICENSE' }
-  s.author           = { 'Your Company' => 'founders@cactuscompute.com' } 
+  s.author           = { 'Cactus Compute' => 'founders@cactuscompute.com' } 
 
   s.source           = { :path => '.' }
   s.source_files = 'Classes/**/*'
@@ -16,6 +15,7 @@ A Flutter plugin for Cactus Utilities, providing access to native Cactus functio
   s.platform = :ios, '11.0'
   s.swift_version = '5.0'
   s.vendored_frameworks = 'cactus.xcframework'
+  s.ios.framework = 'cactus'
   s.frameworks = 'Accelerate', 'Foundation', 'Metal', 'MetalKit'
 
   s.pod_target_xcconfig = {

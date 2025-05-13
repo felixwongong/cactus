@@ -19,7 +19,7 @@ A lightweight, high-performance framework for running AI models on mobile device
 
     ```yaml
     dependencies:
-      cactus: ^0.0.2
+      cactus: ^0.0.3
     ```
 
 2.  Run `flutter pub get`.
