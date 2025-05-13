@@ -4,13 +4,55 @@ import 'dart:io';
 import 'dart:isolate';
 
 import 'package:ffi/ffi.dart';
-import 'package:http/http.dart' as http_pkg; 
+import 'package:path_provider/path_provider.dart';
 
 import 'src/ffi_bindings.dart' as bindings;
 
+// Default ChatML template. Users can override this via CactusInitParams.chatTemplate.
+const String _defaultChatMLTemplate = """
+{% for message in messages %}
+  {% if message.role == 'system' %}
+    {{ '<|im_start|>system\\n' + message.content + '<|im_end|>\\n' }}
+  {% elif message.role == 'user' %}
+    {{ '<|im_start|>user\\n' + message.content + '<|im_end|>\\n' }}
+  {% elif message.role == 'assistant' %}
+    {{ '<|im_start|>assistant\\n' + message.content + '<|im_end|>\\n' }}
+  {% endif %}
+{% endfor %}
+{% if add_generation_prompt %}
+  {{ '<|im_start|>assistant\\n' }}
+{% endif %}
+""";
+
+class ChatMessage {
+  final String role;
+  final String content;
+
+  ChatMessage({required this.role, required this.content});
+
+  Map<String, String> toJson() => {
+    'role': role,
+    'content': content,
+  };
+}
+
+/// Callback type for initialization progress updates.
+/// [progress]: Download progress (0.0 to 1.0), null if not applicable (e.g., file exists or general status).
+/// [statusMessage]: A descriptive message of the current state.
+/// [isError]: True if the statusMessage represents an error.
+typedef OnInitProgress = void Function(double? progress, String statusMessage, bool isError);
+
 class CactusInitParams {
-  final String modelPath;
-  final String? chatTemplate;
+  /// Option 1: Provide a direct path to an existing model file.
+  final String? modelPath; 
+
+  /// Option 2: Provide a URL to download the model from.
+  final String? modelUrl;
+  /// Optional: Filename to save the downloaded model as. 
+  /// If null and modelUrl is provided, a filename will be derived from the URL.
+  final String? modelFilename; 
+
+  final String? chatTemplate; 
   final int nCtx;
   final int nBatch;
   final int nUbatch;
@@ -24,10 +66,15 @@ class CactusInitParams {
   final bool flashAttn;
   final String? cacheTypeK;
   final String? cacheTypeV;
-  final void Function(double progress)? progressCallback;
+  
+  /// Callback for progress updates during initialization (including download).
+  final OnInitProgress? onInitProgress; 
+  // Removed direct progressCallback for C, as onInitProgress covers download and general init status.
 
   CactusInitParams({
-    required this.modelPath,
+    this.modelPath,
+    this.modelUrl,
+    this.modelFilename,
     this.chatTemplate,
     this.nCtx = 512,
     this.nBatch = 512,
@@ -42,20 +89,26 @@ class CactusInitParams {
     this.flashAttn = false,
     this.cacheTypeK,
     this.cacheTypeV,
-    this.progressCallback,
-  });
+    this.onInitProgress,
+  }) {
+    if (modelPath == null && modelUrl == null) {
+      throw ArgumentError('Either modelPath or modelUrl must be provided.');
+    }
+    if (modelPath != null && modelUrl != null) {
+      throw ArgumentError('Cannot provide both modelPath and modelUrl. Choose one.');
+    }
+  }
 }
 
 bool Function(String)? _currentOnNewTokenCallback;
 
-
-@pragma('vm:entry-point') // AOT compilation hint
+@pragma('vm:entry-point') 
 bool _staticTokenCallbackDispatcher(Pointer<Utf8> tokenC) {
   if (_currentOnNewTokenCallback != null) {
     try {
       return _currentOnNewTokenCallback!(tokenC.toDartString());
     } catch (e) {
-      print("Error in static onNewToken dispatcher: $e");
+      print("Error in Dart onNewToken callback dispatcher: $e");
       return false; 
     }
   }
@@ -64,43 +117,92 @@ bool _staticTokenCallbackDispatcher(Pointer<Utf8> tokenC) {
 
 class CactusContext {
   final bindings.CactusContextHandle _handle;
-  NativeCallable<Void Function(Float)>? _progressNativeCallable;
+  // _progressNativeCallable might not be needed if C-level progress callback is removed
+  // NativeCallable<Void Function(Float)>? _progressNativeCallable; 
+  final String _chatTemplate; // Will always be populated (either user's or default)
 
-  CactusContext._(this._handle);
+  CactusContext._(this._handle, String? userProvidedTemplate) : 
+    _chatTemplate = (userProvidedTemplate != null && userProvidedTemplate.isNotEmpty) 
+                      ? userProvidedTemplate 
+                      : _defaultChatMLTemplate;
 
   static Future<CactusContext> init(CactusInitParams params) async {
-    if (params.modelPath.isEmpty) {
-      throw ArgumentError('modelPath cannot be empty.');
+    params.onInitProgress?.call(null, 'Initialization started.', false);
+
+    String effectiveModelPath;
+
+    if (params.modelUrl != null) {
+      params.onInitProgress?.call(null, 'Resolving model path from URL...', false);
+      try {
+        final Directory appDocDir = await getApplicationDocumentsDirectory();
+        String filename = params.modelFilename ?? params.modelUrl!.split('/').last;
+        // Ensure filename is valid and doesn't contain query parameters if URL had them
+        if (filename.contains('?')) {
+          filename = filename.split('?').first;
+        }
+        if (filename.isEmpty) {
+           filename = "downloaded_model.gguf"; // Fallback filename
+        }
+        effectiveModelPath = '${appDocDir.path}/$filename';
+
+        final modelFile = File(effectiveModelPath);
+        final bool fileExists = await modelFile.exists();
+
+        params.onInitProgress?.call(null, 
+          fileExists 
+            ? 'Model found at $effectiveModelPath.' 
+            : 'Model not found locally. Preparing to download from ${params.modelUrl} to $effectiveModelPath.',
+          false
+        );
+
+        if (!fileExists) {
+          await downloadModel(
+            params.modelUrl!,
+            effectiveModelPath,
+            onProgress: (progress, status) { // downloadModel's existing onProgress
+              params.onInitProgress?.call(progress, status, false);
+            },
+          );
+          params.onInitProgress?.call(1.0, 'Model download complete.', false);
+        }
+      } catch (e) {
+        params.onInitProgress?.call(null, 'Error during model download/path resolution: $e', true);
+        throw Exception('Failed to prepare model from URL: $e');
+      }
+    } else if (params.modelPath != null) {
+      effectiveModelPath = params.modelPath!;
+      params.onInitProgress?.call(null, 'Using provided model path: $effectiveModelPath', false);
+      // Optionally, verify if this file exists and is accessible
+      if (!await File(effectiveModelPath).exists()) {
+        final msg = 'Provided modelPath does not exist: $effectiveModelPath';
+        params.onInitProgress?.call(null, msg, true);
+        throw ArgumentError(msg);
+      }
+    } else {
+      // This case should be prevented by the constructor check, but as a safeguard:
+      const msg = 'No valid model source (URL or path) provided.';
+      params.onInitProgress?.call(null, msg, true);
+      throw ArgumentError(msg);
     }
 
+    params.onInitProgress?.call(null, 'Initializing native context with model: $effectiveModelPath', false);
     final cParams = calloc<bindings.CactusInitParamsC>();
-    final modelPathC = params.modelPath.toNativeUtf8(allocator: calloc);
-    final chatTemplateC = params.chatTemplate?.toNativeUtf8(allocator: calloc) ?? nullptr;
+    final modelPathC = effectiveModelPath.toNativeUtf8(allocator: calloc);
+    // Pass the user's template to C if they provided one, otherwise C gets nullptr for chat_template.
+    // The Dart side (_chatTemplate field) will use the default if userProvided is null.
+    final chatTemplateForC = (params.chatTemplate != null && params.chatTemplate!.isNotEmpty) 
+                              ? params.chatTemplate!.toNativeUtf8(allocator: calloc) 
+                              : nullptr;
     final cacheTypeKC = params.cacheTypeK?.toNativeUtf8(allocator: calloc) ?? nullptr;
     final cacheTypeVC = params.cacheTypeV?.toNativeUtf8(allocator: calloc) ?? nullptr;
 
-    NativeCallable<Void Function(Float)>? progressNativeCallable;
+    // C-level progress callback for llama.cpp internal loading is removed from this simplified API.
+    // The onInitProgress callback handles download progress and general status updates from Dart side.
     Pointer<NativeFunction<Void Function(Float)>> progressCallbackC = nullptr;
-
-    if (params.progressCallback != null) {
-      // Ensure a static/top-level function is used for the callback.
-      // Example: progressNativeCallable = NativeCallable<Void Function(Float)>.isolateLocal(staticProgressCallbackHandler, exceptionalReturn: Void());
-      // where staticProgressCallbackHandler would then call params.progressCallback via a SendPort or similar mechanism if needed.
-      // For simplicity, if params.progressCallback is already static, it might be directly usable after wrapping.
-      // This part is highly dependent on the exact callback mechanism desired.
-      // Direct assignment as below is only safe if the Dart function is truly static and matches the signature.
-      // progressCallbackC = Pointer.fromFunction<Void Function(Float)>(params.progressCallback!, exceptionalReturn: Void());
-      // The above is generally not recommended for non-trivial callbacks due to isolate and GC issues.
-      // Using NativeCallable is safer but requires the Dart function to be static or top-level.
-      // Placeholder - this would require a static dispatcher: 
-      // progressNativeCallable = NativeCallable<Void Function(Float)>.isolateLocal(_staticProgressDispatcher, exceptionalReturn: Void());
-      // progressCallbackC = progressNativeCallable.nativeFunction;
-      // A proper implementation would likely involve Isolate communication to pass the Dart closure.
-    }
 
     try {
       cParams.ref.model_path = modelPathC;
-      cParams.ref.chat_template = chatTemplateC;
+      cParams.ref.chat_template = chatTemplateForC; // C side gets user's or null
       cParams.ref.n_ctx = params.nCtx;
       cParams.ref.n_batch = params.nBatch;
       cParams.ref.n_ubatch = params.nUbatch;
@@ -114,29 +216,36 @@ class CactusContext {
       cParams.ref.flash_attn = params.flashAttn;
       cParams.ref.cache_type_k = cacheTypeKC;
       cParams.ref.cache_type_v = cacheTypeVC;
-      cParams.ref.progress_callback = progressCallbackC;
+      cParams.ref.progress_callback = progressCallbackC; // Always nullptr now
 
       final handle = bindings.initContext(cParams);
 
       if (handle == nullptr) {
-        throw Exception('Failed to initialize native cactus context.');
+        const msg = 'Failed to initialize native cactus context. Check native logs for details.';
+        params.onInitProgress?.call(null, msg, true);
+        throw Exception(msg);
       }
-      final context = CactusContext._(handle);
-      context._progressNativeCallable = progressNativeCallable;
+      // Initialize CactusContext with user's template (or null, constructor handles default)
+      final context = CactusContext._(handle, params.chatTemplate); 
+      // context._progressNativeCallable = null; // No longer used
+      params.onInitProgress?.call(1.0, 'CactusContext initialized successfully.', false);
       return context;
+    } catch(e) {
+      final msg = 'Error during native context initialization: $e';
+      params.onInitProgress?.call(null, msg, true);
+      rethrow; // Rethrow after reporting progress
     } finally {
       calloc.free(modelPathC);
-      if (chatTemplateC != nullptr) calloc.free(chatTemplateC);
+      if (chatTemplateForC != nullptr) calloc.free(chatTemplateForC);
       if (cacheTypeKC != nullptr) calloc.free(cacheTypeKC);
       if (cacheTypeVC != nullptr) calloc.free(cacheTypeVC);
       calloc.free(cParams);
     }
   }
-
   void free() {
     bindings.freeContext(_handle);
-    _progressNativeCallable?.close();
-    _progressNativeCallable = null;
+    // _progressNativeCallable?.close(); // No longer used
+    // _progressNativeCallable = null;
   }
 
   List<int> tokenize(String text) {
@@ -149,10 +258,7 @@ class CactusContext {
         bindings.freeTokenArray(cTokenArray);
         return [];
       }
-      final dartTokens = <int>[];
-      for (int i = 0; i < cTokenArray.count; i++) {
-        dartTokens.add(cTokenArray.tokens[i]);
-      }
+      final dartTokens = List<int>.generate(cTokenArray.count, (i) => cTokenArray.tokens[i]);
       bindings.freeTokenArray(cTokenArray);
       return dartTokens;
     } finally {
@@ -171,10 +277,10 @@ class CactusContext {
     try {
       final resultCPtr = bindings.detokenize(_handle, tokensCPtr, tokens.length);
       if (resultCPtr == nullptr) {
-        return "";
+        return ""; 
       }
       final resultString = resultCPtr.toDartString();
-      bindings.freeString(resultCPtr);
+      bindings.freeString(resultCPtr); 
       return resultString;
     } finally {
       calloc.free(tokensCPtr);
@@ -191,10 +297,7 @@ class CactusContext {
         bindings.freeFloatArray(cFloatArray);
         return [];
       }
-      final dartEmbeddings = <double>[];
-      for (int i = 0; i < cFloatArray.count; i++) {
-        dartEmbeddings.add(cFloatArray.values[i]);
-      }
+      final dartEmbeddings = List<double>.generate(cFloatArray.count, (i) => cFloatArray.values[i]);
       bindings.freeFloatArray(cFloatArray);
       return dartEmbeddings;
     } finally {
@@ -203,9 +306,33 @@ class CactusContext {
   }
 
   Future<CactusCompletionResult> completion(CactusCompletionParams params) async {
+    // _chatTemplate is guaranteed to be non-empty by the constructor logic
+    // (either user-provided or the default).
+    // Thus, the previous check for `_chatTemplate == null || _chatTemplate!.isEmpty` is no longer needed here.
+
+    StringBuffer promptBuffer = StringBuffer();
+    // The formatting logic here directly uses the _chatTemplate field, which might be user-defined
+    // or the internal default. However, this current implementation hardcodes the ChatML structure.
+    // For a truly flexible templating system based on _chatTemplate string, a mini-parser/renderer
+    // would be needed here. For now, it effectively applies the *logic* of the default ChatML.
+    for (var message in params.messages) {
+      if (message.role == 'system' || message.role == 'user' || message.role == 'assistant') {
+        promptBuffer.write('<|im_start|>');
+        promptBuffer.write(message.role);
+        promptBuffer.write('\\n'); // Note: If _chatTemplate were a real template, these would be part of it
+        promptBuffer.write(message.content);
+        promptBuffer.write('<|im_end|>\\n');
+      } else {
+        print("Warning: Unknown role '${message.role}' in ChatMessage list. Skipping.");
+      }
+    }
+    promptBuffer.write('<|im_start|>assistant\\n');
+    
+    final String formattedPrompt = promptBuffer.toString();
+
     final cCompParams = calloc<bindings.CactusCompletionParamsC>();
     final cResult = calloc<bindings.CactusCompletionResultC>();
-    final promptC = params.prompt.toNativeUtf8(allocator: calloc);
+    final promptC = formattedPrompt.toNativeUtf8(allocator: calloc); 
     final grammarC = params.grammar?.toNativeUtf8(allocator: calloc) ?? nullptr;
 
     Pointer<Pointer<Utf8>> stopSequencesC = nullptr;
@@ -217,12 +344,10 @@ class CactusContext {
     }
 
     Pointer<NativeFunction<Bool Function(Pointer<Utf8>)>> tokenCallbackC = nullptr;
-
+    _currentOnNewTokenCallback = params.onNewToken; 
     if (params.onNewToken != null) {
-      _currentOnNewTokenCallback = params.onNewToken; // Store the callback
       tokenCallbackC = Pointer.fromFunction<Bool Function(Pointer<Utf8>)>(_staticTokenCallbackDispatcher, false);
     } else {
-      _currentOnNewTokenCallback = null;
       tokenCallbackC = nullptr;
     }
 
@@ -253,7 +378,7 @@ class CactusContext {
       final status = bindings.completion(_handle, cCompParams, cResult);
 
       if (status != 0) {
-        throw Exception('Native completion call failed with status: $status');
+        throw Exception('Native completion call failed with status: $status. Check native logs.');
       }
 
       final result = CactusCompletionResult(
@@ -269,8 +394,7 @@ class CactusContext {
 
       return result;
     } finally {
-      
-      _currentOnNewTokenCallback = null;
+      _currentOnNewTokenCallback = null; 
 
       calloc.free(promptC);
       if (grammarC != nullptr) calloc.free(grammarC);
@@ -280,7 +404,7 @@ class CactusContext {
         }
         calloc.free(stopSequencesC);
       }
-      bindings.freeCompletionResultMembers(cResult);
+      bindings.freeCompletionResultMembers(cResult); 
       calloc.free(cCompParams);
       calloc.free(cResult);
     }
@@ -292,7 +416,7 @@ class CactusContext {
 }
 
 class CactusCompletionParams {
-  final String prompt;
+  final List<ChatMessage> messages; 
   final int nPredict;
   final int nThreads;
   final int seed;
@@ -315,12 +439,12 @@ class CactusCompletionParams {
   final bool Function(String token)? onNewToken;
 
   CactusCompletionParams({
-    required this.prompt,
+    required this.messages, 
     this.nPredict = -1, 
     this.nThreads = 0, 
     this.seed = -1, 
     this.temperature = 0.8,
-    this.topK = 40,
+    this.topK = 20,
     this.topP = 0.95,
     this.minP = 0.05,
     this.typicalP = 1.0,
@@ -376,19 +500,19 @@ Future<void> downloadModel(
   final File modelFile = File(filePath);
 
   try {
-    final httpClient = HttpClient();
+    final httpClient = HttpClient(); 
     final request = await httpClient.getUrl(Uri.parse(url));
     final response = await request.close();
 
     if (response.statusCode == 200) {
-      final List<int> bytes = [];
-      final totalBytes = response.contentLength;
+      final IOSink fileSink = modelFile.openWrite();
+      final totalBytes = response.contentLength; 
       int receivedBytes = 0;
 
       onProgress?.call(0.0, 'Connected. Receiving data...');
 
       await for (var chunk in response) {
-        bytes.addAll(chunk);
+        fileSink.add(chunk);
         receivedBytes += chunk.length;
         if (totalBytes != -1 && totalBytes != 0) {
           final progress = receivedBytes / totalBytes;
@@ -404,15 +528,16 @@ Future<void> downloadModel(
           );
         }
       }
+      await fileSink.flush();
+      await fileSink.close();
       
       onProgress?.call(1.0, 'Download complete. Saving file...');
-      await modelFile.writeAsBytes(bytes);
       onProgress?.call(1.0, 'Model saved successfully to $filePath');
     } else {
       throw Exception(
           'Failed to download model. Status code: ${response.statusCode}');
     }
-    httpClient.close();
+    httpClient.close(); 
   } catch (e) {
     onProgress?.call(null, 'Error during download: $e');
     rethrow; 

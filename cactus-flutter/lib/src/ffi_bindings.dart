@@ -73,31 +73,26 @@ final class CactusCompletionParamsC extends Struct {
   external bool ignore_eos;
   @Int32()
   external int n_probs;
-  external Pointer<Pointer<Utf8>> stop_sequences; // Array of C strings
+  external Pointer<Pointer<Utf8>> stop_sequences; 
   @Int32()
   external int stop_sequence_count;
   external Pointer<Utf8> grammar;
 
-  // Token callback: bool (*token_callback)(const char* token_json);
-  // Pointer<NativeFunction<Bool Function(Pointer<Utf8>)>>
   external Pointer<NativeFunction<Bool Function(Pointer<Utf8>)>> token_callback;
 }
 
-// typedef struct cactus_token_array_c
 final class CactusTokenArrayC extends Struct {
   external Pointer<Int32> tokens;
   @Int32()
   external int count;
 }
 
-// typedef struct cactus_float_array_c
 final class CactusFloatArrayC extends Struct {
-  external Pointer<Float> values; // Dart `Float` maps to C `float`
+  external Pointer<Float> values; 
   @Int32()
   external int count;
 }
 
-// typedef struct cactus_completion_result_c
 final class CactusCompletionResultC extends Struct {
   external Pointer<Utf8> text;
   @Int32()
@@ -115,55 +110,38 @@ final class CactusCompletionResultC extends Struct {
   external Pointer<Utf8> stopping_word;
 }
 
-// --- Define FFI Function Signatures and Lookups ---
-
-// Function signature for cactus_init_context_c
-// C: cactus_context_handle_t cactus_init_context_c(const cactus_init_params_c_t* params);
 typedef InitContextCNative = CactusContextHandle Function(Pointer<CactusInitParamsC> params);
 typedef InitContextDart = CactusContextHandle Function(Pointer<CactusInitParamsC> params);
 
-// Function signature for cactus_free_context_c
-// C: void cactus_free_context_c(cactus_context_handle_t handle);
 typedef FreeContextCNative = Void Function(CactusContextHandle handle);
 typedef FreeContextDart = void Function(CactusContextHandle handle);
 
-// cactus_completion_c
 typedef CompletionCNative = Int32 Function(CactusContextHandle handle, Pointer<CactusCompletionParamsC> params, Pointer<CactusCompletionResultC> result);
 typedef CompletionDart = int Function(CactusContextHandle handle, Pointer<CactusCompletionParamsC> params, Pointer<CactusCompletionResultC> result);
 
-// cactus_stop_completion_c
 typedef StopCompletionCNative = Void Function(CactusContextHandle handle);
 typedef StopCompletionDart = void Function(CactusContextHandle handle);
 
-// cactus_tokenize_c
 typedef TokenizeCNative = CactusTokenArrayC Function(CactusContextHandle handle, Pointer<Utf8> text);
 typedef TokenizeDart = CactusTokenArrayC Function(CactusContextHandle handle, Pointer<Utf8> text);
 
-// cactus_detokenize_c
 typedef DetokenizeCNative = Pointer<Utf8> Function(CactusContextHandle handle, Pointer<Int32> tokens, Int32 count);
 typedef DetokenizeDart = Pointer<Utf8> Function(CactusContextHandle handle, Pointer<Int32> tokens, int count);
 
-// cactus_embedding_c
 typedef EmbeddingCNative = CactusFloatArrayC Function(CactusContextHandle handle, Pointer<Utf8> text);
 typedef EmbeddingDart = CactusFloatArrayC Function(CactusContextHandle handle, Pointer<Utf8> text);
 
-// cactus_free_string_c
 typedef FreeStringCNative = Void Function(Pointer<Utf8> str);
 typedef FreeStringDart = void Function(Pointer<Utf8> str);
 
-// cactus_free_token_array_c
 typedef FreeTokenArrayCNative = Void Function(CactusTokenArrayC arr);
 typedef FreeTokenArrayDart = void Function(CactusTokenArrayC arr);
 
-// cactus_free_float_array_c
 typedef FreeFloatArrayCNative = Void Function(CactusFloatArrayC arr);
 typedef FreeFloatArrayDart = void Function(CactusFloatArrayC arr);
 
-// cactus_free_completion_result_members_c
 typedef FreeCompletionResultMembersCNative = Void Function(Pointer<CactusCompletionResultC> result);
 typedef FreeCompletionResultMembersDart = void Function(Pointer<CactusCompletionResultC> result);
-
-// --- Dynamic Library Loading ---
 
 String _getLibraryPath() {
   const String libName = 'cactus'; 
@@ -222,8 +200,3 @@ final freeFloatArray = cactusLib
 final freeCompletionResultMembers = cactusLib
     .lookup<NativeFunction<FreeCompletionResultMembersCNative>>('cactus_free_completion_result_members_c')
     .asFunction<FreeCompletionResultMembersDart>();
-
-// Redundant TODO as all functions have been looked up above
-// // TODO: Add lookups for all other C FFI functions defined in cactus_ffi.h
-// // (cactus_completion_c, cactus_stop_completion_c, cactus_tokenize_c,
-// // cactus_detokenize_c, cactus_embedding_c, and all cactus_free_*_c functions) 
