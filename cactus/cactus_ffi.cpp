@@ -27,7 +27,6 @@ static std::vector<std::string> c_str_array_to_vector(const char** arr, int coun
 // Helper to safely duplicate a C string (caller must free)
 static char* safe_strdup(const std::string& str) {
     if (str.empty()) {
-        // Return a pointer to an empty string literal (read-only) or allocated empty string
         // Let's allocate to be consistent with freeing non-empty strings
         char* empty_str = (char*)malloc(1);
         if (empty_str) empty_str[0] = '\0';
@@ -45,7 +44,6 @@ extern "C" {
 
 cactus_context_handle_t cactus_init_context_c(const cactus_init_params_c_t* params) {
     if (!params || !params->model_path) {
-        // Log error: Invalid parameters
         return nullptr;
     }
 
@@ -53,7 +51,6 @@ cactus_context_handle_t cactus_init_context_c(const cactus_init_params_c_t* para
     try {
         context = new cactus::cactus_context();
 
-        // --- Translate C params to C++ common_params --- 
         common_params cpp_params;
         cpp_params.model = params->model_path;
         if (params->chat_template) {
@@ -74,7 +71,7 @@ cactus_context_handle_t cactus_init_context_c(const cactus_init_params_c_t* para
              try {
                   cpp_params.cache_type_k = cactus::kv_cache_type_from_str(params->cache_type_k);
              } catch (const std::exception& e) {
-                 // Log warning about invalid cache type K
+                 std::cerr << "Warning: Invalid cache_type_k: " << params->cache_type_k << " Error: " << e.what() << std::endl;
                  delete context;
                  return nullptr;
              }
@@ -83,21 +80,19 @@ cactus_context_handle_t cactus_init_context_c(const cactus_init_params_c_t* para
             try {
                 cpp_params.cache_type_v = cactus::kv_cache_type_from_str(params->cache_type_v);
             } catch (const std::exception& e) {
-                // Log warning about invalid cache type V
+                std::cerr << "Warning: Invalid cache_type_v: " << params->cache_type_v << " Error: " << e.what() << std::endl;
                 delete context;
                 return nullptr;
             }
         }
         // TODO: Add translation for LoRA, RoPE params if exposed in C struct
 
-        // Progress callback - MORE COMPLEX - requires stable function pointer or trampoline
-        // This simple version might crash if the Dart function disappears
+        // Progress callback can be complex; this simple version might crash if the Dart function disappears
         if (params->progress_callback) {
             cpp_params.progress_callback = [](float progress, void* user_data) {
                 auto callback = reinterpret_cast<void (*)(float)>(user_data);
                 callback(progress);
-                // Return value indicates interruption - how to handle this from Dart?
-                // For now, assume we don't interrupt loading via this callback.
+                // Return value indicates interruption. For now, assume we don't interrupt loading.
                 return true; 
             };
             cpp_params.progress_callback_user_data = reinterpret_cast<void*>(params->progress_callback);
@@ -105,7 +100,6 @@ cactus_context_handle_t cactus_init_context_c(const cactus_init_params_c_t* para
              cpp_params.progress_callback = nullptr;
              cpp_params.progress_callback_user_data = nullptr;
         }
-        // ---------
 
         if (!context->loadModel(cpp_params)) {
             // loadModel logs errors internally
@@ -116,12 +110,11 @@ cactus_context_handle_t cactus_init_context_c(const cactus_init_params_c_t* para
         return reinterpret_cast<cactus_context_handle_t>(context);
 
     } catch (const std::exception& e) {
-        // Log error: Exception during context creation
         std::cerr << "Error initializing context: " << e.what() << std::endl;
         if (context) delete context;
         return nullptr;
     } catch (...) {
-        // Log error: Unknown exception
+        std::cerr << "Unknown error initializing context." << std::endl;
         if (context) delete context;
         return nullptr;
     }
@@ -268,8 +261,11 @@ cactus_token_array_c_t cactus_tokenize_c(cactus_context_handle_t handle, const c
             }
         }
         return result;
+    } catch (const std::exception& e) {
+        std::cerr << "Error during tokenization: " << e.what() << std::endl;
+        return {nullptr, 0};
     } catch (...) {
-        // Log error
+        std::cerr << "Unknown error during tokenization." << std::endl;
         return {nullptr, 0};
     }
 }
@@ -289,8 +285,11 @@ char* cactus_detokenize_c(cactus_context_handle_t handle, const int32_t* tokens,
         // Print the intermediate C++ string for debugging
         std::cout << "[DEBUG cactus_detokenize_c] Intermediate std::string: [" << text << "]" << std::endl;
         return safe_strdup(text);
+    } catch (const std::exception& e) {
+        std::cerr << "Error during detokenization: " << e.what() << std::endl;
+        return safe_strdup("");
     } catch (...) {
-        // Log error
+        std::cerr << "Unknown error during detokenization." << std::endl;
         return safe_strdup("");
     }
 }
@@ -302,7 +301,7 @@ cactus_float_array_c_t cactus_embedding_c(cactus_context_handle_t handle, const 
     }
     cactus::cactus_context* context = reinterpret_cast<cactus::cactus_context*>(handle);
     if (!context->ctx || !context->params.embedding) { // Check if embedding mode is enabled
-        // Log error: Not initialized for embeddings
+        std::cerr << "Error: Embedding mode not enabled or context not initialized." << std::endl;
         return result;
     }
 
@@ -335,8 +334,12 @@ cactus_float_array_c_t cactus_embedding_c(cactus_context_handle_t handle, const 
         context->is_predicting = false;
         return result;
 
+    } catch (const std::exception& e) {
+        std::cerr << "Error during embedding generation: " << e.what() << std::endl;
+        context->is_predicting = false;
+        return {nullptr, 0};
     } catch (...) {
-        // Log error
+        std::cerr << "Unknown error during embedding generation." << std::endl;
         context->is_predicting = false;
         return {nullptr, 0};
     }

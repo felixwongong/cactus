@@ -34,43 +34,34 @@
 extern "C" {
 #endif
 
-// --- Opaque handle ---
-// Represents the C++ cactus::cactus_context
 typedef struct cactus_context_opaque* cactus_context_handle_t;
 
-// --- Structs for Parameters (Mirroring relevant parts of common_params) ---
 
 typedef struct cactus_init_params_c {
     const char* model_path;
-    const char* chat_template; // Optional
+    const char* chat_template; 
 
-    // Matching common_params fields (add more as needed)
     int32_t n_ctx;
     int32_t n_batch;
     int32_t n_ubatch;
     int32_t n_gpu_layers;
-    int32_t n_threads; // Number of CPU threads
+    int32_t n_threads;
     bool use_mmap;
     bool use_mlock;
-    bool embedding;     // Enable embedding mode
-    int32_t pooling_type; // enum llama_pooling_type
+    bool embedding; 
+    int32_t pooling_type; 
     int32_t embd_normalize;
     bool flash_attn;
-    const char* cache_type_k; // e.g., "f16"
-    const char* cache_type_v; // e.g., "f16"
-    // Add lora params if needed
-    // Add rope params if needed
-
-    // Callback for progress (optional)
-    // Note: Passing function pointers requires care with Dart FFI NativeCallable
-    void (*progress_callback)(float progress); // Simple example
+    const char* cache_type_k; 
+    const char* cache_type_v; 
+    void (*progress_callback)(float progress); 
 
 } cactus_init_params_c_t;
 
 typedef struct cactus_completion_params_c {
     const char* prompt;
-    int32_t n_predict; // Max tokens to generate (-1 for infinite)
-    int32_t n_threads; // Override context threads if > 0
+    int32_t n_predict; 
+    int32_t n_threads; 
     int32_t seed;
     double temperature;
     int32_t top_k;
@@ -85,45 +76,34 @@ typedef struct cactus_completion_params_c {
     double mirostat_tau;
     double mirostat_eta;
     bool ignore_eos;
-    int32_t n_probs; // Number of probabilities to return per token
-    const char** stop_sequences; // Null-terminated array of C strings
+    int32_t n_probs; 
+    const char** stop_sequences; 
     int stop_sequence_count;
-    const char* grammar; // Optional grammar
-
-    // Callback for generated tokens (optional)
-    // Called for each new piece of text generated.
-    // `token_json` might contain token string, probs etc. (needs definition)
-    // Return `false` from callback to stop completion early.
+    const char* grammar; 
     bool (*token_callback)(const char* token_json);
 
 } cactus_completion_params_c_t;
 
 
-// --- Structs for Results ---
-
-// Represents a list of tokens (int32_t array)
 typedef struct cactus_token_array_c {
     int32_t* tokens;
     int32_t count;
 } cactus_token_array_c_t;
 
-// Represents a list of floats (float array)
 typedef struct cactus_float_array_c {
     float* values;
     int32_t count;
 } cactus_float_array_c_t;
 
-// Represents the final result of a completion call
 typedef struct cactus_completion_result_c {
-    char* text; // Full generated text (caller must free using cactus_free_string_c)
+    char* text; 
     int32_t tokens_predicted;
-    int32_t tokens_evaluated; // Prompt tokens
+    int32_t tokens_evaluated;
     bool truncated;
     bool stopped_eos;
     bool stopped_word;
     bool stopped_limit;
-    char* stopping_word; // (caller must free using cactus_free_string_c)
-    // Add timings if needed
+    char* stopping_word; 
 } cactus_completion_result_c_t;
 
 
