@@ -39,9 +39,8 @@ Cactus is a lightweight, high-performance framework for running AI models on mob
 Cactus currently leverages GGML backends to support any GGUF model already compatible with [![Llama.cpp](https://img.shields.io/badge/Llama.cpp-000000?style=flat&logo=github&logoColor=white)](https://github.com/ggerganov/llama.cpp), while we focus on broadly supporting every moblie app development platform, as well as upcoming features like:
 
 - phone tool use (gallery search, read email, send message...)
-- thinking mode (heavy research in this area) 
-- action execution (send a message...)
-- higher-level APIs (sentiments, OCR, TTS...)
+- thinking mode (planning, evals, promot engineering...) 
+- higher-level APIs (sentiments, doc analysis, OCR, TTS...) 
 
 Functionalities that will enhance small models amd make them production-ready!
 
