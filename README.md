@@ -29,25 +29,23 @@
 [prs-shield]: https://img.shields.io/github/issues-pr/cactus-compute/cactus?style=for-the-badge
 [github-url]: https://github.com/cactus-compute/cactus
 
-Cactus is a lightweight, high-performance framework for running AI models on mobile phones. Cactus has unified and consistent APIs across 
-- React-Native
-- Android/Kotlin
-- Android/Java
-- iOS/Swift
-- iOS/Objective-C++
-- Flutter/Dart
+Cactus is a lightweight, high-performance framework for running AI models on mobile phones. Cactus has clean and consistent APIs across 
+
+- Flutter/Dart 
+- React-Native 
+- Android/Kotlin 
+- iOS/Swift 
 
 Cactus currently leverages GGML backends to support any GGUF model already compatible with [![Llama.cpp](https://img.shields.io/badge/Llama.cpp-000000?style=flat&logo=github&logoColor=white)](https://github.com/ggerganov/llama.cpp), while we focus on broadly supporting every moblie app development platform, as well as upcoming features like:
 
-- MCP
-- phone tool use
-- thinking
-- prompt-enhancement
-- higher-level APIs
+- phone tool use (gallery search, read email, send message...)
+- thinking mode (heavy research in this area) 
+- action execution (send a message...)
+- higher-level APIs (sentiments, OCR, TTS...)
+
+Functionalities that will enhance small models amd make them production-ready!
 
 Contributors with any of the above experiences are welcome! Feel free to submit cool example apps you built with Cactus, issues or tests! 
-
-Cactus Models coming soon.
 
 ## Table of Contents
 
@@ -77,7 +75,7 @@ Cactus Models coming soon.
 └───────────────┬─────────────────┬───────────────────────-┘
                 │                 │                
 ┌───────────────▼─────────────────▼───────────────────────┐
-│                   Cactus Core (C++) / llama.rn API      │
+│              Cactus Core (C++) / llama.rn patches       │
 └───────────────┬─────────────────┬───────────────────────┘
                 │                 │                
 ┌───────────────▼─────┐ ┌─────────▼───────────────────────┐
