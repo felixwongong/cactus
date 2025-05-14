@@ -4,6 +4,32 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+// Define export macro
+#if defined _WIN32 || defined __CYGWIN__
+  #ifdef CACTUS_FFI_BUILDING_DLL // Define this when building the DLL
+    #ifdef __GNUC__
+      #define CACTUS_FFI_EXPORT __attribute__ ((dllexport))
+    #else
+      #define CACTUS_FFI_EXPORT __declspec(dllexport)
+    #endif
+  #else
+    #ifdef __GNUC__
+      #define CACTUS_FFI_EXPORT __attribute__ ((dllimport))
+    #else
+      #define CACTUS_FFI_EXPORT __declspec(dllimport)
+    #endif
+  #endif
+  #define CACTUS_FFI_LOCAL
+#else // For non-Windows (Linux, macOS, Android)
+  #if __GNUC__ >= 4
+    #define CACTUS_FFI_EXPORT __attribute__ ((visibility ("default")))
+    #define CACTUS_FFI_LOCAL  __attribute__ ((visibility ("hidden")))
+  #else
+    #define CACTUS_FFI_EXPORT
+    #define CACTUS_FFI_LOCAL
+  #endif
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -109,14 +135,14 @@ typedef struct cactus_completion_result_c {
  * @param params Parameters for initialization.
  * @return A handle to the context, or NULL on failure. Caller must free with cactus_free_context_c.
  */
-cactus_context_handle_t cactus_init_context_c(const cactus_init_params_c_t* params);
+CACTUS_FFI_EXPORT cactus_context_handle_t cactus_init_context_c(const cactus_init_params_c_t* params);
 
 /**
  * @brief Frees the resources associated with a cactus context.
  *
  * @param handle The context handle returned by cactus_init_context_c.
  */
-void cactus_free_context_c(cactus_context_handle_t handle);
+CACTUS_FFI_EXPORT void cactus_free_context_c(cactus_context_handle_t handle);
 
 /**
  * @brief Performs text completion based on the provided prompt and parameters.
@@ -128,7 +154,7 @@ void cactus_free_context_c(cactus_context_handle_t handle);
  * @param result Output struct to store the final result details (text must be freed).
  * @return 0 on success, non-zero on failure.
  */
-int cactus_completion_c(
+CACTUS_FFI_EXPORT int cactus_completion_c(
     cactus_context_handle_t handle,
     const cactus_completion_params_c_t* params,
     cactus_completion_result_c_t* result // Output parameter
@@ -140,7 +166,7 @@ int cactus_completion_c(
  *
  * @param handle The context handle.
  */
-void cactus_stop_completion_c(cactus_context_handle_t handle);
+CACTUS_FFI_EXPORT void cactus_stop_completion_c(cactus_context_handle_t handle);
 
 /**
  * @brief Tokenizes the given text.
@@ -149,7 +175,7 @@ void cactus_stop_completion_c(cactus_context_handle_t handle);
  * @param text The text to tokenize.
  * @return A struct containing the tokens. Caller must free the `tokens` array using cactus_free_token_array_c.
  */
-cactus_token_array_c_t cactus_tokenize_c(cactus_context_handle_t handle, const char* text);
+CACTUS_FFI_EXPORT cactus_token_array_c_t cactus_tokenize_c(cactus_context_handle_t handle, const char* text);
 
 /**
  * @brief Detokenizes the given sequence of tokens.
@@ -159,7 +185,7 @@ cactus_token_array_c_t cactus_tokenize_c(cactus_context_handle_t handle, const c
  * @param count Number of tokens.
  * @return The detokenized string. Caller must free using cactus_free_string_c.
  */
-char* cactus_detokenize_c(cactus_context_handle_t handle, const int32_t* tokens, int32_t count);
+CACTUS_FFI_EXPORT char* cactus_detokenize_c(cactus_context_handle_t handle, const int32_t* tokens, int32_t count);
 
 /**
  * @brief Generates embeddings for the given text. Context must be initialized with embedding=true.
@@ -168,22 +194,22 @@ char* cactus_detokenize_c(cactus_context_handle_t handle, const int32_t* tokens,
  * @param text The text to embed.
  * @return A struct containing the embedding values. Caller must free the `values` array using cactus_free_float_array_c.
  */
-cactus_float_array_c_t cactus_embedding_c(cactus_context_handle_t handle, const char* text);
+CACTUS_FFI_EXPORT cactus_float_array_c_t cactus_embedding_c(cactus_context_handle_t handle, const char* text);
 
 // --- Memory Freeing Functions ---
 // These MUST be called from Dart to free memory allocated by the C layer.
 
 /** @brief Frees a string allocated by the C API. */
-void cactus_free_string_c(char* str);
+CACTUS_FFI_EXPORT void cactus_free_string_c(char* str);
 
 /** @brief Frees a token array allocated by the C API. */
-void cactus_free_token_array_c(cactus_token_array_c_t arr);
+CACTUS_FFI_EXPORT void cactus_free_token_array_c(cactus_token_array_c_t arr);
 
 /** @brief Frees a float array allocated by the C API. */
-void cactus_free_float_array_c(cactus_float_array_c_t arr);
+CACTUS_FFI_EXPORT void cactus_free_float_array_c(cactus_float_array_c_t arr);
 
 /** @brief Frees the members *within* a completion result struct (like text, stopping_word). */
-void cactus_free_completion_result_members_c(cactus_completion_result_c_t* result);
+CACTUS_FFI_EXPORT void cactus_free_completion_result_members_c(cactus_completion_result_c_t* result);
 
 
 #ifdef __cplusplus
