@@ -101,29 +101,60 @@ we created a demo chat app we use for benchmarking:
 
 These are day-to-day usage scores, NOT a controlled environment.
 
-| Device                       | Gemma 3 1B INT8 (toks/sec) | Qwen 2.5 1.5B INT8 (toks/sec) |
-|------------------------------|----------------------------|-------------------------------|
-| iPhone 16 Pro Max            | 45                         | 28                            |
-| iPhone 16 Pro                | N/A                        | 28                            |
-| iPhone 16                    | N/A                        | 27                            |
-| iPhone 15 Pro Max            | N/A                        | 23                            |
-| iPhone 15 Pro                | N/A                        | 23                            |
-| iPhone 15                    | N/A                        | 23                            |
-| iPhone 13 Pro                | 30                         | N/A                           |
-| iPhone 12 mini               | 21                         | N/A                           |
-| Galaxy S25 Ultra             | 25                         | N/A                           |
-| Galaxy S24+                  | 20                         | N/A                           |
-| Galaxy S22 Ultra             | 16                         | N/A                           |
-| Galaxy S21                   | 14                         | N/A                           |
-| Galaxy A14                   | 6                          | N/A                           |
-| Google Pixel 8               | 14                         | N/A                           |
-| Google Pixel 6a              | 14                         | N/A                           |
-| Oneplus 13                   | 34                         | N/A                           |
-| Oneplus 12                   | 23                         | N/A                           |
-| Oneplus Nord CE Lite         | 10                         | N/A                           |
-| Xiaomi Redmi k70 Ultra       | 19                         | N/A                           |
-| Moto G62 5G (Gran's Phone)   | 6                          | N/A                           |
-| Huawei P60 Lite (Gran's phone)| N/A                        | N/A                           |
+| Device                        | Gemma-3 1B Q8 (toks/sec) | Qwen-2.5 1.5B Q8 (toks/sec) | Gemma-3 4B Q4 (toks/sec) | SmolLM2 135M Q8 (toks/sec) | SmolLM2 360M Q8 (toks/sec) |
+|-------------------------------|--------------------------|-----------------------------|--------------------------|----------------------------|----------------------------|
+| iPhone 16 Pro Max             | 43                       | 29                          | 17                       | 217                        | 103                        |
+| iPhone 16 Pro                 | -                        | 28                          | -                        | -                          | 103                        |
+| iPhone 16                     | -                        | 29                          | -                        | -                          | -                          |
+| iPhone 16 Plus                | -                        | -                           | 12                       | -                          | -                          |
+| iPhone 15 Pro Max             | -                        | 23                          | -                        | -                          | -                          |
+| iPhone 15 Pro                 | -                        | 25                          | -                        | -                          | 81                         |
+| iPhone 15                     | -                        | 25                          | -                        | 147                        | -                          |
+| iPhone 14 Pro Max             | -                        | 25                          | 12                       | -                          | -                          |
+| iPhone 14 Pro                 | -                        | -                           | -                        | 140                        | -                          |
+| iPhone 13 Pro                 | 30                       | -                           | -                        | -                          | -                          |
+| iPhone 13                     | -                        | -                           | -                        | 120                        | -                          |
+| iPhone 13 mini                | -                        | -                           | -                        | -                          | 42                         |
+| iPhone 12 Pro Max             | -                        | 17                          | -                        | -                          | -                          |
+| iPhone 12 mini                | 22                       | -                           | -                        | -                          | -                          |
+| iPhone 11 Pro                 | -                        | -                           | 1                        | 7                          | -                          |
+| iPhone 11                     | -                        | 2                           | -                        | -                          | -                          |
+| iPhone XS Max                 | -                        | -                           | -                        | 61                         | -                          |
+| iPhone XS                     | -                        | -                           | -                        | -                          | 21                         |
+| iPhone SE                     | -                        | -                           | -                        | -                          | 59                         |
+| Galaxy S25 Ultra              | 25                       | -                           | -                        | -                          | -                          |
+| Samsung Galaxy S24 Ultra      | 36                       | -                           | -                        | 184                        | -                          |
+| Samsung Galaxy S24+           | 19                       | -                           | -                        | -                          | -                          |
+| Samsung Galaxy S24            | 31                       | -                           | -                        | -                          | -                          |
+| Samsung Galaxy S23 5G         | 32                       | -                           | -                        | -                          | -                          |
+| Samsung Galaxy S22 Ultra      | 14                       | -                           | -                        | -                          | -                          |
+| Samsung Galaxy S22+           | -                        | -                           | -                        | 37                         | -                          |
+| Samsung Galaxy S22 5G         | 8                        | -                           | -                        | 23                         | -                          |
+| Samsung Galaxy S21 FE 5G      | -                        | -                           | -                        | 35                         | -                          |
+| Samsung Galaxy S21 5G         | 13                       | -                           | -                        | -                          | -                          |
+| Samsung Galaxy S20 5G         | -                        | -                           | -                        | 44                         | -                          |
+| Samsung Galaxy A33 5G         | 6                        | -                           | -                        | -                          | -                          |
+| Samsung Galaxy A25 5G         | 7                        | -                           | -                        | -                          | -                          |
+| Samsung Galaxy A15 5G         | -                        | -                           | -                        | 37                         | -                          |
+| Samsung Galaxy A14 (LTE)      | 5                        | -                           | -                        | 31                         | -                          |
+| Samsung Galaxy Z Fold 4       | 19                       | -                           | -                        | -                          | -                          |
+| Pixel 9                       | 8                        | -                           | -                        | -                          | -                          |
+| Google Pixel 8                | 16                       | -                           | -                        | 57                         | -                          |
+| Google Pixel 6a               | 14                       | -                           | -                        | -                          | -                          |
+| OnePlus 13 5G                 | 37                       | -                           | -                        | -                          | -                          |
+| OnePlus 12                    | 30                       | -                           | -                        | 133                        | -                          |
+| OnePlus Open                  | 33                       | -                           | -                        | -                          | -                          |
+| OnePlus Nord CE 2             | 9                        | -                           | -                        | -                          | -                          |
+| Oneplus Nord CE Lite          | 10                       | -                           | -                        | -                          | -                          |
+| Redmi K70 Ultra               | 21                       | -                           | -                        | -                          | -                          |
+| Xiaomi Poco F6 5G             | 19                       | -                           | -                        | 68                         | -                          |
+| Xiaomi 14 Pro                 | -                        | -                           | -                        | 69                         | -                          |
+| Xiaomi 13                     | 21                       | -                           | -                        | -                          | -                          |
+| Realme GT2                    | 16                       | -                           | -                        | -                          | -                          |
+| Realme 10 Pro 5G              | -                        | -                           | -                        | 38                         | -                          |
+| Infinix HOT 30i               | -                        | -                           | -                        | 23                         | -                          |
+| Moto G62 5G (Gran's Phone)    | 9                        | -                           | -                        | -                          | -                          |
+| Huawei P60 Lite (Gran's phone)| -                        | -                           | -                        | -                          | -                          |
 
 ## Examples
 We have ready-to-run-and-deploy examples [here](https://github.com/cactus-compute/cactus/tree/main/examples), you can simply copy, modify and deploy! And reach out if stuck or need hand-holding.
