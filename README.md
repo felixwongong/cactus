@@ -134,7 +134,7 @@ We have ready-to-run-and-deploy examples [here](https://github.com/cactus-comput
 
 ## Getting Started
 
-### ✅ Flutter 
+### ✅ Flutter (Dart)
 
 **1. Add Dependency:**
 Add `cactus` to your `pubspec.yaml`:
@@ -142,22 +142,37 @@ Add `cactus` to your `pubspec.yaml`:
 dependencies:
   cactus: ^0.0.2
 ```
-Then run 
-`flutter pub get`
+
+**2. Install Dependency:**
+Then run:
+```bash
+flutter pub get
+```
 
 Full setup and API details are available in the [Flutter README](cactus-flutter/README.md).
 
-### ✅ React Native 
+### ✅ React Native (TypeScript/JavaScript)
 
-For npm, run `npm install cactus-react-native`
+**1. Install Package:**
 
-For yarn. run `yarn add cactus-react-native`
+*   **Using npm:**
+    ```bash
+    npm install cactus-react-native
+    ```
+*   **Using yarn:**
+    ```bash
+    yarn add cactus-react-native
+    ```
 
-If not using Expo, also run `npx pod-install`
+**2. Install Pods (for iOS):**
+If you are not using Expo and are building for iOS, install the pods:
+```bash
+npx pod-install
+```
 
 For more detailed documentation and examples, see the [React Native README](cactus-react/README.md).
 
-### ✅ Android Native
+### ✅ Android (Kotlin/Java)
 
 **Important: Credentials Required for GitHub Packages**
 
@@ -213,4 +228,4 @@ dependencyResolutionManagement {
 
 For more detailed documentation and examples, see the [Android README](cactus-android/README.md).
 
-### 🚧 iOS Native (in developement)
+### 🚧 iOS (Swift) (in development)
