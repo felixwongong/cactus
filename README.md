@@ -49,14 +49,13 @@ Contributors with any of the above experiences are welcome! Feel free to submit 
 ## Table of Contents
 
 - [Technical Architecture](#technical-architecture)
-- [Features](#features)
 - [Benchmarks](#benchmarks)
+- [Examples](#examples)
 - [Getting Started](#getting-started)
-  - [Flutter](#flutter-in-development)
-  - [React Native](#react-native-shipped)
-  - [Android](#android-currently-testing)
-  - [Swift](#ios-in-developement)
-  - [C++ (Raw backend)](#c-raw-backend)
+  - [Flutter (Dart)](#flutter-dart)
+  - [React Native (TypeScript/JavaScript)](#react-native-typescriptjavascript)
+  - [Android (Kotlin/Java)](#android-kotlinjava)
+  - [Swift (in developement)](#swift-in-developement)
 - [License](#license)
 
 ## Technical Architecture
@@ -99,71 +98,43 @@ we created a demo chat app we use for benchmarking:
 [![Download App](https://img.shields.io/badge/Download_iOS_App-grey?style=for-the-badge&logo=apple&logoColor=white)](https://apps.apple.com/gb/app/cactus-chat/id6744444212)
 [![Download App](https://img.shields.io/badge/Download_Android_App-grey?style=for-the-badge&logo=android&logoColor=white)](https://play.google.com/store/apps/details?id=com.rshemetsubuser.myapp&pcampaignid=web_share)
 
-These are day-to-day usage scores, NOT a controlled environment.
+These are day-to-day usage scores, not a controlled testing.
 
-| Device                        | Gemma-3 1B Q8 (toks/sec) | Qwen-2.5 1.5B Q8 (toks/sec) | Gemma-3 4B Q4 (toks/sec) | SmolLM2 135M Q8 (toks/sec) | SmolLM2 360M Q8 (toks/sec) |
-|-------------------------------|--------------------------|-----------------------------|--------------------------|----------------------------|----------------------------|
-| iPhone 16 Pro Max             | 43                       | 29                          | 17                       | 217                        | 103                        |
-| iPhone 16 Pro                 | -                        | 28                          | -                        | -                          | 103                        |
-| iPhone 16                     | -                        | 29                          | -                        | -                          | -                          |
-| iPhone 16 Plus                | -                        | -                           | 12                       | -                          | -                          |
-| iPhone 15 Pro Max             | -                        | 23                          | -                        | -                          | -                          |
-| iPhone 15 Pro                 | -                        | 25                          | -                        | -                          | 81                         |
-| iPhone 15                     | -                        | 25                          | -                        | 147                        | -                          |
-| iPhone 14 Pro Max             | -                        | 25                          | 12                       | -                          | -                          |
-| iPhone 14 Pro                 | -                        | -                           | -                        | 140                        | -                          |
-| iPhone 13 Pro                 | 30                       | -                           | -                        | -                          | -                          |
-| iPhone 13                     | -                        | -                           | -                        | 120                        | -                          |
-| iPhone 13 mini                | -                        | -                           | -                        | -                          | 42                         |
-| iPhone 12 Pro Max             | -                        | 17                          | -                        | -                          | -                          |
-| iPhone 12 mini                | 22                       | -                           | -                        | -                          | -                          |
-| iPhone 11 Pro                 | -                        | -                           | 1                        | 7                          | -                          |
-| iPhone 11                     | -                        | 2                           | -                        | -                          | -                          |
-| iPhone XS Max                 | -                        | -                           | -                        | 61                         | -                          |
-| iPhone XS                     | -                        | -                           | -                        | -                          | 21                         |
-| iPhone SE                     | -                        | -                           | -                        | -                          | 59                         |
-| Galaxy S25 Ultra              | 25                       | -                           | -                        | -                          | -                          |
-| Samsung Galaxy S24 Ultra      | 36                       | -                           | -                        | 184                        | -                          |
-| Samsung Galaxy S24+           | 19                       | -                           | -                        | -                          | -                          |
-| Samsung Galaxy S24            | 31                       | -                           | -                        | -                          | -                          |
-| Samsung Galaxy S23 5G         | 32                       | -                           | -                        | -                          | -                          |
-| Samsung Galaxy S22 Ultra      | 14                       | -                           | -                        | -                          | -                          |
-| Samsung Galaxy S22+           | -                        | -                           | -                        | 37                         | -                          |
-| Samsung Galaxy S22 5G         | 8                        | -                           | -                        | 23                         | -                          |
-| Samsung Galaxy S21 FE 5G      | -                        | -                           | -                        | 35                         | -                          |
-| Samsung Galaxy S21 5G         | 13                       | -                           | -                        | -                          | -                          |
-| Samsung Galaxy S20 5G         | -                        | -                           | -                        | 44                         | -                          |
-| Samsung Galaxy A33 5G         | 6                        | -                           | -                        | -                          | -                          |
-| Samsung Galaxy A25 5G         | 7                        | -                           | -                        | -                          | -                          |
-| Samsung Galaxy A15 5G         | -                        | -                           | -                        | 37                         | -                          |
-| Samsung Galaxy A14 (LTE)      | 5                        | -                           | -                        | 31                         | -                          |
-| Samsung Galaxy Z Fold 4       | 19                       | -                           | -                        | -                          | -                          |
-| Pixel 9                       | 8                        | -                           | -                        | -                          | -                          |
-| Google Pixel 8                | 16                       | -                           | -                        | 57                         | -                          |
-| Google Pixel 6a               | 14                       | -                           | -                        | -                          | -                          |
-| OnePlus 13 5G                 | 37                       | -                           | -                        | -                          | -                          |
-| OnePlus 12                    | 30                       | -                           | -                        | 133                        | -                          |
-| OnePlus Open                  | 33                       | -                           | -                        | -                          | -                          |
-| OnePlus Nord CE 2             | 9                        | -                           | -                        | -                          | -                          |
-| Oneplus Nord CE Lite          | 10                       | -                           | -                        | -                          | -                          |
-| Redmi K70 Ultra               | 21                       | -                           | -                        | -                          | -                          |
-| Xiaomi Poco F6 5G             | 19                       | -                           | -                        | 68                         | -                          |
-| Xiaomi 14 Pro                 | -                        | -                           | -                        | 69                         | -                          |
-| Xiaomi 13                     | 21                       | -                           | -                        | -                          | -                          |
-| Realme GT2                    | 16                       | -                           | -                        | -                          | -                          |
-| Realme 10 Pro 5G              | -                        | -                           | -                        | 38                         | -                          |
-| Infinix HOT 30i               | -                        | -                           | -                        | 23                         | -                          |
-| Moto G62 5G (Gran's Phone)    | 9                        | -                           | -                        | -                          | -                          |
-| Huawei P60 Lite (Gran's phone)| -                        | -                           | -                        | -                          | -                          |
+| Device                        | Gemma-3 1B Q8 (toks/sec) | Qwen-2.5 1.5B Q8 (toks/sec) | SmolLM2 360M Q8 (toks/sec) |
+|-------------------------------|--------------------------|-----------------------------|----------------------------|
+| iPhone 16 Pro Max             | 43                       | 29                          | 103                        |
+| iPhone 16 Pro                 | -                        | 28                          | 103                        |
+| iPhone 16                     | -                        | 29                          | -                          |
+| OnePlus 13 5G                 | 37                       | -                           | -                          |
+| Samsung Galaxy S24 Ultra      | 36                       | -                           | -                          |
+| OnePlus Open                  | 33                       | -                           | -                          |
+| Samsung Galaxy S23 5G         | 32                       | -                           | -                          |
+| Samsung Galaxy S24            | 31                       | -                           | -                          |
+| iPhone 15 Pro Max             | -                        | 23                          | -                          |
+| iPhone 15 Pro                 | -                        | 25                          | 81                         |
+| iPhone 15                     | -                        | 25                          | -                          |
+| iPhone 14 Pro Max             | -                        | 25                          | -                          |
+| iPhone 13 Pro                 | 30                       | -                           | -                          |
+| OnePlus 12                    | 30                       | -                           | -                          |
+| Galaxy S25 Ultra              | 25                       | -                           | -                          |
+| iPhone 12 mini                | 22                       | -                           | -                          |
+| Redmi K70 Ultra               | 21                       | -                           | -                          |
+| Xiaomi 13                     | 21                       | -                           | -                          |
+| Samsung Galaxy S24+           | 19                       | -                           | -                          |
+| Samsung Galaxy Z Fold 4       | 19                       | -                           | -                          |
+| Xiaomi Poco F6 5G             | 19                       | -                           | -                          |
+| iPhone 13 mini                | -                        | -                           | 42                         |
+| iPhone 12 Pro Max             | -                        | 17                          | -                          |
+| Google Pixel 8                | 16                       | -                           | -                          |
+| Realme GT2                    | 16                       | -                           | -                          |
+| Google Pixel 6a               | 14                       | -                           | -                          |
 
 ## Examples
 We have ready-to-run-and-deploy examples [here](https://github.com/cactus-compute/cactus/tree/main/examples), you can simply copy, modify and deploy! And reach out if stuck or need hand-holding.
 
 ## Getting Started
 
-### ✅ Flutter (Dart)
-
-Full setup and API details are available in the [Flutter README](cactus-flutter/README.md).
+### ✅ Flutter 
 
 **1. Add Dependency:**
 Add `cactus` to your `pubspec.yaml`:
@@ -171,93 +142,22 @@ Add `cactus` to your `pubspec.yaml`:
 dependencies:
   cactus: ^0.0.2
 ```
-Then run `flutter pub get`.
+Then run 
+`flutter pub get`
 
-**2. Basic Usage (Dart):**
-```dart
-import 'package:cactus/cactus.dart';
+Full setup and API details are available in the [Flutter README](cactus-flutter/README.md).
 
-CactusContext? cactusContext;
+### ✅ React Native 
 
-Future<void> initializeAndRun() async {
-  try {
-    // Initialize from a URL (will be downloaded)
-    final initParams = CactusInitParams(
-      modelUrl: 'YOUR_MODEL_URL_HERE', // e.g., https://huggingface.co/.../phi-2.Q4_K_M.gguf
-      nCtx: 512,
-      nThreads: 4,
-      onInitProgress: (progress, message, isError) {
-        print('Init Progress: $message (${progress != null ? (progress * 100).toStringAsFixed(1) + '%' : 'N/A'})');
-      },
-    );
-    cactusContext = await CactusContext.init(initParams);
+For npm, run `npm install cactus-react-native`
 
-    // Perform chat completion
-    final messages = [
-      ChatMessage(role: 'system', content: 'You are a helpful AI assistant.'),
-      ChatMessage(role: 'user', content: 'Explain quantum computing in simple terms.'),
-    ];
-    final completionParams = CactusCompletionParams(
-      messages: messages,
-      temperature: 0.7,
-      onNewToken: (token) {
-        print(token); // Stream tokens
-        return true; // Continue generation
-      },
-    );
-    final result = await cactusContext!.completion(completionParams);
-    print('Generated Text: ${result.text}');
+For yarn. run `yarn add cactus-react-native`
 
-  } catch (e) {
-    print('Error: $e');
-  } finally {
-    cactusContext?.free();
-  }
-}
-```
-
-### ✅ React Native (TypeScript/JavaScript)
-
-```bash
-npm install react-native-fs
-npm install cactus-react-native
-# or
-yarn add react-native-fs
-yarn add cactus-react-native
-
-# For iOS, install pods if not on Expo
-npx pod-install
-```
-```typescript
-import { initLlama, LlamaContext } from 'cactus-react-native';
-
-// Load model
-const context = await initLlama({
-  model: 'models/llama-2-7b-chat.gguf', // Path to your model
-  n_ctx: 2048,
-  n_batch: 512,
-  n_threads: 4
-});
-
-// Generate completion
-const result = await context.completion({
-  prompt: 'Explain quantum computing in simple terms',
-  temperature: 0.7,
-  top_k: 40,
-  top_p: 0.95,
-  n_predict: 512
-}, (token) => {
-  // Process each token
-  process.stdout.write(token.token);
-});
-
-// Clean up
-await context.release();
-```
+If not using Expo, also run `npx pod-install`
 
 For more detailed documentation and examples, see the [React Native README](cactus-react/README.md).
 
-### ✅ Android (Kotlin/Java)
+### ✅ Android Native
 
 **Important: Credentials Required for GitHub Packages**
 
@@ -294,13 +194,11 @@ Accessing the Cactus Android library via GitHub Packages now requires authentica
 **1. Add Repository to `settings.gradle.kts`:**
 
 ```kotlin
-// settings.gradle.kts
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS) // Optional but recommended
     repositories {
         google()
         mavenCentral()
-        // Add GitHub Packages repository for Cactus
         maven {
             name = "GitHubPackagesCactusCompute"
             url = uri("https://maven.pkg.github.com/cactus-compute/cactus")
@@ -313,66 +211,6 @@ dependencyResolutionManagement {
 }
 ```
 
-**2. Add Dependency to Module's `build.gradle.kts`:**
-
-```kotlin
-// app/build.gradle.kts
-dependencies {
-    implementation("io.github.cactus-compute:cactus-android:0.0.1")
-}
-```
-
-**3. Basic Usage (Kotlin):**
-
-```kotlin
-import com.cactus.android.LlamaContext
-import com.cactus.android.LlamaInitParams
-import com.cactus.android.LlamaCompletionParams
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
-
-// In an Activity, ViewModel, or coroutine scope
-
-suspend fun runInference() {
-    var llamaContext: LlamaContext? = null
-    try {
-        // Initialize (off main thread)
-        llamaContext = withContext(Dispatchers.IO) {
-            LlamaContext.create(
-                params = LlamaInitParams(
-                    modelPath = "path/to/your/model.gguf",
-                    nCtx = 2048, nThreads = 4
-                )
-            )
-        }
-
-        // Complete (off main thread)
-        val result = withContext(Dispatchers.IO) {
-            llamaContext?.complete(
-                prompt = "Explain quantum computing in simple terms",
-                params = LlamaCompletionParams(temperature = 0.7f, nPredict = 512)
-            ) { partialResultMap ->
-                val token = partialResultMap["token"] as? String ?: ""
-                print(token) // Process stream on background thread
-                true // Continue generation
-            }
-        }
-        println("\nFinal text: ${result?.text}")
-
-    } catch (e: Exception) {
-        // Handle errors
-        println("Error: ${e.message}")
-    } finally {
-        // Clean up (off main thread)
-        withContext(Dispatchers.IO) {
-             llamaContext?.close()
-        }
-    }
-}
-```
-
 For more detailed documentation and examples, see the [Android README](cactus-android/README.md).
 
-### 🚧 Swift (in developement)
-
-```
+### 🚧 iOS Native (in developement)
