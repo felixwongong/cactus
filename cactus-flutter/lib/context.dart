@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:ffi';
 import 'dart:io'; 
 
@@ -9,6 +10,7 @@ import './ffi_bindings.dart' as bindings;
 import './init_params.dart';
 import './completion.dart';
 import './model_downloader.dart';
+import './chat.dart';
 
 // --- Custom Exception Classes ---
 
@@ -175,7 +177,6 @@ class CactusContext {
         throw CactusModelPathException(msg);
       }
     } else {
-      // This case should be caught by CactusInitParams constructor, but as a safeguard:
       const msg = 'No valid model source (URL or path) provided.';
       params.onInitProgress?.call(null, msg, true);
       throw ArgumentError(msg);
@@ -188,22 +189,19 @@ class CactusContext {
     Pointer<Utf8> chatTemplateForC = nullptr;
     Pointer<Utf8> cacheTypeKC = nullptr;
     Pointer<Utf8> cacheTypeVC = nullptr;
-    Pointer<NativeFunction<Void Function(Float)>> progressCallbackC = nullptr; // Placeholder for now
+    Pointer<NativeFunction<Void Function(Float)>> progressCallbackC = nullptr;
 
     try {
       modelPathC = effectiveModelPath.toNativeUtf8(allocator: calloc);
-      chatTemplateForC = (params.chatTemplate != null && params.chatTemplate!.isNotEmpty)
-          ? params.chatTemplate!.toNativeUtf8(allocator: calloc)
-          : nullptr;
+      
+      // Use user-provided template or the default Jinja template
+      final String templateToUse = (params.chatTemplate != null && params.chatTemplate!.isNotEmpty)
+          ? params.chatTemplate!
+          : defaultChatMLTemplate;
+      chatTemplateForC = templateToUse.toNativeUtf8(allocator: calloc);
+      
       cacheTypeKC = params.cacheTypeK?.toNativeUtf8(allocator: calloc) ?? nullptr;
       cacheTypeVC = params.cacheTypeV?.toNativeUtf8(allocator: calloc) ?? nullptr;
-
-      // TODO: Implement proper FFI progress callback if native side supports it
-      // For now, progress_callback is passed as nullptr.
-      // if (params.onInitProgress != null) {
-      //   // This requires a more complex setup with a static dispatcher
-      //   // and a way to manage the current callback.
-      // }
 
       cParams.ref.model_path = modelPathC;
       cParams.ref.chat_template = chatTemplateForC;
@@ -222,7 +220,6 @@ class CactusContext {
       cParams.ref.cache_type_v = cacheTypeVC;
       cParams.ref.progress_callback = progressCallbackC;
 
-      // The FFI function `cactus_init_context_c` now directly returns the handle.
       final bindings.CactusContextHandle handle = bindings.initContext(cParams);
 
       if (handle == nullptr) {
@@ -388,26 +385,10 @@ class CactusContext {
     Pointer<Pointer<Utf8>> stopSequencesC = nullptr;
 
     try {
-      // --- Prompt Formatting (simplified ChatML fallback) ---
-      // If a chat_template was provided during CactusContext.init, the native side
-      // should ideally handle the full prompt construction. This Dart-side formatting
-      // is a fallback for basic chat if the native side expects a pre-formatted prompt
-      // and no custom template was given at init.
-      // For more advanced templating (like Jinja), it's better if the native side handles it.
-      StringBuffer promptBuffer = StringBuffer();
-      for (var message in params.messages) {
-        // Basic ChatML structure
-        if (['system', 'user', 'assistant'].contains(message.role)) {
-          promptBuffer.write('<|im_start|>');
-          promptBuffer.write(message.role);
-          promptBuffer.write('\n'); // Native side might expect literal 
-
-          promptBuffer.write(message.content);
-          promptBuffer.write('<|im_end|>\n');
-        }
-      }
-      promptBuffer.write('<|im_start|>assistant\n'); // Prompt for assistant's turn
-      final String formattedPrompt = promptBuffer.toString();
+      // --- Prompt Formatting: Always send messages as JSON ---
+      // Assumes the native side (if using Jinja or another template) can parse this.
+      final List<Map<String, String>> messagesJson = params.messages.map((m) => m.toJson()).toList();
+      final String formattedPrompt = jsonEncode(messagesJson);
       // --- End Prompt Formatting ---
 
       cCompParams = calloc<bindings.CactusCompletionParamsC>();
@@ -423,9 +404,9 @@ class CactusContext {
       }
 
       Pointer<NativeFunction<Bool Function(Pointer<Utf8>)>> tokenCallbackC = nullptr;
-      _currentOnNewTokenCallback = params.onNewToken; // Store for static dispatcher
+      _currentOnNewTokenCallback = params.onNewToken; 
       if (params.onNewToken != null) {
-        tokenCallbackC = Pointer.fromFunction<Bool Function(Pointer<Utf8>)>(_staticTokenCallbackDispatcher, false); // `false` for exceptional return
+        tokenCallbackC = Pointer.fromFunction<Bool Function(Pointer<Utf8>)>(_staticTokenCallbackDispatcher, false);
       }
 
       cCompParams.ref.prompt = promptC;
@@ -450,9 +431,7 @@ class CactusContext {
       cCompParams.ref.stop_sequence_count = params.stopSequences?.length ?? 0;
       cCompParams.ref.grammar = grammarC;
       cCompParams.ref.token_callback = tokenCallbackC ?? nullptr;
-
-      // The FFI function `cactus_completion_c` now returns an int status
-      // and no longer provides an error message via pointer.
+      
       final status = bindings.completion(_handle, cCompParams, cResult);
 
       if (status != 0) {
@@ -461,14 +440,14 @@ class CactusContext {
       }
 
       final result = CactusCompletionResult(
-        text: cResult.ref.text.toDartString(), // Assuming text is never null on success
+        text: cResult.ref.text.toDartString(),
         tokensPredicted: cResult.ref.tokens_predicted,
         tokensEvaluated: cResult.ref.tokens_evaluated,
         truncated: cResult.ref.truncated,
         stoppedEos: cResult.ref.stopped_eos,
         stoppedWord: cResult.ref.stopped_word,
         stoppedLimit: cResult.ref.stopped_limit,
-        stoppingWord: cResult.ref.stopping_word.toDartString(), // Assuming stopping_word is never null
+        stoppingWord: cResult.ref.stopping_word.toDartString(),
       );
 
       return result;
@@ -477,19 +456,18 @@ class CactusContext {
       throw CactusCompletionException("Error during completion setup or execution.", e);
     }
     finally {
-      _currentOnNewTokenCallback = null; // Clear the global callback
+      _currentOnNewTokenCallback = null; 
 
       if (promptC != nullptr) calloc.free(promptC);
       if (grammarC != nullptr) calloc.free(grammarC);
       if (stopSequencesC != nullptr) {
         for (int i = 0; i < (params.stopSequences?.length ?? 0); i++) {
-          // Check if individual elements were actually allocated before freeing
           if (stopSequencesC[i] != nullptr) calloc.free(stopSequencesC[i]);
         }
         calloc.free(stopSequencesC);
       }
       if (cResult != nullptr) {
-        bindings.freeCompletionResultMembers(cResult); // Frees members like text, stopping_word
+        bindings.freeCompletionResultMembers(cResult); 
         calloc.free(cResult);
       }
       if (cCompParams != nullptr) calloc.free(cCompParams);
