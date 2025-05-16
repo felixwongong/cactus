@@ -23,7 +23,7 @@ import { SchemaGrammarConverter, convertJsonSchemaToGrammar } from './grammar'
 import type { CactusMessagePart, CactusOAICompatibleMessage } from './chat'
 import { ModelDownloader } from './modelDownloader'
 import { formatChat } from './chat'
-
+import { Tools, injectToolsIntoMessages, parseAndExecuteTool, updateMessagesWithToolCall } from './tools'
 export type {
   NativeContextParams,
   NativeLlamaContext,
@@ -45,7 +45,7 @@ export type {
   SchemaGrammarConverterBuiltinRule,
 }
 
-export { SchemaGrammarConverter, convertJsonSchemaToGrammar }
+export { SchemaGrammarConverter, convertJsonSchemaToGrammar, Tools }
 
 const EVENT_ON_INIT_CONTEXT_PROGRESS = '@Cactus_onInitContextProgress'
 const EVENT_ON_TOKEN = '@Cactus_onToken'
@@ -227,6 +227,49 @@ export class LlamaContext {
       tool_choice: params?.tool_choice,
     })
   }
+
+  async completionWithTools(
+      params: CompletionParams & {tools: Tools},
+      callback?: (data: TokenData) => void,
+      recursionCount: number = 0,
+      recursionLimit: number = 3
+  ): Promise<NativeCompletionResult> {
+      if (!params.messages) { // tool calling only works with messages
+          return this.completion(params, callback);
+      }
+      if (!params.tools) { // no tools => default completion
+          return this.completion(params, callback);
+      }
+      if (recursionCount >= recursionLimit) {
+          return this.completion(params, callback);
+      }
+
+      let messages = [...params?.messages || []]; // avoid mutating the original
+
+      if (recursionCount === 0) {
+          messages = injectToolsIntoMessages(messages, params.tools);
+      }
+
+      const result = await this.completion({...params, messages}, callback);
+      
+      const {toolCalled, toolName, toolInput, toolOutput} = 
+          await parseAndExecuteTool(result, params.tools);
+
+      if (toolCalled && toolName && toolInput) {
+          const newMessages = updateMessagesWithToolCall(
+              messages, toolName, toolInput, toolOutput
+          );
+          
+          return await this.completionWithTools(
+              {...params, messages: newMessages}, 
+              callback, 
+              recursionCount + 1, 
+              recursionLimit
+          );
+      }
+
+      return result;
+}
 
   async completion(
     params: CompletionParams,
