@@ -11,85 +11,151 @@ typedef OnInitProgress = void Function(double? progress, String statusMessage, b
 
 /// Parameters for initializing a [CactusContext].
 class CactusInitParams {
-  /// Path to the model file on the local device. 
+  /// Path to the model file on the local device.
+  ///
   /// Either [modelPath] or [modelUrl] must be provided.
-  final String? modelPath; 
+  final String? modelPath;
+
   /// URL from which to download the model file.
+  ///
   /// If provided, the model will be downloaded to the application's documents directory.
   /// Either [modelPath] or [modelUrl] must be provided.
   final String? modelUrl;
-  /// Optional filename to use when saving a model downloaded via [modelUrl].
-  /// If null, the filename is inferred from the URL.
-  final String? modelFilename; 
 
-  /// Optional custom chat template string (e.g., Jinja2 format).
-  /// If null or empty, [defaultChatMLTemplate] from `chat.dart` is used.
-  final String? chatTemplate; 
-  /// The context size for the model (number of tokens).
+  /// Optional filename to use when saving a model downloaded via [modelUrl].
+  ///
+  /// If null or empty, the filename is inferred from the last segment of the [modelUrl].
+  /// A default name like "downloaded_model.gguf" is used if inference fails.
+  final String? modelFilename;
+
+  /// Optional custom chat template string (e.g., a Jinja2-like format).
+  ///
+  /// If null or empty, the native layer will attempt to use a default template
+  /// appropriate for the loaded model (often ChatML-based).
+  /// Providing a custom template overrides the model's default.
+  final String? chatTemplate;
+
+  /// The context size (often referred to as `n_ctx`) for the model.
+  ///
+  /// This defines the maximum number of tokens the model can consider at once from the input sequence.
+  /// Larger values allow for longer context but increase memory usage and processing time.
   /// Defaults to 512.
-  final int nCtx;
-  /// The batch size for prompt processing.
+  final int contextSize;
+
+  /// The batch size (often `n_batch`) for prompt processing.
+  ///
+  /// Defines how many tokens are processed in parallel during the initial prompt ingestion.
+  /// Larger values can sometimes improve throughput but increase memory usage.
   /// Defaults to 512.
-  final int nBatch;
-  /// The ubatch size.
+  final int batchSize;
+
+  /// The ubatch size (often `n_ubatch`) for prompt processing.
+  ///
+  /// Typically related to batch processing, often similar to [batchSize].
   /// Defaults to 512.
-  final int nUbatch;
-  /// Number of GPU layers to offload. 0 for CPU-only inference.
+  final int ubatchSize;
+
+  /// Number of GPU layers to offload for models that support it.
+  ///
+  /// Offloading layers to the GPU can significantly speed up inference.
+  /// A value of 0 means CPU-only inference. Positive values indicate the number of layers.
+  /// The optimal number depends on the model and available VRAM.
   /// Defaults to 0.
-  final int nGpuLayers;
-  /// Number of threads to use for computation.
+  final int gpuLayers;
+
+  /// Number of threads to use for computation on the CPU.
+  ///
+  /// More threads can speed up CPU-bound tasks but may lead to diminishing returns or contention.
   /// Defaults to 4.
-  final int nThreads;
-  /// Whether to use mmap for model loading if possible.
+  final int threads;
+
+  /// Whether to use `mmap` (memory-mapping) for model loading if supported by the OS.
+  ///
+  /// `mmap` can speed up model loading by mapping the model file directly into memory
+  /// instead of reading it sequentially.
   /// Defaults to true.
   final bool useMmap;
-  /// Whether to use mlock to prevent the model from being swapped out.
+
+  /// Whether to use `mlock` to prevent the model from being swapped out of RAM.
+  ///
+  /// `mlock` can improve performance consistency by ensuring the model stays in physical memory,
+  /// but it also means that memory is persistently allocated and cannot be used by other processes.
+  /// Use with caution, especially on memory-constrained devices.
   /// Defaults to false.
   final bool useMlock;
-  /// Whether the model is primarily for embedding generation.
+
+  /// Whether the model is primarily intended for generating embeddings.
+  ///
+  /// Set this to true if you plan to mainly use the [CactusContext.embedding] method.
+  /// This might influence how the model is configured by the native layer.
   /// Defaults to false.
-  final bool embedding;
-  /// Pooling type for embedding, if [embedding] is true.
-  /// (0: unspecified, 1: none, 2: mean, 3: cls, 4: last, 5: rank)
-  /// Defaults to 0 (unspecified by this library, relies on native default).
-  final int poolingType; 
-  /// Whether to normalize embeddings, if [embedding] is true.
-  /// (0: false, 1: true)
+  final bool generateEmbeddings;
+
+  /// Pooling type to use when [generateEmbeddings] is true.
+  ///
+  /// This determines how token-level embeddings are aggregated into a single sequence embedding.
+  /// Common values:
+  /// - 0: Unspecified (native layer will use its default, often LLAMA_POOLING_TYPE_NONE or LLAMA_POOLING_TYPE_CLS depending on model).
+  /// - 1: `LLAMA_POOLING_TYPE_NONE` (no pooling, typically embedding of the last token or a specific token like BOS/EOS).
+  /// - 2: `LLAMA_POOLING_TYPE_MEAN` (average of token embeddings).
+  /// - 3: `LLAMA_POOLING_TYPE_CLS` (embedding of the CLS token, if present and trained for).
+  /// - 4: `LLAMA_POOLING_TYPE_LAST` (embedding of the last token).
+  /// - 5: `LLAMA_POOLING_TYPE_RANK` (rank-based pooling, less common).
+  /// Defaults to 0.
+  final int poolingType;
+
+  /// Whether to normalize embeddings when [generateEmbeddings] is true.
+  ///
+  /// Normalizing embeddings to unit length can be beneficial for some downstream tasks.
+  /// - 0: False (do not normalize).
+  /// - 1: True (normalize to unit length).
   /// Defaults to 1 (true).
-  final int embdNormalize; 
-  /// Whether to use Flash Attention if available.
+  final int normalizeEmbeddings;
+
+  /// Whether to enable Flash Attention if available and supported by the model and hardware.
+  ///
+  /// Flash Attention is an optimized attention mechanism that can significantly speed up
+  /// inference and reduce memory usage for transformer models.
   /// Defaults to false.
-  final bool flashAttn;
-  /// The K cache type for the model (e.g., "f16", "q8_0"). 
-  /// Native side determines default if null.
+  final bool useFlashAttention;
+
+  /// The K cache type for the model's key-value cache (e.g., "f16", "q8_0").
+  ///
+  /// This affects the data type used for storing the "keys" in the attention mechanism's
+  /// KV cache. Lower precision (e.g., "q8_0") can save memory but may slightly affect quality.
+  /// If null, the native side determines the default.
   final String? cacheTypeK;
-  /// The V cache type for the model (e.g., "f16", "q8_0").
-  /// Native side determines default if null.
+
+  /// The V cache type for the model's key-value cache (e.g., "f16", "q8_0").
+  ///
+  /// Similar to [cacheTypeK], but for the "values" in the KV cache.
+  /// If null, the native side determines the default.
   final String? cacheTypeV;
-  
-  /// Callback for receiving progress updates during initialization and model download.
-  final OnInitProgress? onInitProgress; 
+
+  /// Callback for receiving progress updates during [CactusContext.init],
+  /// which includes model download (if applicable) and native context setup.
+  final OnInitProgress? onInitProgress;
 
   /// Creates parameters for [CactusContext] initialization.
   ///
-  /// Throws an [ArgumentError] if neither [modelPath] nor [modelUrl] is provided,
-  /// or if both are provided.
+  /// At least one of [modelPath] or [modelUrl] must be provided.
+  /// Throws an [ArgumentError] if neither is provided, or if both are provided.
   CactusInitParams({
     this.modelPath,
     this.modelUrl,
     this.modelFilename,
     this.chatTemplate,
-    this.nCtx = 512,
-    this.nBatch = 512,
-    this.nUbatch = 512,
-    this.nGpuLayers = 0, 
-    this.nThreads = 4,   
+    this.contextSize = 512,
+    this.batchSize = 512,
+    this.ubatchSize = 512,
+    this.gpuLayers = 0,
+    this.threads = 4,
     this.useMmap = true,
     this.useMlock = false,
-    this.embedding = false,
-    this.poolingType = 0, 
-    this.embdNormalize = 1, 
-    this.flashAttn = false,
+    this.generateEmbeddings = false,
+    this.poolingType = 0,
+    this.normalizeEmbeddings = 1,
+    this.useFlashAttention = false,
     this.cacheTypeK,
     this.cacheTypeV,
     this.onInitProgress,

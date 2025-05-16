@@ -111,14 +111,22 @@ final class CactusCompletionResultC extends Struct {
   external Pointer<Utf8> stopping_word;
 }
 
-typedef InitContextCNative = CactusContextHandle Function(Pointer<CactusInitParamsC> params);
-typedef InitContextDart = CactusContextHandle Function(Pointer<CactusInitParamsC> params);
+typedef InitContextCNative = Pointer<CactusContextOpaque> Function(
+    Pointer<CactusInitParamsC> params);
+typedef InitContextDart = Pointer<CactusContextOpaque> Function(
+    Pointer<CactusInitParamsC> params);
 
 typedef FreeContextCNative = Void Function(CactusContextHandle handle);
 typedef FreeContextDart = void Function(CactusContextHandle handle);
 
-typedef CompletionCNative = Int32 Function(CactusContextHandle handle, Pointer<CactusCompletionParamsC> params, Pointer<CactusCompletionResultC> result);
-typedef CompletionDart = int Function(CactusContextHandle handle, Pointer<CactusCompletionParamsC> params, Pointer<CactusCompletionResultC> result);
+typedef CompletionCNative = Int32 Function(
+    CactusContextHandle handle,
+    Pointer<CactusCompletionParamsC> params,
+    Pointer<CactusCompletionResultC> result);
+typedef CompletionDart = int Function(
+    CactusContextHandle handle,
+    Pointer<CactusCompletionParamsC> params,
+    Pointer<CactusCompletionResultC> result);
 
 typedef StopCompletionCNative = Void Function(CactusContextHandle handle);
 typedef StopCompletionDart = void Function(CactusContextHandle handle);
