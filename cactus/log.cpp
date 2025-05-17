@@ -9,7 +9,7 @@
 #include <thread>
 #include <vector>
 
-#if defined(__ANDROID__) && defined(CACTUS_ANDROID_ENABLE_LOGGING)
+#if defined(__ANDROID__) && defined(RNLLAMA_ANDROID_ENABLE_LOGGING)
 #include <android/log.h>
 #endif
 
@@ -61,7 +61,7 @@ struct common_log_entry {
     // signals the worker thread to stop
     bool is_end;
 
-    #if defined(__ANDROID__) && defined(CACTUS_ANDROID_ENABLE_LOGGING)
+    #if defined(__ANDROID__) && defined(RNLLAMA_ANDROID_ENABLE_LOGGING)
     void android_print() const {
         int android_log_priority;
         switch (level) {
@@ -82,13 +82,13 @@ struct common_log_entry {
                 break;
         }
 
-        const char * tag = "CACTUS_LOG_ANDROID";
+        const char * tag = "RNLLAMA_LOG_ANDROID";
         __android_log_print(android_log_priority, tag, "%s", msg.data());
     }
     #endif
 
     void print(FILE * file = nullptr) const {
-        #if defined(__ANDROID__) && defined(CACTUS_ANDROID_ENABLE_LOGGING)
+        #if defined(__ANDROID__) && defined(RNLLAMA_ANDROID_ENABLE_LOGGING)
         android_print();
         #else
         FILE * fcur = file;

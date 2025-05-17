@@ -36,11 +36,18 @@ add_library(cactus SHARED
     ${SOURCE_DIR}/ggml-alloc.c
     ${SOURCE_DIR}/ggml-backend.cpp
     ${SOURCE_DIR}/ggml-backend-reg.cpp
-    ${SOURCE_DIR}/ggml-cpu.c
-    ${SOURCE_DIR}/ggml-cpu.cpp
-    ${SOURCE_DIR}/ggml-cpu-aarch64.cpp
-    ${SOURCE_DIR}/ggml-cpu-quants.c
-    ${SOURCE_DIR}/ggml-cpu-traits.cpp
+    ${SOURCE_DIR}/ggml-cpu/ggml-cpu.c
+    ${SOURCE_DIR}/ggml-cpu/ggml-cpu.cpp
+    ${SOURCE_DIR}/ggml-cpu/ggml-cpu-aarch64.cpp
+    ${SOURCE_DIR}/ggml-cpu/ggml-cpu-quants.c
+    ${SOURCE_DIR}/ggml-cpu/ggml-cpu-traits.cpp
+    ${SOURCE_DIR}/ggml-cpu/sgemm.cpp
+    ${SOURCE_DIR}/ggml-cpu/amx/amx.cpp
+    ${SOURCE_DIR}/ggml-cpu/amx/mmq.cpp
+    ${SOURCE_DIR}/ggml-cpu/unary-ops.cpp
+    ${SOURCE_DIR}/ggml-cpu/binary-ops.cpp
+    ${SOURCE_DIR}/ggml-cpu/vec.cpp
+    ${SOURCE_DIR}/ggml-cpu/ops.cpp
     ${SOURCE_DIR}/ggml-metal.m
     ${SOURCE_DIR}/ggml-opt.cpp
     ${SOURCE_DIR}/ggml-threading.cpp
@@ -70,15 +77,12 @@ add_library(cactus SHARED
     ${SOURCE_DIR}/sampling.cpp
     ${SOURCE_DIR}/unicode-data.cpp
     ${SOURCE_DIR}/unicode.cpp
-    ${SOURCE_DIR}/sgemm.cpp
     ${SOURCE_DIR}/common.cpp
     ${SOURCE_DIR}/chat.cpp
     ${SOURCE_DIR}/json-schema-to-grammar.cpp
     ${SOURCE_DIR}/minja/minja.hpp
     ${SOURCE_DIR}/minja/chat-template.hpp
     ${SOURCE_DIR}/json.hpp
-    ${SOURCE_DIR}/amx/amx.cpp
-    ${SOURCE_DIR}/amx/mmq.cpp
     ${SOURCE_DIR}/cactus.cpp
     ${SOURCE_DIR}/cactus_completion.cpp
     ${SOURCE_DIR}/cactus_context.cpp
@@ -95,6 +99,7 @@ add_library(cactus SHARED
 target_include_directories(cactus
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../cactus>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../cactus/ggml-cpu>
         $<INSTALL_INTERFACE:include>
 )
 

@@ -10,10 +10,14 @@ endif()
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Define cactus source directory
+set(CACTUS_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../cactus)
+
 # Add include directories
 include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}
-    ${CMAKE_CURRENT_SOURCE_DIR}/../cactus
+    ${CACTUS_SOURCE_DIR}
+    ${CACTUS_SOURCE_DIR}/ggml-cpu
 )
 
 # Find Metal framework
@@ -27,59 +31,63 @@ add_executable(cactus_test
     test.cpp
     test_core_api.cpp
     test_ffi_api.cpp
-    ../cactus/cactus.cpp
-    ../cactus/cactus_context.cpp
-    ../cactus/cactus_loader.cpp
-    ../cactus/cactus_completion.cpp
-    ../cactus/cactus_utils.cpp
-    ../cactus/cactus_embedding.cpp
-    ../cactus/cactus_lora.cpp
-    ../cactus/cactus_ffi.cpp
-    ../cactus/llama.cpp
-    ../cactus/llama-context.cpp
-    ../cactus/llama-model.cpp
-    ../cactus/llama-chat.cpp
-    ../cactus/llama-sampling.cpp
-    ../cactus/llama-grammar.cpp
-    ../cactus/llama-vocab.cpp
-    ../cactus/llama-arch.cpp
-    ../cactus/llama-kv-cache.cpp
-    ../cactus/llama-model-loader.cpp
-    ../cactus/llama-impl.cpp
-    ../cactus/llama-mmap.cpp
-    ../cactus/llama-memory.cpp
-    ../cactus/llama-io.cpp
-    ../cactus/llama-cparams.cpp
-    ../cactus/llama-hparams.cpp
-    ../cactus/llama-batch.cpp
-    ../cactus/llama-adapter.cpp
-    ../cactus/llama-graph.cpp
-    ../cactus/ggml.c
-    ../cactus/ggml-alloc.c
-    ../cactus/ggml-backend.cpp
-    ../cactus/ggml-quants.c
-    ../cactus/ggml-opt.cpp
-    ../cactus/ggml-metal.m
-    ../cactus/ggml-cpu.c
-    ../cactus/ggml-cpu.cpp
-    ../cactus/ggml-cpu-quants.c
-    ../cactus/ggml-cpu-aarch64.cpp
-    ../cactus/ggml-cpu-traits.cpp
-    ../cactus/ggml-threading.cpp
-    ../cactus/ggml-backend-reg.cpp
-    ../cactus/gguf.cpp
-    ../cactus/common.cpp
-    ../cactus/chat.cpp
-    ../cactus/log.cpp
-    ../cactus/sampling.cpp
-    ../cactus/json-schema-to-grammar.cpp
-    ../cactus/unicode.cpp
-    ../cactus/unicode-data.cpp
-    ../cactus/sgemm.cpp
-    ../cactus/amx/amx.cpp
-    ../cactus/amx/mmq.cpp
-    ../cactus/cactus_bench.cpp
-    ../cactus/cactus_chat.cpp
+    ${CACTUS_SOURCE_DIR}/cactus.cpp
+    ${CACTUS_SOURCE_DIR}/cactus_context.cpp
+    ${CACTUS_SOURCE_DIR}/cactus_loader.cpp
+    ${CACTUS_SOURCE_DIR}/cactus_completion.cpp
+    ${CACTUS_SOURCE_DIR}/cactus_utils.cpp
+    ${CACTUS_SOURCE_DIR}/cactus_embedding.cpp
+    ${CACTUS_SOURCE_DIR}/cactus_lora.cpp
+    ${CACTUS_SOURCE_DIR}/cactus_ffi.cpp
+    ${CACTUS_SOURCE_DIR}/llama.cpp
+    ${CACTUS_SOURCE_DIR}/llama-context.cpp
+    ${CACTUS_SOURCE_DIR}/llama-model.cpp
+    ${CACTUS_SOURCE_DIR}/llama-chat.cpp
+    ${CACTUS_SOURCE_DIR}/llama-sampling.cpp
+    ${CACTUS_SOURCE_DIR}/llama-grammar.cpp
+    ${CACTUS_SOURCE_DIR}/llama-vocab.cpp
+    ${CACTUS_SOURCE_DIR}/llama-arch.cpp
+    ${CACTUS_SOURCE_DIR}/llama-kv-cache.cpp
+    ${CACTUS_SOURCE_DIR}/llama-model-loader.cpp
+    ${CACTUS_SOURCE_DIR}/llama-impl.cpp
+    ${CACTUS_SOURCE_DIR}/llama-mmap.cpp
+    ${CACTUS_SOURCE_DIR}/llama-memory.cpp
+    ${CACTUS_SOURCE_DIR}/llama-io.cpp
+    ${CACTUS_SOURCE_DIR}/llama-cparams.cpp
+    ${CACTUS_SOURCE_DIR}/llama-hparams.cpp
+    ${CACTUS_SOURCE_DIR}/llama-batch.cpp
+    ${CACTUS_SOURCE_DIR}/llama-adapter.cpp
+    ${CACTUS_SOURCE_DIR}/llama-graph.cpp
+    ${CACTUS_SOURCE_DIR}/ggml.c
+    ${CACTUS_SOURCE_DIR}/ggml-alloc.c
+    ${CACTUS_SOURCE_DIR}/ggml-backend.cpp
+    ${CACTUS_SOURCE_DIR}/ggml-quants.c
+    ${CACTUS_SOURCE_DIR}/ggml-opt.cpp
+    ${CACTUS_SOURCE_DIR}/ggml-metal.m
+    ${CACTUS_SOURCE_DIR}/ggml-cpu/amx/amx.cpp
+    ${CACTUS_SOURCE_DIR}/ggml-cpu/amx/mmq.cpp
+    ${CACTUS_SOURCE_DIR}/ggml-cpu/ggml-cpu.c
+    ${CACTUS_SOURCE_DIR}/ggml-cpu/ggml-cpu.cpp
+    ${CACTUS_SOURCE_DIR}/ggml-cpu/ggml-cpu-aarch64.cpp
+    ${CACTUS_SOURCE_DIR}/ggml-cpu/ggml-cpu-quants.c
+    ${CACTUS_SOURCE_DIR}/ggml-cpu/ggml-cpu-traits.cpp
+    ${CACTUS_SOURCE_DIR}/ggml-cpu/unary-ops.cpp
+    ${CACTUS_SOURCE_DIR}/ggml-cpu/binary-ops.cpp
+    ${CACTUS_SOURCE_DIR}/ggml-cpu/sgemm.cpp
+    ${CACTUS_SOURCE_DIR}/ggml-cpu/vec.cpp
+    ${CACTUS_SOURCE_DIR}/ggml-cpu/ops.cpp
+    ${CACTUS_SOURCE_DIR}/ggml-threading.cpp
+    ${CACTUS_SOURCE_DIR}/ggml-backend-reg.cpp
+    ${CACTUS_SOURCE_DIR}/gguf.cpp
+    ${CACTUS_SOURCE_DIR}/common.cpp
+    ${CACTUS_SOURCE_DIR}/chat.cpp
+    ${CACTUS_SOURCE_DIR}/log.cpp
+    ${CACTUS_SOURCE_DIR}/sampling.cpp
+    ${CACTUS_SOURCE_DIR}/json-schema-to-grammar.cpp
+    ${CACTUS_SOURCE_DIR}/unicode.cpp
+    ${CACTUS_SOURCE_DIR}/unicode-data.cpp
+    ${CACTUS_SOURCE_DIR}/cactus_bench.cpp
+    ${CACTUS_SOURCE_DIR}/cactus_chat.cpp
 )
 
 # Link libraries

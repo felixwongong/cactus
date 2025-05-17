@@ -9,6 +9,7 @@ set(SOURCE_DIR ${CMAKE_SOURCE_DIR}/../../../cactus)
 # Ensure the directory containing jni-helpers.h is included
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 include_directories(${SOURCE_DIR})
+include_directories(${SOURCE_DIR}/ggml-cpu)
 
 set(
     SOURCE_FILES
@@ -17,11 +18,18 @@ set(
     ${SOURCE_DIR}/ggml-alloc.c
     ${SOURCE_DIR}/ggml-backend.cpp
     ${SOURCE_DIR}/ggml-backend-reg.cpp
-    ${SOURCE_DIR}/ggml-cpu.c
-    ${SOURCE_DIR}/ggml-cpu.cpp
-    ${SOURCE_DIR}/ggml-cpu-aarch64.cpp
-    ${SOURCE_DIR}/ggml-cpu-quants.c
-    ${SOURCE_DIR}/ggml-cpu-traits.cpp
+    ${SOURCE_DIR}/ggml-cpu/ggml-cpu.c
+    ${SOURCE_DIR}/ggml-cpu/ggml-cpu.cpp
+    ${SOURCE_DIR}/ggml-cpu/ggml-cpu-aarch64.cpp
+    ${SOURCE_DIR}/ggml-cpu/ggml-cpu-quants.c
+    ${SOURCE_DIR}/ggml-cpu/ggml-cpu-traits.cpp
+    ${SOURCE_DIR}/ggml-cpu/sgemm.cpp
+    ${SOURCE_DIR}/ggml-cpu/amx/amx.cpp
+    ${SOURCE_DIR}/ggml-cpu/amx/mmq.cpp
+    ${SOURCE_DIR}/ggml-cpu/unary-ops.cpp
+    ${SOURCE_DIR}/ggml-cpu/binary-ops.cpp
+    ${SOURCE_DIR}/ggml-cpu/vec.cpp
+    ${SOURCE_DIR}/ggml-cpu/ops.cpp
     ${SOURCE_DIR}/ggml-opt.cpp
     ${SOURCE_DIR}/ggml-threading.cpp
     ${SOURCE_DIR}/ggml-quants.c
@@ -50,7 +58,6 @@ set(
     ${SOURCE_DIR}/sampling.cpp
     ${SOURCE_DIR}/unicode-data.cpp
     ${SOURCE_DIR}/unicode.cpp
-    ${SOURCE_DIR}/sgemm.cpp
     ${SOURCE_DIR}/common.cpp
     ${SOURCE_DIR}/chat.cpp
     ${SOURCE_DIR}/json-schema-to-grammar.cpp
