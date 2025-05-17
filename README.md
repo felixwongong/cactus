@@ -1,4 +1,4 @@
-![Logo](repo-assets/banner.jpg)
+![Logo](assets/banner.jpg)
 
 [![Email][gmail-shield]][gmail-url]
 [![Discord][discord-shield]][discord-url]
@@ -30,11 +30,7 @@
 [github-url]: https://github.com/cactus-compute/cactus
 
 Cactus is a lightweight, high-performance framework for running AI models on mobile phones. Cactus has clean and consistent APIs across 
-
-- Flutter/Dart 
-- React-Native 
-- Android/Kotlin 
-- iOS/Swift 
+Flutter and React-Native.
 
 Cactus currently leverages GGML backends to support any GGUF model already compatible with [![Llama.cpp](https://img.shields.io/badge/Llama.cpp-000000?style=flat&logo=github&logoColor=white)](https://github.com/ggerganov/llama.cpp), while we focus on broadly supporting every moblie app development platform, as well as upcoming features like:
 
@@ -52,11 +48,8 @@ Contributors with any of the above experiences are welcome! Feel free to submit 
 - [Benchmarks](#benchmarks)
 - [Examples](#examples)
 - [Getting Started](#getting-started)
-  - [Flutter (Dart)](#flutter-dart)
-  - [React Native (TypeScript/JavaScript)](#react-native-typescriptjavascript)
-  - [Android (Kotlin/Java)](#android-kotlinjava)
-  - [Swift (in developement)](#swift-in-developement)
-- [License](#license)
+- [Flutter (Dart)](#flutter-dart)
+- [React Native (TypeScript/JavaScript)](#react-native-typescriptjavascript)
 
 ## Technical Architecture
 
@@ -134,7 +127,7 @@ We have ready-to-run-and-deploy examples [here](https://github.com/cactus-comput
 
 ## Getting Started
 
-### ✅ Flutter (Dart)
+## Flutter (Dart)
 
 **1. Add Dependency:**
 Add `cactus` to your `pubspec.yaml`:
@@ -151,7 +144,7 @@ flutter pub get
 
 Full setup and API details are available in the [Flutter README](cactus-flutter/README.md).
 
-### ✅ React Native (TypeScript/JavaScript)
+## React Native (TypeScript/JavaScript)
 
 **1. Install Package:**
 
@@ -171,61 +164,3 @@ npx pod-install
 ```
 
 For more detailed documentation and examples, see the [React Native README](cactus-react/README.md).
-
-### ✅ Android (Kotlin/Java)
-
-**Important: Credentials Required for GitHub Packages**
-
-Accessing the Cactus Android library via GitHub Packages now requires authentication. You'll need to use a GitHub Personal Access Token (PAT) with the `read:packages` scope.
-
-**Steps to Get and Use Credentials:**
-
-1.  **Generate a GitHub PAT:**
-    *   Go to your GitHub [Developer settings](https://github.com/settings/tokens).
-    *   Click "Generate new token" (select classic or fine-grained).
-    *   Give your token a descriptive name (e.g., `cactus-android-dependency`).
-    *   Select the `read:packages` scope.
-    *   Click "Generate token" and **copy the token immediately**. You won't be able to see it again.
-
-2.  **Store Your Credentials Securely:**
-    Do **not** hardcode your PAT directly into your `settings.gradle.kts` file. Instead, use one of the following methods:
-
-    *   **Using `local.properties` (Recommended for local development):**
-        1.  Create or open the `local.properties` file in your Android project's root directory (the same directory as `gradle.properties`). If it's not there, create it.
-        2.  Add the following lines, replacing `YOUR_GITHUB_USERNAME` with your GitHub username and `YOUR_PAT` with the token you generated:
-            ```properties
-            gpr.user=YOUR_GITHUB_USERNAME
-            gpr.key=YOUR_PAT
-            ```
-        3.  Ensure `local.properties` is listed in your project's `.gitignore` file to prevent committing your credentials.
-
-    *   **Using Environment Variables (Recommended for CI/CD or shared environments):**
-        Set the following environment variables in your build environment:
-        *   `GPR_USER`: Your GitHub username.
-        *   `GPR_KEY`: Your GitHub PAT.
-
-        The `settings.gradle.kts` file is configured to read these from `local.properties` first, then fall back to environment variables.
-
-**1. Add Repository to `settings.gradle.kts`:**
-
-```kotlin
-dependencyResolutionManagement {
-    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS) // Optional but recommended
-    repositories {
-        google()
-        mavenCentral()
-        maven {
-            name = "GitHubPackagesCactusCompute"
-            url = uri("https://maven.pkg.github.com/cactus-compute/cactus")
-            credentials {
-                username = project.findProperty("gpr.user") as String? ?: System.getenv("GPR_USER")
-                password = project.findProperty("gpr.key") as String? ?: System.getenv("GPR_KEY")
-            }
-        }
-    }
-}
-```
-
-For more detailed documentation and examples, see the [Android README](cactus-android/README.md).
-
-### 🚧 iOS (Swift) (in development)

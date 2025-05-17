@@ -1,9 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<data-extraction-rules>
-    <cloud-backup disableIfNoEncryptionCapabilities="true">
-        <!-- TODO: Define backup rules for your app data. -->
-    </cloud-backup>
-    <device-transfer>
-        <!-- TODO: Define device transfer rules for your app data. -->
-    </device-transfer>
-</data-extraction-rules> 

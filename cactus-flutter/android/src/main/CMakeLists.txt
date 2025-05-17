@@ -5,33 +5,22 @@ project(cactus)
 set(CMAKE_CXX_STANDARD 17)
 set(SOURCE_DIR ${CMAKE_SOURCE_DIR}/../../../../cactus)
 
-# Add the cactus_core_lib defined in the main cactus directory
 add_subdirectory(${SOURCE_DIR} ${CMAKE_BINARY_DIR}/cactus_core_build_flutter_android)
 
-# Include directories for JNI or other Android-specific headers if they exist in this project.
-# Core library headers are available via cactus_core_lib target_include_directories.
-# include_directories(${CMAKE_CURRENT_SOURCE_DIR}) # Example if JNI files were here
-include_directories(${SOURCE_DIR}) # For top-level headers from core cactus if needed by JNI
-include_directories(${SOURCE_DIR}/ggml-cpu) # If ggml-cpu headers are needed by JNI
-
-
-# SOURCE_FILES list is removed as all core sources are in cactus_core_lib
+include_directories(${SOURCE_DIR}) 
+include_directories(${SOURCE_DIR}/ggml-cpu) 
 
 find_library(LOG_LIB log)
 
 function(build_library target_name cpu_flags)
-    # Add a shared library using object files from cactus_core_lib
     add_library(
         ${target_name}
         SHARED
         $<TARGET_OBJECTS:cactus_core_lib>
     )
 
-    # Link against Android log library and other system libs
-    # cactus_core_lib objects are already included, so no need to link it as a separate library
     target_link_libraries(${target_name} PRIVATE ${LOG_LIB} android)
 
-    # Apply Android specific compile options (respecting user's re-addition of LM_GGML_USE_CPU)
     target_compile_options(${target_name} PRIVATE -DLM_GGML_USE_CPU -DLM_GGML_USE_CPU_AARCH64 -pthread ${cpu_flags})
 
     if (${CMAKE_BUILD_TYPE} STREQUAL "Debug")
@@ -48,7 +37,6 @@ function(build_library target_name cpu_flags)
 
 endfunction()
 
-# Default target (no specific CPU features)
 build_library("cactus" "")
 
 if (${ANDROID_ABI} STREQUAL "arm64-v8a")
