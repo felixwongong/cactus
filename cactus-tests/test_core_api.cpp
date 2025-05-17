@@ -11,7 +11,7 @@ void test_model_loading() {
     std::cout << "Testing model loading..." << std::endl;
     
     common_params params;
-    params.model = "../llm.gguf";
+    params.model.path = "../llm.gguf";
     params.n_ctx = 1024;
     params.n_batch = 512;
     params.cpuparams.n_threads = 4;
@@ -29,7 +29,7 @@ void test_basic_completion() {
     std::cout << "Testing basic completion..." << std::endl;
     
     common_params params;
-    params.model = "../llm.gguf";
+    params.model.path = "../llm.gguf";
     params.prompt = "Hello, how are you?";
     params.n_predict = 50;
     params.n_ctx = 1024;
@@ -68,7 +68,7 @@ void test_chat_formatting() {
     std::cout << "Testing chat formatting..." << std::endl;
     
     common_params params;
-    params.model = "../llm.gguf";
+    params.model.path = "../llm.gguf";
     params.n_ctx = 1024;
     params.n_batch = 512;
     params.cpuparams.n_threads = 4;
@@ -101,7 +101,7 @@ void test_prompt_truncation() {
     std::cout << "Testing prompt truncation..." << std::endl;
     
     common_params params;
-    params.model = "../llm.gguf";
+    params.model.path = "../llm.gguf";
     params.n_ctx = 64;
     params.n_batch = 512;
     params.cpuparams.n_threads = 4;
@@ -134,7 +134,7 @@ void test_stopping_criteria() {
     std::cout << "Testing stopping criteria..." << std::endl;
     
     common_params params;
-    params.model = "../llm.gguf";
+    params.model.path = "../llm.gguf";
     params.prompt = "Write a short story about a cat.";
     params.n_predict = 100;
     params.n_ctx = 1024;
@@ -176,7 +176,7 @@ void test_embedding_generation() {
     std::cout << "Testing embedding generation..." << std::endl;
     
     common_params params;
-    params.model = "../llm.gguf";
+    params.model.path = "../llm.gguf";
     params.embedding = true; 
     params.n_ctx = 1024;
     params.n_batch = 512;
@@ -197,7 +197,7 @@ void test_benchmarking() {
     std::cout << "Testing benchmarking..." << std::endl;
     
     common_params params;
-    params.model = "../llm.gguf";
+    params.model.path = "../llm.gguf";
     params.n_ctx = 1024; 
     params.n_batch = 512;
     params.cpuparams.n_threads = 4;
@@ -224,7 +224,7 @@ void test_jinja_chat_formatting() {
     std::cout << "Testing Jinja chat formatting..." << std::endl;
     
     common_params params;
-    params.model = "../llm.gguf";
+    params.model.path = "../llm.gguf";
     params.n_ctx = 1024;
     params.n_batch = 512;
     params.cpuparams.n_threads = 4;

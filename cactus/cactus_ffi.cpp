@@ -52,7 +52,7 @@ cactus_context_handle_t cactus_init_context_c(const cactus_init_params_c_t* para
         context = new cactus::cactus_context();
 
         common_params cpp_params;
-        cpp_params.model = params->model_path;
+        cpp_params.model.path = params->model_path;
         if (params->chat_template) {
             cpp_params.chat_template = params->chat_template;
         }
