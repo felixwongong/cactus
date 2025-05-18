@@ -1,6 +1,7 @@
+#include "ggml.h"  
 #include "cactus.h"
-#include "common.h" // For common_sampler_free, common_sampler_init
-
+#include "common.h" 
+#include "mtmd.h"
 namespace cactus {
 
 /**
@@ -11,7 +12,11 @@ namespace cactus {
 cactus_context::~cactus_context() {
     if (ctx_sampling != nullptr) {
         common_sampler_free(ctx_sampling);
-        ctx_sampling = nullptr; // Good practice to nullify after freeing
+        ctx_sampling = nullptr; 
+    }
+    if (ctx_mtmd != nullptr) { // Added for libmtmd
+        mtmd_free(ctx_mtmd);
+        ctx_mtmd = nullptr;
     }
     // Note: llama_init (which holds model and ctx shared_ptrs) 
     // will automatically clean up model and ctx when cactus_context is destroyed.
@@ -40,10 +45,10 @@ void cactus_context::rewind() {
     incomplete = false;
     n_remain = 0;
     n_past = 0;
-    embd.clear(); // Clear the embedding vector
+    embd.clear(); 
     if (ctx_sampling) {
         // Reset sampler state if it exists
-        // common_sampler_reset(ctx_sampling); // Assuming such a function exists or is needed
+        common_sampler_reset(ctx_sampling);
     }
     // params.sampling.n_prev = n_ctx; // This might be set dynamically or during initSampling
 }
@@ -58,10 +63,10 @@ bool cactus_context::initSampling() {
         common_sampler_free(ctx_sampling);
         ctx_sampling = nullptr;
     }
-    if (model) { // Ensure model is loaded before initializing sampler
+    if (model) { 
         ctx_sampling = common_sampler_init(model, params.sampling);
         if (ctx_sampling) {
-             params.sampling.n_prev = n_ctx; // Set n_prev based on context size
+             params.sampling.n_prev = n_ctx; 
         }
     } else {
         LOG_ERROR("Cannot initialize sampling context: model is not loaded.");

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.10)
-project(cactus_test_executable)
+project(cactus_test)
 
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang" OR CMAKE_CXX_COMPILER_ID MATCHES "GNU")
     add_compile_options(-g -O0 -fsanitize=address -fno-omit-frame-pointer)
@@ -15,18 +15,18 @@ include_directories(
 
 add_subdirectory(../cactus ${CMAKE_BINARY_DIR}/cactus_core_build)
 
-add_executable(cactus_test_executable 
+add_executable(cactus_test 
     test.cpp
     test_core_api.cpp
     test_ffi_api.cpp
 )
 
-target_link_libraries(cactus_test_executable
+target_link_libraries(cactus_test
     PRIVATE
     cactus_core_lib
 )
 
-add_custom_command(TARGET cactus_test_executable POST_BUILD
+add_custom_command(TARGET cactus_test POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
     ${CMAKE_CURRENT_SOURCE_DIR}/llm.gguf
     ${CMAKE_CURRENT_BINARY_DIR}/llm.gguf

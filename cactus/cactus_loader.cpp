@@ -1,6 +1,8 @@
+#include "ggml.h"  
 #include "cactus.h"
-#include "common.h" // For common_init_from_params, common_chat_templates_init, etc.
-#include <stdexcept> // For runtime_error
+#include "common.h"
+#include "mtmd.h" 
+#include <stdexcept> 
 
 namespace cactus {
 
@@ -13,7 +15,7 @@ namespace cactus {
 bool cactus_context::loadModel(common_params &params_)
 {
     params = params_;
-    llama_init = common_init_from_params(params);
+    llama_init = common_init_from_params(params); 
     model = llama_init.model.get();
     ctx = llama_init.context.get();
     if (model == nullptr)
@@ -23,6 +25,24 @@ bool cactus_context::loadModel(common_params &params_)
     }
     templates = common_chat_templates_init(model, params.chat_template);
     n_ctx = llama_n_ctx(ctx);
+
+    if (!params.mmproj.path.empty() && model != nullptr) {
+        struct mtmd_context_params mtmd_params = mtmd_context_params_default();
+        mtmd_params.use_gpu = params.mmproj_use_gpu;
+        mtmd_params.n_threads = params.cpuparams.n_threads; 
+        mtmd_params.verbosity = params.verbosity > 0 ? GGML_LOG_LEVEL_INFO : GGML_LOG_LEVEL_ERROR; 
+        ctx_mtmd = mtmd_init_from_file(params.mmproj.path.c_str(), model, mtmd_params);
+
+        if (ctx_mtmd == nullptr) {
+            LOG_ERROR("Failed to initialize mtmd_context with mmproj: %s", params.mmproj.path.c_str());
+        } else {
+            LOG_INFO("mtmd_context initialized successfully with mmproj: %s", params.mmproj.path.c_str());
+        }
+    } else if (!params.mmproj.path.empty() && model == nullptr) {
+        LOG_ERROR("Cannot initialize mtmd_context because base model failed to load.");
+    } else if (params.mmproj.path.empty() && !params.image.empty() && !params.no_mmproj) {
+        LOG_WARNING("Image provided but no mmproj path specified. Multimodal processing will be skipped.");
+    }
 
     return true;
 }

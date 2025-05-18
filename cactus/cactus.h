@@ -1,15 +1,32 @@
 #ifndef CACTUS_H
 #define CACTUS_H
 
+#include "cactus_shims.h" // Include the shims first!
+
 #include <sstream>
 #include <iostream>
-#include "chat.h"
-#include "common.h"
-#include "ggml.h"
-#include "gguf.h"
-#include "llama.h"
-#include "llama-impl.h"
-#include "sampling.h"
+
+// Core llama.cpp / ggml headers are now in cactus_shims.h or included by other necessary headers
+// #include "ggml.h" // No longer needed here, in cactus_shims.h
+// #include "gguf.h" // No longer needed here, in cactus_shims.h
+// #include "ggml-common.h" // No longer needed here, in cactus_shims.h
+
+// --- Compatibility Shims for Vendored Headers (clip.h, mtmd.h, clip-impl.h) ---
+// MOVED TO cactus_shims.h
+// --- End Compatibility Shims ---
+
+#include "llama.h"  // For llama_model, llama_context (used by mtmd_init_from_file)
+#include "common.h" // For common_params, common_sampler, etc. (used by cactus_context)
+
+// Now include headers that might depend on the above
+#include "mtmd.h"   // For mtmd_context and its API (depends on shims, llama.h)
+#include "chat.h"   // For chat functionality if directly used in cactus_context types
+#include "sampling.h" // For sampling types if directly used in cactus_context types
+
+// gguf.h and llama-impl.h are often included by .cpp files or deeper internal headers as needed.
+// #include "gguf.h"   
+// #include "llama-impl.h"
+
 #if defined(__ANDROID__)
 #include <android/log.h>
 #endif
@@ -23,6 +40,9 @@
  * token sampling, chat formatting, and other common LLM operations.
  */
 namespace cactus {
+
+// Forward declaration for LLaVA image embedding structure (keep for now, might remove if fully unused)
+// struct llava_image_embed; 
 
 /**
  * @brief Converts a token to a formatted output string
@@ -97,6 +117,14 @@ struct cactus_context {
     bool has_next_token = false;    /**< Whether there's another token to generate */
     std::string generated_text;     /**< The complete generated text */
     std::vector<completion_token_output> generated_token_probs; /**< Token probabilities */
+
+    // Remove previous LLaVA attempt members
+    // llava_image_embed *image_embed_result = nullptr;
+    // bool image_processed_and_evaluated = false;
+    // size_t n_eval_offset = 0; 
+
+    // Try using mtmd_context directly, assuming mtmd.h made it available globally
+    mtmd_context *ctx_mtmd = nullptr; 
 
     size_t num_prompt_tokens = 0;    /**< Number of tokens in the prompt */
     size_t num_tokens_predicted = 0; /**< Number of tokens predicted */

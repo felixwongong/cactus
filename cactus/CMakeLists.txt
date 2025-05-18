@@ -13,6 +13,9 @@ set(CACTUS_CORE_SOURCES
     cactus_embedding.cpp
     cactus_lora.cpp
     cactus_ffi.cpp
+    mtmd.cpp
+    mtmd-helper.cpp
+    clip.cpp
     llama.cpp
     llama-context.cpp
     llama-model.cpp
@@ -49,7 +52,6 @@ set(CACTUS_CORE_SOURCES
     unicode-data.cpp
     cactus_bench.cpp
     cactus_chat.cpp
-    # ggml-cpu sources
     ggml-cpu/amx/amx.cpp
     ggml-cpu/amx/mmq.cpp
     ggml-cpu/ggml-cpu.c
@@ -64,7 +66,6 @@ set(CACTUS_CORE_SOURCES
     ggml-cpu/ops.cpp
 )
 
-# Conditionally add platform-specific sources
 if(APPLE)
     list(APPEND CACTUS_CORE_SOURCES ggml-metal.m)
 endif()
@@ -74,17 +75,19 @@ add_library(cactus_core_lib OBJECT ${CACTUS_CORE_SOURCES})
 target_include_directories(cactus_core_lib PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/ggml-cpu>
-    # For potential installation:
-    # $<INSTALL_INTERFACE:include> 
 )
 
+# Add compile option for non-MSVC to suppress stb_image.h warnings
+if(NOT MSVC)
+    target_compile_options(cactus_core_lib PRIVATE -Wno-cast-qual)
+endif()
+
 # Find and link required Apple frameworks
-# Assuming this library might be used on Apple platforms due to ggml-metal.m
 if(APPLE)
     find_library(METAL_LIBRARY Metal)
     find_library(METALKIT_LIBRARY MetalKit)
     find_library(FOUNDATION_LIBRARY Foundation)
-    find_library(ACCELERATE_FRAMEWORK Accelerate) # Often found as a framework by this name
+    find_library(ACCELERATE_FRAMEWORK Accelerate)
 
     if(METAL_LIBRARY AND METALKIT_LIBRARY AND FOUNDATION_LIBRARY AND ACCELERATE_FRAMEWORK)
         target_link_libraries(cactus_core_lib PUBLIC
@@ -107,20 +110,3 @@ endif()
 target_compile_definitions(cactus_core_lib PUBLIC
     LM_GGML_USE_CPU
 )
-
-# Example for installation (optional)
-# include(GNUInstallDirs)
-# install(TARGETS cactus_core_lib
-#     EXPORT cactus_core_libTargets
-#     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-#     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
-#     PUBLIC_HEADER DESTINATION ${CMAKE_INSTALL_INCLUDEDIR} # If you list public headers
-# )
-# install(EXPORT cactus_core_libTargets
-#   FILE cactus_core_libTargets.cmake
-#   NAMESPACE cactus::
-#   DESTINATION lib/cmake/cactus_core_lib
-# )
-# To list public headers for installation:
-# target_sources(cactus_core_lib PUBLIC FILE_SET HEADERS FILES your_public_header.h)
-# And then add PUBLIC_HEADER_DESTINATION to install(TARGETS ...) 

@@ -39,6 +39,7 @@ typedef struct cactus_context_opaque* cactus_context_handle_t;
 
 typedef struct cactus_init_params_c {
     const char* model_path;
+    const char* mmproj_path;
     const char* chat_template; 
 
     int32_t n_ctx;
@@ -60,6 +61,7 @@ typedef struct cactus_init_params_c {
 
 typedef struct cactus_completion_params_c {
     const char* prompt;
+    const char* image_path;
     int32_t n_predict; 
     int32_t n_threads; 
     int32_t seed;

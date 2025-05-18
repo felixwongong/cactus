@@ -1,5 +1,7 @@
+#include "ggml.h"   // Added: For ggml_log_level full definition
 #include "cactus.h"
 #include "common.h" // For common_sampler_sample, common_token_to_piece, common_tokenize, etc.
+#include "mtmd.h"   // Added for multimodal support
 #include <algorithm> // For std::min
 #include <vector>
 #include <string>
@@ -49,72 +51,146 @@ void cactus_context::truncatePrompt(std::vector<llama_token> &prompt_tokens) {
 /**
  * @brief Loads a prompt into the context
  * 
- * Tokenizes and prepares a prompt for inference
+ * Tokenizes and prepares a prompt for inference. If an image is provided and
+ * mtmd_context is available, it uses libmtmd to process multimodal input.
+ * Otherwise, it processes as a text-only prompt.
  */
 void cactus_context::loadPrompt() {
-    std::vector<llama_token> prompt_tokens = ::common_tokenize(ctx, params.prompt, true, true);
-    num_prompt_tokens = prompt_tokens.size();
+    // Ensure embd is clear for this new prompt load, n_past should be 0 (typically after rewind)
+    // rewind() clears embd and sets n_past to 0.
+    // If loadPrompt is called without rewind, existing n_past and embd state might interfere.
+    // For now, assume loadPrompt is for a fresh start or after rewind.
+    embd.clear(); 
+    n_past = 0; // Explicitly reset n_past here for the current prompt loading logic.
+                // If this function could be part of a longer conversation turn, 
+                // n_past management would need to be more sophisticated.
 
-    // LOG tokens
-    std::stringstream ss;
-    ss << "\n" << __func__ << ": prompt_tokens = ";
-    for (auto& token : prompt_tokens) {
-        ss << token << " ";
+    if (ctx_mtmd != nullptr && !params.image.empty() && !params.prompt.empty()) {
+        LOG_INFO("Multimodal prompt detected. Using libmtmd.");
+
+        mtmd_input_text input_text;
+        input_text.text = params.prompt.c_str(); // Prompt MUST contain image markers like <__image__>
+        input_text.add_special = true; // Or based on params? For now, true.
+        input_text.parse_special = true;
+
+        mtmd_bitmap *bitmap = mtmd_helper_bitmap_init_from_file(params.image[0].c_str());
+        if (!bitmap) {
+            LOG_ERROR("Failed to load image %s for mtmd.", params.image[0].c_str());
+            // Fallback to text-only or error out? For now, log error and proceed to text only if possible,
+            // but mtmd_tokenize will likely fail if marker is present but no bitmap.
+            // Better to ensure prompt is text-only if image fails.
+            // This path implies an issue, probably should not proceed with multimodal tokenize.
+            goto text_only_prompt; // Jump to text-only processing if image load fails
+        }
+
+        const mtmd_bitmap *bitmaps_array[] = {bitmap};
+        size_t n_bitmaps = 1; // Assuming one image for now, matching typical VLM examples.
+                              // params.image is a vector, so could support multiple if mtmd_tokenize handles it well.
+
+        mtmd_input_chunks *chunks = mtmd_input_chunks_init();
+        if (!chunks) {
+            LOG_ERROR("Failed to initialize mtmd_input_chunks.");
+            mtmd_bitmap_free(bitmap);
+            goto text_only_prompt;
+        }
+
+        int tokenize_res = mtmd_tokenize(ctx_mtmd, chunks, &input_text, bitmaps_array, n_bitmaps);
+        mtmd_bitmap_free(bitmap); // Free bitmap after mtmd_tokenize (it should copy data if needed)
+
+        if (tokenize_res != 0) {
+            LOG_ERROR("mtmd_tokenize failed with code %d. Check prompt markers and image count.", tokenize_res);
+            mtmd_input_chunks_free(chunks);
+            goto text_only_prompt;
+        }
+
+        // Feed text tokens from chunks to the sampler
+        if (ctx_sampling) {
+            for (size_t i = 0; i < mtmd_input_chunks_size(chunks); ++i) {
+                const mtmd_input_chunk *chunk = mtmd_input_chunks_get(chunks, i);
+                if (mtmd_input_chunk_get_type(chunk) == MTMD_INPUT_CHUNK_TYPE_TEXT) {
+                    size_t n_text_tokens = 0;
+                    const llama_token *text_tokens = mtmd_input_chunk_get_tokens_text(chunk, &n_text_tokens);
+                    for (size_t j = 0; j < n_text_tokens; ++j) {
+                        common_sampler_accept(ctx_sampling, text_tokens[j], false);
+                    }
+                }
+            }
+        } else {
+            LOG_WARNING("ctx_sampling is null, cannot accept prompt tokens into sampler for multimodal input.");
+        }
+
+        // Get number of tokens/positions from chunks *before* freeing them.
+        this->num_prompt_tokens = static_cast<size_t>(mtmd_helper_get_n_pos(chunks));
+
+        llama_pos new_n_past = 0;
+        int eval_res = mtmd_helper_eval_chunks(ctx_mtmd, ctx, chunks, (llama_pos)this->n_past, 0, params.n_batch, true, &new_n_past);
+        mtmd_input_chunks_free(chunks); // Now free chunks
+
+        if (eval_res == 0) {
+            this->n_past = static_cast<size_t>(new_n_past);
+            // num_prompt_tokens was set above.
+            LOG_INFO("mtmd_helper_eval_chunks successful. n_past updated to: %zu, num_prompt_tokens: %zu", this->n_past, this->num_prompt_tokens);
+        } else {
+            LOG_ERROR("mtmd_helper_eval_chunks failed with code %d.", eval_res);
+            this->n_past = 0; 
+            this->num_prompt_tokens = 0;
+        }
+        // TODO: Revisit how to correctly update sampler state after mtmd_helper_eval_chunks.
+
+    } else {
+text_only_prompt:
+        LOG_INFO("No image or mtmd_context not available/prompt not suitable. Processing as text-only prompt.");
+        std::vector<llama_token> prompt_tokens_text = ::common_tokenize(ctx, params.prompt, true, true);
+        this->num_prompt_tokens = prompt_tokens_text.size();
+
+        std::stringstream ss;
+        ss << "\n" << __func__ << ": text_only_prompt_tokens = ";
+        for (auto& token : prompt_tokens_text) {
+            ss << token << " ";
+        }
+        LOG_INFO("%s\n", ss.str().c_str());
+
+        if (params.n_keep < 0) {
+            params.n_keep = (int)this->num_prompt_tokens;
+        }
+        params.n_keep = std::min(n_ctx > 4 ? n_ctx - 4 : 0, params.n_keep);
+        params.n_keep = std::max(0, params.n_keep);
+
+        if (this->num_prompt_tokens >= (size_t) n_ctx) {
+            truncatePrompt(prompt_tokens_text); // truncatePrompt works on its argument by reference
+            this->num_prompt_tokens = prompt_tokens_text.size();
+            LM_GGML_ASSERT(this->num_prompt_tokens < (size_t) n_ctx || n_ctx == 0);
+        }
+        
+        for (auto & token : prompt_tokens_text) {
+            common_sampler_accept(ctx_sampling, token, false);
+        }
+
+        // Original logic for text-only n_past and embd management
+        // n_past here refers to overlap with previous `embd` content, which is now cleared.
+        // So, common_part(this->embd, prompt_tokens_text) will be 0.
+        this->n_past = common_part(this->embd, prompt_tokens_text); // embd is empty, so n_past = 0
+        this->embd = prompt_tokens_text;
+        // n_past = std::min(this->n_past, this->embd.size()); // n_past is 0
+        // if (this->n_past == this->num_prompt_tokens && this->n_past > 0) { this->n_past--; }
+        // if (this->n_past > 0) { llama_kv_self_seq_rm(ctx, 0, this->n_past, -1); }
+        // Simplified for fresh load (n_past remains 0, embd has tokens):
+        if (this->num_prompt_tokens > 0 && this->n_past == this->num_prompt_tokens) {
+            // This case means embd was identical to prompt_tokens_text and fully matched.
+            // To ensure at least one token is evaluated to get logits for sampling.
+            this->n_past--; 
+        } else if (this->n_past > 0) {
+             // This means some prefix of prompt_tokens_text matched a previous `embd` (not possible here as embd was cleared).
+             // The original logic removed this matching prefix from KV cache to re-evaluate.
+             // Since common_part will be 0, this block won't run.
+        }
+         // If n_past is 0, all tokens in `this->embd` are new and need evaluation.
     }
-    LOG_INFO("%s\n", ss.str().c_str());
 
-    if (params.n_keep < 0)
-    {
-        params.n_keep = (int)num_prompt_tokens;
-    }
-    // Ensure n_keep allows for at least 4 tokens for generation if possible
-    params.n_keep = std::min(n_ctx > 4 ? n_ctx - 4 : 0, params.n_keep);
-    params.n_keep = std::max(0, params.n_keep); // Ensure n_keep is not negative
-
-    // if input prompt is too big, truncate like normal
-    if (num_prompt_tokens >= (size_t) n_ctx)
-    {
-        truncatePrompt(prompt_tokens);
-        num_prompt_tokens = prompt_tokens.size();
-
-        // This assertion might fail if n_ctx is very small and n_keep is 0.
-        // Consider adjusting the logic or assertion based on minimum context requirements.
-        LM_GGML_ASSERT(num_prompt_tokens < (size_t) n_ctx || n_ctx == 0);
-    }
-    // push the prompt into the sampling context (do not apply grammar)
-    for (auto & token : prompt_tokens)
-    {
-        common_sampler_accept(ctx_sampling, token, false);
-    }
-
-    // compare the evaluated prompt with the new prompt
-    n_past = common_part(embd, prompt_tokens);
-
-    embd = prompt_tokens;
-    // Ensure n_past doesn't exceed the current embedding size
-    n_past = std::min(n_past, embd.size());
-
-    if (n_past == num_prompt_tokens && n_past > 0) // Avoid making n_past negative if num_prompt_tokens is 0
-    {
-        // we have to evaluate at least 1 token to generate logits.
-        n_past--;
-    }
-
-    // since #3228 we now have to manually manage the KV cache
-    // Ensure n_past is valid before using it for KV cache manipulation
-    if (n_past > 0) {
-         llama_kv_self_seq_rm(ctx, 0, n_past, -1);
-    }
-
-    // Restore log call
-    LOG_VERBOSE("prompt ingested, n_past: %d, cached_size: %zu, to_eval_size: %zu",
-        n_past,
-        // tokens_to_str(ctx, embd.cbegin(), embd.cbegin() + n_past).c_str(),
-        (size_t)n_past,
-        // tokens_to_str(ctx, embd.cbegin() + n_past, embd.cend()).c_str()
-        embd.size() - n_past
+    LOG_VERBOSE("prompt loaded, n_past: %zu, embd_size (text part for nextToken): %zu",
+        this->n_past,
+        this->embd.size()
     );
-
     has_next_token = true;
 }
 
@@ -140,102 +216,45 @@ completion_token_output cactus_context::nextToken()
     completion_token_output result;
     result.tok = -1;
 
-    if (embd.size() >= (size_t)params.n_ctx)
-    {
-        // Shift context
-        if (params.n_ctx <= params.n_keep + 1) {
-             LOG_ERROR("Context size (%d) too small for keep (%d)", params.n_ctx, params.n_keep);
-             has_next_token = false;
-             return result;
+    // If embd is not empty, it means we have a text-only prompt (or text part after image, if not using mtmd_helper_eval_chunks)
+    // that needs to be processed first to fill the KV cache.
+    // If mtmd_helper_eval_chunks was used in loadPrompt, embd will be empty, and n_past is already set.
+    if (!embd.empty()) {
+        // This loop processes the initial prompt tokens stored in `embd`.
+        // `n_past` is 0 if it's a fresh text prompt.
+        while ((size_t)n_past < embd.size()) {
+            int n_eval = (int)embd.size() - n_past;
+            if (n_eval > params.n_batch) {
+                n_eval = params.n_batch;
+            }
+
+            if (n_eval <= 0) { // Should not happen if embd.size() > n_past
+                LOG_WARNING("nextToken: No prompt tokens to evaluate in embd (n_eval=%d)", n_eval);
+                break; 
+            }
+
+            if (llama_decode(ctx, llama_batch_get_one(&embd[n_past], n_eval)) != 0) {
+                LOG_ERROR("nextToken: failed to eval prompt, n_eval: %d, n_past: %zu", n_eval, n_past);
+                has_next_token = false;
+                return result;
+            }
+            n_past += n_eval;
+
+            if(is_interrupted) {
+                LOG_INFO("nextToken: Decoding Interrupted during prompt processing");
+                // embd.resize(n_past); // Not strictly necessary here as we are returning
+                has_next_token = false;
+                return result;
+            }
         }
-
-        const int n_left    = n_past - params.n_keep - 1;
-        // Ensure n_left is positive before division
-        const int n_discard = (n_left > 0) ? n_left/2 : 0;
-
-        // Add bounds checking for sequence operations
-        llama_seq_id seq_id = 0; // Assuming sequence ID 0
-        int keep_start = 0;
-        int keep_end = params.n_keep + 1; // Sequence is [start, end)
-        int discard_start = keep_end;
-        int discard_end = discard_start + n_discard;
-        int add_start = discard_end;
-        int add_end = n_past;
-        int shift = -n_discard;
-
-        // Ensure indices are valid before calling KV functions
-        if (keep_start < keep_end && discard_start < discard_end && add_start <= add_end) {
-            llama_kv_self_seq_rm (ctx, seq_id, discard_start, discard_end);
-            llama_kv_self_seq_add(ctx, seq_id, add_start, add_end, shift);
-        } else {
-             LOG_WARNING("Invalid indices for KV cache shift operation.");
-             // Potentially handle this error more gracefully
-        }
-
-        // Shift the embedding vector
-        if ((size_t)n_discard < embd.size() && (size_t)(params.n_keep + 1 + n_discard) <= embd.size()) {
-             std::vector<llama_token> temp_embd(embd.begin(), embd.begin() + params.n_keep + 1);
-             temp_embd.insert(temp_embd.end(), embd.begin() + params.n_keep + 1 + n_discard, embd.end());
-             embd = std::move(temp_embd);
-        } else if ((size_t)n_discard >= embd.size()){ // If discarding more than available, keep only the prefix
-            embd.resize(params.n_keep + 1);
-        } // else: if start index is invalid, embd remains unchanged
-
-        n_past -= n_discard;
-        // n_past = std::max(0, n_past); // Ensure n_past doesn't become negative
-        // Use explicit cast or ensure types match for std::max
-        n_past = std::max<size_t>(0, n_past);
-
-        // Restore log call
-        LOG_VERBOSE("context shifted, n_ctx: %d, n_keep: %d, n_left: %d, n_discard: %d, n_past: %d",
-            params.n_ctx,
-            params.n_keep,
-            n_left,
-            n_discard,
-            n_past
-        );
+        // After this loop, the initial prompt in `embd` (if any) is processed.
+        // `embd` itself is not cleared here, it holds the prompt tokens.
+        // For generation, we will sample a new token and then decode *that* token.
     }
 
-    bool tg = true;
-    while ((size_t)n_past < embd.size()) // Use size_t for comparison
-    {
-        int n_eval = (int)embd.size() - n_past;
-        tg = n_eval == 1;
-        if (n_eval > params.n_batch)
-        {
-            n_eval = params.n_batch;
-        }
+    // --- Token Generation Phase --- 
 
-        // Ensure we have tokens to evaluate
-        if (n_eval <= 0) {
-            LOG_WARNING("No tokens to evaluate (n_eval=%d)", n_eval);
-            break; // Exit loop if nothing to evaluate
-        }
-
-        if (llama_decode(ctx, llama_batch_get_one(&embd[n_past], n_eval)) != 0)
-        {
-            LOG_ERROR("failed to eval, n_eval: %d, n_past: %d, n_threads: %d, embd_size: %zu",
-                n_eval,
-                n_past,
-                params.cpuparams.n_threads,
-                embd.size()
-                // tokens_to_str(ctx, embd.cbegin() + n_past, embd.cend()).c_str() // Can be large
-            );
-            has_next_token = false;
-            return result;
-        }
-        n_past += n_eval;
-
-        if(is_interrupted) {
-            // Restore log call
-            LOG_INFO("Decoding Interrupted");
-            embd.resize(n_past);
-            has_next_token = false;
-            return result;
-        }
-    }
-
-    // Ensure model and vocab are valid
+    // Ensure model and vocab are valid (moved from original cactus_completion.cpp, good check)
     if (!model) {
         LOG_ERROR("Model is null in nextToken");
         has_next_token = false;
@@ -248,52 +267,97 @@ completion_token_output cactus_context::nextToken()
          return result;
     }
 
-    if (params.n_predict == 0)
-    {
+    if (params.n_predict == 0 && n_remain == 0) { // n_remain might be 0 if n_predict was 0 initially
         has_next_token = false;
         result.tok = llama_vocab_eos(vocab);
+        LOG_VERBOSE("nextToken: n_predict is 0, EOS token returned.", "");
+        return result;
+    }
+    
+    if (n_remain == 0 && params.n_predict != -1) { // Used up prediction budget
+        has_next_token = false;
+        result.tok = llama_vocab_eos(vocab); // Or a special marker for limit reached?
+        LOG_VERBOSE("nextToken: n_remain is 0, EOS token returned.", "");
+        stopped_limit = true; // Make sure this is set
         return result;
     }
 
-    {
-        // out of user input, sample next token
-        std::vector<llama_token_data> candidates;
-        candidates.reserve(llama_vocab_n_tokens(vocab));
-
-        result.tok = common_sampler_sample(ctx_sampling, ctx, -1);
-
-        llama_token_data_array cur_p = *common_sampler_get_candidates(ctx_sampling);
-
-        const int32_t n_probs = params.sampling.n_probs;
-        const size_t vocab_size = llama_vocab_n_tokens(vocab);
-
-        for (size_t i = 0; i < std::min((size_t)cur_p.size, (size_t)n_probs); ++i)
-        {
-            if (cur_p.data[i].id < vocab_size) { // Check bounds
-                 result.probs.push_back({cur_p.data[i].id, cur_p.data[i].p});
-            }
-        }
-
-        common_sampler_accept(ctx_sampling, result.tok, true);
-        if (tg) {
-            num_tokens_predicted++;
+    // Sample the next token
+    result.tok = common_sampler_sample(ctx_sampling, ctx, -1); // model_eval_context is ctx
+    llama_token_data_array cur_p = *common_sampler_get_candidates(ctx_sampling);
+    const int32_t n_probs = params.sampling.n_probs;
+    for (size_t i = 0; i < std::min((size_t)cur_p.size, (size_t)n_probs); ++i) {
+        if (cur_p.data[i].id < (llama_token)llama_vocab_n_tokens(vocab)) { 
+             result.probs.push_back({cur_p.data[i].id, cur_p.data[i].p});
         }
     }
 
-    // add it to the context
+    common_sampler_accept(ctx_sampling, result.tok, true);
+    num_tokens_predicted++;
+
+    // Prepare batch for the new token and decode it
+    if (llama_decode(ctx, llama_batch_get_one(&result.tok, 1)) != 0) {
+        LOG_ERROR("nextToken: failed to eval generated token %d at n_past %zu", result.tok, n_past);
+        has_next_token = false;
+        return result;
+    }
+    n_past += 1; // Increment n_past for the newly decoded token
+
+    // Add the newly generated token to embd for context management (e.g. sliding window)
+    // This `embd` will be used by the context shifting logic if n_ctx is exceeded.
     embd.push_back(result.tok);
-    // decrement remaining sampling budget
-    if (n_remain > 0) {
+
+    if (n_remain > 0 && params.n_predict != -1) {
         --n_remain;
     }
 
-    if (!embd.empty() && embd.back() == llama_vocab_eos(vocab))
-    {
-        // stopping_word = llama_token_to_piece(ctx, embd.back());
+    if (result.tok == llama_vocab_eos(vocab)) {
         has_next_token = false;
         stopped_eos = true;
-        // Restore log call
-        LOG_VERBOSE("eos token found", "");
+        LOG_VERBOSE("nextToken: EOS token %d generated.", result.tok);
+        return result;
+    }
+
+    // Context shifting logic (from original cactus_completion.cpp, adapted)
+    // This should happen *after* a token is generated and added to embd, 
+    // and *before* the next nextToken call, to make space if needed.
+    if (embd.size() >= (size_t)params.n_ctx) {
+        if (params.n_ctx <= params.n_keep + 1) {
+             LOG_ERROR("Context size (%d) too small for keep (%d)", params.n_ctx, params.n_keep);
+             has_next_token = false; // Cannot proceed
+             return result;
+        }
+
+        // Note: n_past here reflects the state *after* the current token was decoded.
+        // The embd vector contains all tokens processed *including* the one just generated.
+        // The goal is to shift KV cache and `embd` to make space for future tokens.
+
+        // The number of tokens currently in the KV cache before this shift is `n_past`.
+        // The number of tokens in `embd` is `embd.size()`.
+        // These should be consistent if `embd` only ever grows by one token that is then decoded.
+        LM_GGML_ASSERT(n_past == embd.size());
+
+        const int n_total_in_kv = n_past; // Total tokens that have affected KV cache so far.
+        const int n_to_shift_count = n_total_in_kv - params.n_keep -1; // Number of tokens to consider shifting out beyond the keep region.
+        const int n_discard = (n_to_shift_count > 0) ? n_to_shift_count / 2 : 0;
+
+        if (n_discard > 0) {
+            llama_kv_self_seq_rm(ctx, 0, params.n_keep + 1, params.n_keep + 1 + n_discard);
+            llama_kv_self_seq_add(ctx, 0, params.n_keep + 1 + n_discard, n_total_in_kv, -n_discard);
+            
+            // Shift the embd vector by removing n_discard elements after n_keep+1
+            embd.erase(embd.begin() + params.n_keep + 1, embd.begin() + params.n_keep + 1 + n_discard);
+            
+            n_past -= n_discard;
+
+            LOG_VERBOSE("Context shifted: n_discard: %d, new n_past: %zu, new embd.size: %zu", 
+                        n_discard, n_past, embd.size());
+        }
+    }
+
+    if(is_interrupted) { // Check interruption again after generation and potential shift
+        LOG_INFO("nextToken: Decoding Interrupted after token generation");
+        has_next_token = false;
         return result;
     }
 

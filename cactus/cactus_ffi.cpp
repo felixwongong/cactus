@@ -53,6 +53,9 @@ cactus_context_handle_t cactus_init_context_c(const cactus_init_params_c_t* para
 
         common_params cpp_params;
         cpp_params.model.path = params->model_path;
+        if (params->mmproj_path) {
+            cpp_params.mmproj.path = params->mmproj_path;
+        }
         if (params->chat_template) {
             cpp_params.chat_template = params->chat_template;
         }
@@ -145,6 +148,14 @@ int cactus_completion_c(
 
         // --- Setup context params for this completion --- 
         context->params.prompt = params->prompt;
+
+        if (params->image_path) {
+            context->params.image.clear();
+            context->params.image.push_back(params->image_path);
+        } else {
+            context->params.image.clear();
+        }
+
         if (params->n_threads > 0) {
              context->params.cpuparams.n_threads = params->n_threads;
         }
