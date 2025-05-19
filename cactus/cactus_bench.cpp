@@ -1,9 +1,9 @@
 #include "cactus.h"
-#include "llama.h" // For llama_batch_init, llama_decode, llama_time_us, etc.
+#include "llama.h" 
 #include <vector>
 #include <string>
-#include <cmath> // For sqrt
-#include <algorithm> // For std::min
+#include <cmath> 
+#include <algorithm> 
 
 namespace cactus {
 
@@ -28,16 +28,19 @@ std::string cactus_context::bench(int pp, int tg, int pl, int nr)
         return std::string("[]");
     }
 
-    is_predicting = true; // Use the flag to prevent concurrent operations
+    // Set the predicting flag to true to prevent concurrent operations
+    is_predicting = true; 
 
+    // Initialize average and standard deviation variables
     double pp_avg = 0.0;
     double tg_avg = 0.0;
     double pp_std = 0.0;
     double tg_std = 0.0;
 
-    // Use context's batch size parameter? Or pp directly?
-    // Using pp, but ensure it doesn't exceed hardware/context limits.
-    int batch_size = std::min(pp, (int)params.n_batch); // Use n_batch from params
+    // Use the minimum of the prompt processing tokens and the batch size
+    int batch_size = std::min(pp, (int)params.n_batch); 
+
+    // Check if the batch size is valid
     if (batch_size <= 0) {
          LOG_ERROR("Invalid batch size for benchmark: %d (pp=%d, n_batch=%d)", batch_size, pp, params.n_batch);
          is_predicting = false;
@@ -50,7 +53,8 @@ std::string cactus_context::bench(int pp, int tg, int pl, int nr)
         pl // Number of sequences corresponds to parallel predictions
     );
 
-    if (!batch.token) { // Check if batch allocation failed
+    // Check if the batch was initialized successfully
+    if (!batch.token) {
         LOG_ERROR("Failed to initialize llama_batch for benchmark.");
         is_predicting = false;
         return std::string("[]");
@@ -66,18 +70,20 @@ std::string cactus_context::bench(int pp, int tg, int pl, int nr)
         }
 
         // --- Prompt Processing Phase --- 
+
         llama_batch_clear(&batch);
         const int n_tokens_pp = pp;
+
         // Add tokens for prompt processing - ensure we don't exceed batch capacity
         for (int k = 0; k < n_tokens_pp; ++k) {
              if (batch.n_tokens >= batch_size) {
                  LOG_ERROR("Benchmark batch capacity (%d) exceeded during PP phase.", batch_size);
-                 // Need to handle this - maybe process in chunks?
                  goto cleanup_and_exit;
              }
              // Use sequence ID 0 for the prompt
              llama_batch_add(&batch, 0, k, {0}, false); 
         }
+
         // Only need logits for the *last* token of the prompt to predict the next one
         if (batch.n_tokens > 0) {
             batch.logits[batch.n_tokens - 1] = 1; 
@@ -89,7 +95,6 @@ std::string cactus_context::bench(int pp, int tg, int pl, int nr)
         if (llama_decode(ctx, batch) != 0)
         {
             LOG_ERROR("llama_decode() failed during prompt processing benchmark", "");
-             // Continue to next repetition? Or break?
              continue;
         }
         const int64_t t_pp_end = llama_time_us();
@@ -101,12 +106,17 @@ std::string cactus_context::bench(int pp, int tg, int pl, int nr)
         }
 
         // --- Text Generation Phase --- 
-        const int64_t t_tg_start = llama_time_us();
-        int n_past_tg = batch.n_tokens; // KV cache position after prompt processing
 
-        for (int k = 0; k < tg; ++k) // Text generation iterations
+        const int64_t t_tg_start = llama_time_us();
+
+        // KV cache position after prompt processing
+        int n_past_tg = batch.n_tokens;
+
+        // Text generation iterations
+        for (int k = 0; k < tg; ++k) 
         {
             llama_batch_clear(&batch);
+
             // For each iteration, predict 'pl' tokens in parallel
             for (int j = 0; j < pl; ++j)
             {
@@ -121,7 +131,6 @@ std::string cactus_context::bench(int pp, int tg, int pl, int nr)
             if (llama_decode(ctx, batch) != 0)
             {
                 LOG_ERROR("llama_decode() failed during text generation benchmark", "");
-                 // Break this inner loop or continue?
                  break; 
             }
             if (is_interrupted) {
@@ -138,6 +147,7 @@ std::string cactus_context::bench(int pp, int tg, int pl, int nr)
 
         // Avoid division by zero
         const double speed_pp = (t_pp > 0) ? (double)n_tokens_pp / t_pp : 0.0;
+
         // Total tokens generated = pl * tg
         const double speed_tg = (t_tg > 0) ? (double)(pl * tg) / t_tg : 0.0; 
 
@@ -154,7 +164,8 @@ cleanup_and_exit: // Label for cleanup
     is_predicting = false; // Reset prediction flag
 
     // Final calculations
-    int valid_repetitions = is_interrupted ? 0 : nr; // Adjust count if interrupted (approximation)
+    // Adjust count if interrupted (approximation)
+    int valid_repetitions = is_interrupted ? 0 : nr; 
     if (valid_repetitions > 0) {
         pp_avg /= valid_repetitions;
         tg_avg /= valid_repetitions;

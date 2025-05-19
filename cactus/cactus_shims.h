@@ -1,37 +1,23 @@
 #ifndef CACTUS_SHIMS_H
 #define CACTUS_SHIMS_H
 
-// Core llama.cpp / ggml headers that shims depend on
-#include "ggml.h"        // Provides lm_ggml_... types and functions
-#include "gguf.h"        // Provides lm_gguf_... types and functions
-#include "ggml-common.h" // For LM_GGML_ASSERT or GGML_ASSERT_IMPL, LM_GGML_PAD, LM_GGML_ABORT, LM_GGML_UNUSED
-#include "ggml-cpp.h"    // For lm_ggml_context_ptr, lm_gguf_context_ptr
-#include "ggml-backend.h" // For lm_ggml_backend_sched_new original definition
+#include "ggml.h"    
+#include "gguf.h"     
+#include "ggml-common.h" 
+#include "ggml-cpp.h" 
+#include "ggml-backend.h" 
 
 // --- Compatibility Shims for Vendored Headers (clip.h, mtmd.h, clip-impl.h, clip.cpp) ---
 
-// 1. For ggml_log_level and its constants
-//    Make `ggml_log_level` an alias for `lm_ggml_log_level` via define.
-//    This way, `enum ggml_log_level` in vendored code becomes `enum lm_ggml_log_level`.
 #define ggml_log_level lm_ggml_log_level
-//    Define constants to map to LM_ versions.
 #define GGML_LOG_LEVEL_NONE  LM_GGML_LOG_LEVEL_NONE
 #define GGML_LOG_LEVEL_DEBUG LM_GGML_LOG_LEVEL_DEBUG
 #define GGML_LOG_LEVEL_INFO  LM_GGML_LOG_LEVEL_INFO
 #define GGML_LOG_LEVEL_WARN  LM_GGML_LOG_LEVEL_WARN
 #define GGML_LOG_LEVEL_ERROR LM_GGML_LOG_LEVEL_ERROR
 #define GGML_LOG_LEVEL_CONT  LM_GGML_LOG_LEVEL_CONT
-
-// 2. For ggml_log_callback
-//    This typedef uses `enum lm_ggml_log_level` in its definition.
-//    The define for ggml_log_level above makes types compatible.
 typedef lm_ggml_log_callback ggml_log_callback;
-
-// 3. For GGUF_TYPE and its constants
-//    Make `gguf_type` an alias for `lm_gguf_type`.
-//    This way, `enum gguf_type` in vendored code becomes `enum lm_gguf_type`.
 #define gguf_type lm_gguf_type
-//    Define constants to map to LM_ versions.
 #define GGUF_TYPE_UINT8   LM_GGUF_TYPE_UINT8
 #define GGUF_TYPE_INT8    LM_GGUF_TYPE_INT8
 #define GGUF_TYPE_UINT16  LM_GGUF_TYPE_UINT16
@@ -45,17 +31,13 @@ typedef lm_ggml_log_callback ggml_log_callback;
 #define GGUF_TYPE_UINT64  LM_GGUF_TYPE_UINT64
 #define GGUF_TYPE_INT64   LM_GGUF_TYPE_INT64
 #define GGUF_TYPE_FLOAT64 LM_GGUF_TYPE_FLOAT64
-
-// Add defines for GGML types used in clip.cpp
 #define GGML_TYPE_F32 LM_GGML_TYPE_F32
 #define GGML_TYPE_I32 LM_GGML_TYPE_I32
-// Add other GGML_TYPE_
 #define ggml_type lm_ggml_type
 
-// 4. For GGML_ASSERT, GGML_PAD, GGML_ABORT, GGML_UNUSED
 #if defined(LM_GGML_ASSERT)
     #define GGML_ASSERT LM_GGML_ASSERT
-#elif defined(GGML_ASSERT_IMPL) // ggml-common.h might define GGML_ASSERT_IMPL
+#elif defined(GGML_ASSERT_IMPL) 
     #define GGML_ASSERT GGML_ASSERT_IMPL
 #else
     // Fallback if not found (should be in ggml-common.h)
@@ -82,24 +64,17 @@ typedef lm_ggml_log_callback ggml_log_callback;
 #if defined(LM_GGML_UNUSED)
     #define GGML_UNUSED LM_GGML_UNUSED
 #else
-    #define GGML_UNUSED(x) (void)(x) // Common fallback
+    #define GGML_UNUSED(x) (void)(x) 
 #endif
 
-// 5. Defines for struct names (so `struct ggml_tensor` becomes `struct lm_ggml_tensor`)
 #define gguf_context lm_gguf_context
 #define ggml_context lm_ggml_context
 #define ggml_tensor lm_ggml_tensor
-
-// For struct tags used like `struct ggml_cgraph` or `struct ggml_init_params`
 #define ggml_cgraph lm_ggml_cgraph
 #define ggml_init_params lm_ggml_init_params
-#define gguf_init_params lm_gguf_init_params // For `struct gguf_init_params ...`
-
-// For pointer types from ggml-cpp.h
+#define gguf_init_params lm_gguf_init_params 
 #define gguf_context_ptr lm_gguf_context_ptr
 #define ggml_context_ptr lm_ggml_context_ptr
-
-// Backend related struct names
 #define ggml_backend_t lm_ggml_backend_t
 #define ggml_backend_buffer_type_t lm_ggml_backend_buffer_type_t
 #define ggml_backend_sched_t lm_ggml_backend_sched_t
@@ -108,9 +83,6 @@ typedef lm_ggml_log_callback ggml_log_callback;
 #define ggml_backend_dev_t lm_ggml_backend_dev_t
 #define ggml_backend_reg_t lm_ggml_backend_reg_t
 #define ggml_backend_set_n_threads_t lm_ggml_backend_set_n_threads_t 
-
-
-// 6. Defines for GGUF functions (from clip-impl.h and clip.cpp errors)
 #define gguf_get_kv_type lm_gguf_get_kv_type
 #define gguf_get_val_str lm_gguf_get_val_str
 #define gguf_get_arr_type lm_gguf_get_arr_type
@@ -123,7 +95,7 @@ typedef lm_ggml_log_callback ggml_log_callback;
 #define gguf_get_n_kv lm_gguf_get_n_kv
 #define gguf_get_tensor_name lm_gguf_get_tensor_name
 #define gguf_get_tensor_offset lm_gguf_get_tensor_offset
-#define gguf_get_tensor_type lm_gguf_get_tensor_type // lm_gguf_get_tensor_type returns lm_gguf_type, which is fine due to #define gguf_type lm_gguf_type
+#define gguf_get_tensor_type lm_gguf_get_tensor_type
 #define gguf_get_version lm_gguf_get_version
 #define gguf_get_alignment lm_gguf_get_alignment
 #define gguf_find_key lm_gguf_find_key
@@ -132,9 +104,7 @@ typedef lm_ggml_log_callback ggml_log_callback;
 #define gguf_get_val_u32 lm_gguf_get_val_u32
 #define gguf_get_val_f32 lm_gguf_get_val_f32
 #define gguf_get_data_offset lm_gguf_get_data_offset
-#define ggml_n_dims lm_ggml_n_dims // Added for ggml_n_dims
-
-// 7. Defines for GGML functions (primarily for clip.cpp model loading and graph building)
+#define ggml_n_dims lm_ggml_n_dims 
 #define ggml_init lm_ggml_init
 #define ggml_get_tensor lm_ggml_get_tensor
 #define ggml_nbytes lm_ggml_nbytes
@@ -183,11 +153,9 @@ typedef lm_ggml_log_callback ggml_log_callback;
 #define ggml_row_size lm_ggml_row_size
 #define ggml_type_name lm_ggml_type_name
 #define ggml_nelements lm_ggml_nelements
-#define ggml_get_mem_size lm_ggml_get_mem_size // from clip_model_loader
-#define ggml_time_ms lm_ggml_time_ms // Added shim for ggml_time_ms
-#define ggml_scale lm_ggml_scale // Added for ggml_scale
-
-// GGML Ops
+#define ggml_get_mem_size lm_ggml_get_mem_size 
+#define ggml_time_ms lm_ggml_time_ms 
+#define ggml_scale lm_ggml_scale 
 #define GGML_OP_POOL_AVG LM_GGML_OP_POOL_AVG
 #define GGML_OP_CONV_2D LM_GGML_OP_CONV_2D 
 #define GGML_OP_RESHAPE LM_GGML_OP_RESHAPE
@@ -203,18 +171,13 @@ typedef lm_ggml_log_callback ggml_log_callback;
 #define GGML_OP_GET_ROWS LM_GGML_OP_GET_ROWS
 #define GGML_OP_CONCAT LM_GGML_OP_CONCAT
 #define GGML_OP_SOFT_MAX LM_GGML_OP_SOFT_MAX 
-
-// Backend related function defines
 #define ggml_backend_init_by_type lm_ggml_backend_init_by_type
 #define GGML_BACKEND_DEVICE_TYPE_CPU LM_GGML_BACKEND_DEVICE_TYPE_CPU
 #define GGML_BACKEND_DEVICE_TYPE_GPU LM_GGML_BACKEND_DEVICE_TYPE_GPU
 #define ggml_backend_name lm_ggml_backend_name
 #define ggml_backend_get_default_buffer_type lm_ggml_backend_get_default_buffer_type
-
-// Special shim for ggml_backend_sched_new to handle API mismatch (6 args in clip.cpp vs 5 in cactus's ggml-backend.h)
-#undef ggml_backend_sched_new // Undefine previous simple alias if it exists
+#undef ggml_backend_sched_new 
 #define ggml_backend_sched_new(backends, bufts, n_backends, graph_size, parallel, ...) lm_ggml_backend_sched_new(backends, bufts, n_backends, graph_size, parallel)
-
 #define ggml_backend_free lm_ggml_backend_free
 #define ggml_backend_alloc_ctx_tensors_from_buft lm_ggml_backend_alloc_ctx_tensors_from_buft
 #define ggml_backend_buffer_set_usage lm_ggml_backend_buffer_set_usage

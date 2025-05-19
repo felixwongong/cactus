@@ -1,19 +1,17 @@
-#include "cactus.h" // Include main header for types like llama_token
-#include "llama.h"  // For llama_batch, llama_token, llama_pos, llama_seq_id
-#include "common.h" // For common_token_to_piece
+#include "cactus.h" 
+#include "llama.h" 
+#include "common.h"
 
 #include <vector>
 #include <string>
-#include <stdarg.h> // For va_list, va_start, va_end
-#include <stdio.h>  // For printf, vprintf, snprintf
-#include <string.h> // For strcmp
-#include <sstream>  // For stringstream
+#include <stdarg.h> 
+#include <stdio.h> 
+#include <string.h> 
+#include <sstream> 
 
 namespace cactus {
 
-// Define the log function itself here
-// Needs access to cactus_verbose if LOG_VERBOSE is used here.
-bool cactus_verbose = true; 
+bool cactus_verbose = false; 
 
 void log(const char *level, const char *function, int line,
                 const char *format, ...)
@@ -41,8 +39,6 @@ void log(const char *level, const char *function, int line,
         __android_log_vprint(priority, "Cactus", prefix, args);
         va_end(args);
     #else
-        // Non-Android path (remains the same)
-        // Skip VERBOSE logs if not enabled (for non-Android)
         if (!cactus_verbose && strcmp(level, "VERBOSE") == 0) {
             return;
         }
@@ -91,6 +87,7 @@ void llama_batch_add(llama_batch *batch, llama_token id, llama_pos pos, const st
     batch->n_tokens += 1;
 }
 
+
 /**
  * @brief Find the common prefix between two token sequences
  * 
@@ -108,6 +105,7 @@ size_t common_part(const std::vector<llama_token> &a, const std::vector<llama_to
     return i;
 }
 
+
 /**
  * @brief Check if a string ends with a suffix
  * 
@@ -120,6 +118,7 @@ bool ends_with(const std::string &str, const std::string &suffix)
     return str.size() >= suffix.size() &&
            str.compare(str.size() - suffix.size(), suffix.size(), suffix) == 0;
 }
+
 
 /**
  * @brief Find a partial stop string in text
@@ -146,16 +145,6 @@ size_t find_partial_stop_string(const std::string &stop,
                 const std::string current_partial = stop.substr(0, i + 1);
                 if (ends_with(text, current_partial))
                 {
-                    // Return the starting position of the partial match in text
-                    // This seems off, original returned text.size() - i - 1?
-                    // Let's rethink: if text="abcde" and stop="cdefg", partial="cde"
-                    // text_last_char = 'e'. i = 2 (index of 'e' in stop).
-                    // current_partial = "cde". ends_with("abcde", "cde") is true.
-                    // We want to signal that a partial match of length 3 exists.
-                    // Original return value: 5 - 2 - 1 = 2. Is this useful?
-                    // Returning the length of the partial match might be better.
-                    // return current_partial.length(); 
-                    // Sticking to original logic for now:
                     return text.size() - current_partial.length();
                 }
             }
@@ -176,6 +165,7 @@ std::string tokens_to_output_formatted_string(const llama_context *ctx, const ll
     // Handle null context
     if (!ctx) return "<null_ctx>"; 
     std::string out = token == -1 ? "" : common_token_to_piece(ctx, token);
+
     // if the size is 1 and first bit is 1, meaning it's a partial character
     //   (size > 1 meaning it's already a known token)
     if (out.size() == 1 && (out[0] & 0x80) == 0x80)
@@ -191,6 +181,7 @@ std::string tokens_to_output_formatted_string(const llama_context *ctx, const ll
     }
     return out;
 }
+
 
 /**
  * @brief Converts a range of tokens to a string

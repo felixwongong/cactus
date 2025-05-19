@@ -1,6 +1,6 @@
 #include "cactus.h"
-#include "common.h" // For chat templates, parsing, etc.
-#include "json.hpp" // For json parsing
+#include "common.h" 
+#include "json.hpp" 
 
 namespace cactus {
 
@@ -23,14 +23,17 @@ common_chat_params cactus_context::getFormattedChatWithJinja(
   const bool &parallel_tool_calls,
   const std::string &tool_choice
 ) const {
+
     // Ensure model and templates are loaded before formatting
     if (!model || !templates) {
          LOG_ERROR("Model or templates not loaded, cannot format chat.");
          // Return a default/empty struct or throw an exception
          return {}; 
     }
+
     common_chat_templates_inputs inputs;
     inputs.use_jinja = true;
+
     try {
         // Safely parse JSON inputs
         inputs.messages = common_chat_msgs_parse_oaicompat(json::parse(messages));
@@ -48,6 +51,7 @@ common_chat_params cactus_context::getFormattedChatWithJinja(
         LOG_ERROR("JSON parsing error during chat formatting: %s", e.what());
         throw std::runtime_error("Invalid JSON input for chat formatting.");
     }
+
     inputs.parallel_tool_calls = parallel_tool_calls;
     inputs.extract_reasoning = params.reasoning_format != COMMON_REASONING_FORMAT_NONE;
 
@@ -72,6 +76,7 @@ common_chat_params cactus_context::getFormattedChatWithJinja(
     }
 }
 
+
 /**
  * @brief Formats a chat using standard templates
  * 
@@ -88,8 +93,10 @@ std::string cactus_context::getFormattedChat(
          LOG_ERROR("Model or templates not loaded, cannot format chat.");
          return ""; 
     }
+
     common_chat_templates_inputs inputs;
     inputs.use_jinja = false;
+
      try {
          inputs.messages = common_chat_msgs_parse_oaicompat(json::parse(messages));
      } catch (const json::exception& e) {
@@ -113,6 +120,7 @@ std::string cactus_context::getFormattedChat(
         // Use pre-loaded templates
         return common_chat_templates_apply(templates.get(), inputs).prompt;
     }
+
 }
 
 } // namespace cactus 

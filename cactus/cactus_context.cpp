@@ -19,7 +19,6 @@ cactus_context::~cactus_context() {
         ctx_mtmd = nullptr;
     }
 
-    // --- TTS Cleanup ---
     if (vocoder_ctx != nullptr) {
         llama_free(vocoder_ctx);
         vocoder_ctx = nullptr;
@@ -28,11 +27,8 @@ cactus_context::~cactus_context() {
         llama_model_free(vocoder_model);
         vocoder_model = nullptr;
     }
-    // --- End TTS Cleanup ---
-
-    // Note: llama_init (which holds model and ctx shared_ptrs) 
-    // will automatically clean up model and ctx when cactus_context is destroyed.
 }
+
 
 /**
  * @brief Rewinds the context to start a new generation
@@ -61,8 +57,8 @@ void cactus_context::rewind() {
     if (ctx_sampling) {
         common_sampler_reset(ctx_sampling);
     }
-    // params.sampling.n_prev = n_ctx; // This might be set dynamically or during initSampling
 }
+
 
 /**
  * @brief Initializes the sampling context

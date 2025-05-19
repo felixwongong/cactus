@@ -1,8 +1,8 @@
 #include "cactus.h"
-#include "common.h" // For common_embd_normalize
-#include "llama.h"  // For llama_get_embeddings, llama_pooling_type, etc.
+#include "common.h" 
+#include "llama.h" 
 #include <vector>
-#include <cstdio> // For printf (used in original code)
+#include <cstdio> 
 
 namespace cactus {
 
@@ -21,7 +21,8 @@ std::vector<float> cactus_context::getEmbedding(common_params &embd_params)
     }
     
     const int n_embd = llama_model_n_embd(model);
-    if (!params.embedding) // Check internal context parameter
+    
+    if (!params.embedding) 
     {
         LOG_WARNING("Embedding mode not enabled for this context.");
         return std::vector<float>(n_embd, 0.0f); // Return zero vector consistent with original logic

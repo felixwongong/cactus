@@ -109,8 +109,6 @@ typedef struct cactus_completion_result_c {
 } cactus_completion_result_c_t;
 
 
-// --- TTS Specific Structures ---
-
 /**
  * @brief Parameters for loading a vocoder model (mirrors internal common_params_model).
  */
@@ -118,6 +116,7 @@ typedef struct cactus_vocoder_model_params_c {
     const char* path;    // Local path to the vocoder model file
     // Add other fields like url, hf_repo, hf_file if needed for FFI-based downloading
 } cactus_vocoder_model_params_c_t;
+
 
 /**
  * @brief Parameters for initializing the vocoder component within a cactus_context.
@@ -127,6 +126,7 @@ typedef struct cactus_vocoder_load_params_c {
     const char* speaker_file;                     // Path to speaker embedding file (optional)
     bool use_guide_tokens;                        // Whether to use guide tokens
 } cactus_vocoder_load_params_c_t;
+
 
 /**
  * @brief Parameters for speech synthesis.
@@ -138,8 +138,6 @@ typedef struct cactus_synthesize_speech_params_c {
 } cactus_synthesize_speech_params_c_t;
 
 
-// --- Core API Functions ---
-
 /**
  * @brief Initializes a cactus context with the given parameters.
  *
@@ -148,12 +146,14 @@ typedef struct cactus_synthesize_speech_params_c {
  */
 CACTUS_FFI_EXPORT cactus_context_handle_t cactus_init_context_c(const cactus_init_params_c_t* params);
 
+
 /**
  * @brief Frees the resources associated with a cactus context.
  *
  * @param handle The context handle returned by cactus_init_context_c.
  */
 CACTUS_FFI_EXPORT void cactus_free_context_c(cactus_context_handle_t handle);
+
 
 /**
  * @brief Performs text completion based on the provided prompt and parameters.
@@ -171,6 +171,7 @@ CACTUS_FFI_EXPORT int cactus_completion_c(
     cactus_completion_result_c_t* result // Output parameter
 );
 
+
 /**
  * @brief Requests the ongoing completion operation to stop.
  *        This sets an interrupt flag; completion does not stop instantly.
@@ -178,6 +179,7 @@ CACTUS_FFI_EXPORT int cactus_completion_c(
  * @param handle The context handle.
  */
 CACTUS_FFI_EXPORT void cactus_stop_completion_c(cactus_context_handle_t handle);
+
 
 /**
  * @brief Tokenizes the given text.
@@ -187,6 +189,7 @@ CACTUS_FFI_EXPORT void cactus_stop_completion_c(cactus_context_handle_t handle);
  * @return A struct containing the tokens. Caller must free the `tokens` array using cactus_free_token_array_c.
  */
 CACTUS_FFI_EXPORT cactus_token_array_c_t cactus_tokenize_c(cactus_context_handle_t handle, const char* text);
+
 
 /**
  * @brief Detokenizes the given sequence of tokens.
@@ -198,6 +201,7 @@ CACTUS_FFI_EXPORT cactus_token_array_c_t cactus_tokenize_c(cactus_context_handle
  */
 CACTUS_FFI_EXPORT char* cactus_detokenize_c(cactus_context_handle_t handle, const int32_t* tokens, int32_t count);
 
+
 /**
  * @brief Generates embeddings for the given text. Context must be initialized with embedding=true.
  *
@@ -207,7 +211,6 @@ CACTUS_FFI_EXPORT char* cactus_detokenize_c(cactus_context_handle_t handle, cons
  */
 CACTUS_FFI_EXPORT cactus_float_array_c_t cactus_embedding_c(cactus_context_handle_t handle, const char* text);
 
-// --- TTS API Functions ---
 
 /**
  * @brief Loads the vocoder model required for Text-to-Speech.
@@ -223,6 +226,7 @@ CACTUS_FFI_EXPORT int cactus_load_vocoder_c(
     const cactus_vocoder_load_params_c_t* params
 );
 
+
 /**
  * @brief Synthesizes speech from the given text and saves it to a WAV file.
  *        Both the main TTS model (via cactus_init_context_c) and the vocoder model
@@ -237,8 +241,6 @@ CACTUS_FFI_EXPORT int cactus_synthesize_speech_c(
     const cactus_synthesize_speech_params_c_t* params
 );
 
-// --- Memory Freeing Functions ---
-// These MUST be called from Dart to free memory allocated by the C layer.
 
 /** @brief Frees a string allocated by the C API. */
 CACTUS_FFI_EXPORT void cactus_free_string_c(char* str);

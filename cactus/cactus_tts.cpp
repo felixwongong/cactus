@@ -1,24 +1,21 @@
-#define _USE_MATH_DEFINES // For M_PI on MSVC, ensure it's at the top if not already covered
+#define _USE_MATH_DEFINES 
 #include "cactus.h"
 #include "common.h"
 #include "llama.h"
 #include "ggml.h"
-#include "log.h" // Assuming log.h is used for LOG_ERROR, LOG_INFO etc.
-#include "json.hpp" // For speaker file parsing
+#include "log.h" 
+#include "json.hpp" 
 
 #include <fstream>
 #include <vector>
 #include <string>
-#include <cmath> // For M_PI, cosf, etc.
-#include <algorithm> // For std::clamp
-#include <thread> // For std::thread if using threading from tts.cpp
-#include <map>    // For text processing
-#include <regex>  // For text processing
-#include <iomanip> // For std::setprecision
-#include <limits> // For std::numeric_limits
-
-// Forward declare or include necessary headers for helper functions
-// These would be moved/adapted from the original cactus/tts.cpp
+#include <cmath> 
+#include <algorithm> 
+#include <thread> 
+#include <map>  
+#include <regex>  
+#include <iomanip>
+#include <limits> 
 
 namespace cactus {
 
@@ -37,26 +34,21 @@ namespace tts_internal {
         {2, "twenty"}, {3, "thirty"}, {4, "forty"}, {5, "fifty"},
         {6, "sixty"}, {7, "seventy"}, {8, "eighty"}, {9, "ninety"}
     };
-    // --- End text processing maps ---
 
-    // --- Copied/Adapted from cactus/tts.cpp (example) ---
-    // Keep these static or in an anonymous namespace if they are file-local helpers
-    // or make them part of tts_internal for use by cactus_context methods.
-
-    enum outetts_version { // From tts.cpp
+    enum outetts_version { 
         OUTETTS_V0_2,
         OUTETTS_V0_3,
     };
 
-    struct wav_header { // From tts.cpp
+    struct wav_header { 
         char riff[4] = {'R', 'I', 'F', 'F'};
         uint32_t chunk_size;
         char wave[4] = {'W', 'A', 'V', 'E'};
         char fmt[4] = {'f', 'm', 't', ' '};
         uint32_t fmt_chunk_size = 16;
-        uint16_t audio_format = 1; // PCM
-        uint16_t num_channels = 1; // Mono
-        uint32_t sample_rate; // To be filled
+        uint16_t audio_format = 1; 
+        uint16_t num_channels = 1; 
+        uint32_t sample_rate; 
         uint32_t byte_rate;
         uint16_t block_align;
         uint16_t bits_per_sample = 16;
@@ -65,7 +57,6 @@ namespace tts_internal {
     };
 
     static bool save_wav16(const std::string & fname, const std::vector<float> & audio_data, int sample_rate) {
-        // Implementation from tts.cpp's save_wav16
         std::ofstream file(fname, std::ios::binary);
         if (!file) {
             LOG_ERROR("Failed to open file '%s' for writing.", fname.c_str());
@@ -74,11 +65,11 @@ namespace tts_internal {
 
         wav_header header;
         header.sample_rate = sample_rate;
-        header.num_channels = 1; // Assuming mono
+        header.num_channels = 1; 
         header.bits_per_sample = 16;
         header.byte_rate = header.sample_rate * header.num_channels * (header.bits_per_sample / 8);
         header.block_align = header.num_channels * (header.bits_per_sample / 8);
-        header.data_size = audio_data.size() * (header.bits_per_sample / 8); // audio_data contains float samples
+        header.data_size = audio_data.size() * (header.bits_per_sample / 8); 
         header.chunk_size = 36 + header.data_size;
 
         file.write(reinterpret_cast<const char*>(&header), sizeof(header));
@@ -97,7 +88,7 @@ namespace tts_internal {
     
     // --- DSP and Vocoder functions (adapted from tts.cpp) ---
     static void fill_hann_window(int length, bool periodic, float * output) {
-        // Copied from tts.cpp
+
         int offset = -1;
         if (periodic) {
             offset = 0;
@@ -109,14 +100,12 @@ namespace tts_internal {
 
     // very poor-man fft helper
     static void twiddle(float * real, float * imag, int k, int N) {
-        // Copied from tts.cpp
         float angle = 2.0f * M_PI * k / N;
         *real = cosf(angle);
         *imag = sinf(angle);
     }
 
     static void irfft(int n, const float * inp_cplx, float * out_real) {
-        // Copied from tts.cpp
         int N = n / 2 + 1;
 
         std::vector<float> real_input(N);
@@ -129,7 +118,7 @@ namespace tts_internal {
         std::vector<float> real_output(n);
         std::vector<float> imag_output(n);
 
-        for (int k_loop = 0; k_loop < n; ++k_loop) { // Renamed k to k_loop to avoid conflict with outer scope if any
+        for (int k_loop = 0; k_loop < n; ++k_loop) { 
             real_output[k_loop] = 0.0f;
             imag_output[k_loop] = 0.0f;
             for (int m = 0; m < N; ++m) {
@@ -156,19 +145,22 @@ namespace tts_internal {
         int64_t n_pad,                   // Padding applied on each side of the frames (e.g. (n_win - n_hop)/2)
         std::vector<float> & output      // Output folded audio
     ) {
-        // Copied from tts.cpp
         output.assign(n_out, 0.0f);
         int64_t current_data_ptr = 0;
+
         // Calculate num_frames based on data size and window length. This assumes data is concatenated frames.
         int num_frames = (n_win > 0) ? (data.size() / n_win) : 0;
+
         if (n_win > 0 && data.size() % n_win != 0) {
             LOG_WARNING("Fold: data size (%zu) is not a multiple of window length (%lld). Results might be incorrect.", data.size(), (long long)n_win);
         }
 
         for (int frame_idx = 0; frame_idx < num_frames; ++frame_idx) {
-            int64_t frame_output_start_pos = frame_idx * n_hop; // Start of this frame in the output array
+            int64_t frame_output_start_pos = frame_idx * n_hop; 
+
             for (int i = 0; i < n_win; ++i) {
                 int64_t target_idx = frame_output_start_pos + i;
+
                 if (target_idx < n_out && current_data_ptr < (int64_t)data.size()) {
                      output[target_idx] += data[current_data_ptr];
                 }
@@ -177,25 +169,16 @@ namespace tts_internal {
         }
 
         if (n_out > 2 * n_pad) {
-             // Perform in-place trim or copy to new vector then assign
-             // output.erase(output.begin() + (n_out - n_pad), output.end()); // Trim end first
-             // output.erase(output.begin(), output.begin() + n_pad);       // Trim beginning
-             // A safer way if n_out is the original intended *final* size before this function was called based on tts.cpp logic:
-             // The tts.cpp logic `output.resize(n_out - 2 * n_pad);` implies n_out was the padded size.
-             // Here, if `output` was already sized to `n_out` (final target size), then this step might be different.
-             // Let's assume n_out passed to fold is the *padded* length, and we trim it.
              std::vector<float> temp_output(output.begin() + n_pad, output.begin() + (n_out - n_pad) );
              output = temp_output;
-        } else if (n_out > 0) { // Only log if n_out was supposed to be positive
+        } else if (n_out > 0) { 
             LOG_WARNING("Fold: n_out (%lld) <= 2*n_pad (%lld), cannot trim padding. Output might be empty or incorrect.", (long long)n_out, (long long)(2*n_pad));
-            // output.clear(); // Clearing might be too aggressive if some data is valid but not trimmable.
         }
     }
-    // --- End DSP and Vocoder functions ---
 
-    // --- embeddings_to_audio_samples IS NOW AFTER DSP HELPERS ---
+
     static std::vector<float> embeddings_to_audio_samples(
-        const float * embeddings_ptr,       // Pointer to the flat embedding data
+        const float * embeddings_ptr,     // Pointer to the flat embedding data
         int num_frames,                   // Number of frames (n_codes in tts.cpp)
         int frame_embedding_dim,          // Dimension of embedding per frame (n_embd in tts.cpp)
         llama_model * vocoder_model,      // Vocoder model (not directly used in original tts.cpp's embd_to_audio, but good to have if params are from it)
@@ -246,11 +229,13 @@ namespace tts_internal {
         std::vector<std::thread> workers(n_threads);
         for (int thread_idx = 0; thread_idx < n_threads; ++thread_idx) {
             workers[thread_idx] = std::thread([&, thread_idx]() {
+
                 for (int frame_idx = thread_idx; frame_idx < num_frames; frame_idx += n_threads) {
                     const float* current_frame_complex_spectrum = complex_spectrum_ST.data() + frame_idx * frame_embedding_dim;
                     float* current_frame_ifft_output = all_ifft_frames_windowed.data() + frame_idx * n_fft;
-                    irfft(n_fft, current_frame_complex_spectrum, current_frame_ifft_output); // Now defined before this call
+                    irfft(n_fft, current_frame_complex_spectrum, current_frame_ifft_output); 
                     float* current_frame_hann_sq_output = hann_squared_frames.data() + frame_idx * n_fft;
+
                     for (int j = 0; j < n_fft; ++j) {
                         current_frame_ifft_output[j] *= hann_window_coeffs[j];
                         current_frame_hann_sq_output[j] = hann_window_coeffs[j] * hann_window_coeffs[j];
@@ -265,8 +250,8 @@ namespace tts_internal {
         std::vector<float> audio_signal_folded;
         std::vector<float> window_energy_folded;
 
-        fold(all_ifft_frames_windowed, n_out_padded, n_win, n_hop, n_pad, audio_signal_folded); // Now defined before this call
-        fold(hann_squared_frames,      n_out_padded, n_win, n_hop, n_pad, window_energy_folded); // Now defined before this call
+        fold(all_ifft_frames_windowed, n_out_padded, n_win, n_hop, n_pad, audio_signal_folded); 
+        fold(hann_squared_frames,      n_out_padded, n_win, n_hop, n_pad, window_energy_folded);
 
         if (audio_signal_folded.size() != window_energy_folded.size()) {
             LOG_ERROR("embeddings_to_audio_samples: Mismatch in folded signal size (%zu) and window energy size (%zu). Cannot normalize.", 
@@ -288,8 +273,8 @@ namespace tts_internal {
     // --- Text processing functions (adapted from tts.cpp) ---
     static std::string convert_less_than_thousand(int num) {
         std::string result;
-        if (num == 0) { // Handle 0 explicitly if it's part of a larger number (e.g. 1000)
-            return ""; // Or handle as per original logic if 0 itself should be "zero"
+        if (num == 0) { 
+            return ""; 
         }
 
         if (num >= 100) {
@@ -440,11 +425,9 @@ namespace tts_internal {
 
         return processed_text;
     }
-    // --- End text processing functions ---
     
     // --- Speaker, Version, and Prompt helpers (adapted from tts.cpp) ---
     static nlohmann::ordered_json load_speaker_embedding_json(const std::string & speaker_file_path) {
-        // Adapted from tts.cpp's speaker_from_file
         LOG_INFO("Attempting to load speaker file: %s", speaker_file_path.c_str());
         std::ifstream file(speaker_file_path);
         if (!file) {
@@ -460,7 +443,6 @@ namespace tts_internal {
     }
 
     static outetts_version determine_tts_version(llama_model* model, const nlohmann::ordered_json& speaker_json) {
-        // Adapted from tts.cpp's get_tts_version
         if (!speaker_json.is_null() && speaker_json.contains("version")) {
             std::string version = speaker_json["version"].get<std::string>();
             if (version == "0.2") {
@@ -480,14 +462,13 @@ namespace tts_internal {
             }
         }
         LOG_INFO("Defaulting TTS version to OUTETTS_V0_2.");
-        return OUTETTS_V0_2; // Default if not found or model is null
+        return OUTETTS_V0_2; 
     }
 
     static std::string get_speaker_audio_text(const nlohmann::ordered_json& speaker_json, outetts_version tts_version) {
-        // Adapted from tts.cpp's audio_text_from_speaker
         if (speaker_json.is_null() || !speaker_json.contains("words")) {
             LOG_WARNING("Speaker JSON is null or does not contain 'words' field.");
-            return "<|text_start|>"; // Minimal default
+            return "<|text_start|>"; 
         }
         std::string audio_text = "<|text_start|>";
         std::string separator = (tts_version == OUTETTS_V0_3) ? "<|space|>" : "<|text_sep|>";
@@ -511,14 +492,14 @@ namespace tts_internal {
     }
 
     static std::string get_speaker_audio_data(const nlohmann::ordered_json& speaker_json, outetts_version tts_version) {
-        // Adapted from tts.cpp's audio_data_from_speaker
         if (speaker_json.is_null() || !speaker_json.contains("words")) {
             LOG_WARNING("Speaker JSON is null or does not contain 'words' field for audio_data.");
-            return "<|audio_start|>\n"; // Minimal default
+            return "<|audio_start|>\n"; 
         }
         std::string audio_data = "<|audio_start|>\n";
         std::string code_start_token = (tts_version == OUTETTS_V0_3) ? "" : "<|code_start|>";
         std::string code_end_token = (tts_version == OUTETTS_V0_3) ? "<|space|>" : "<|code_end|>";
+
         try {
             for (const auto &word_item : speaker_json["words"]) {
                 if (word_item.contains("word") && word_item.contains("duration") && word_item.contains("codes")) {
@@ -540,7 +521,7 @@ namespace tts_internal {
             }
         } catch (const nlohmann::json::exception& e) {
             LOG_ERROR("Error processing speaker JSON for audio_data: %s", e.what());
-            return "<|audio_start|>\n"; // Fallback
+            return "<|audio_start|>\n"; 
         }
         return audio_data;
     }
@@ -553,8 +534,6 @@ namespace tts_internal {
         prompt.insert(prompt.end(), tokens.begin(), tokens.end());
     }
 
-    // Note: common_tokenize is defined in common.h/common.cpp and used by cactus generally.
-    // We assume it's available. It typically takes (llama_vocab*, string, bool add_bos, bool special)
     static void prompt_add_string(std::vector<llama_token>& prompt, const llama_vocab * vocab, const std::string & txt, bool add_bos, bool special_tokens) {
         if (!vocab) {
             LOG_ERROR("Cannot add string to prompt: vocab is null.");
@@ -565,16 +544,11 @@ namespace tts_internal {
     }
 
     static void prompt_initialize(std::vector<llama_token>& prompt, const llama_vocab * vocab) {
-        // Adapted from tts.cpp's prompt_init
         prompt.clear();
-        // The initial prompt token <|im_start|>\n seems specific to certain chat formats or the OuteTTS example setup.
-        // This might need to be configurable or conditional based on the TTS model.
-        // For OuteTTS, this seems to be the required start.
         prompt_add_string(prompt, vocab, "<|im_start|>\n", true, true);
     }
 
     static std::vector<llama_token> prepare_guide_tokens(const llama_vocab * vocab, const std::string & str, outetts_version tts_version) {
-        // Adapted from tts.cpp
         if (!vocab) {
             LOG_ERROR("Cannot prepare guide tokens: vocab is null.");
             return {};
@@ -584,7 +558,6 @@ namespace tts_internal {
         size_t start_pos = 0;
         size_t end_pos = str.find(delimiter);
 
-        // First token is always a newline, as it was not previously added (as per tts.cpp example)
         std::vector<llama_token> newline_token_vec = common_tokenize(vocab, "\n", false, true);
         if (!newline_token_vec.empty()) {
             result_tokens.push_back(newline_token_vec[0]);
@@ -595,8 +568,6 @@ namespace tts_internal {
             if (!current_word.empty()) {
                 std::vector<llama_token> tmp_tokens = common_tokenize(vocab, current_word, false, true);
                 if (!tmp_tokens.empty()) {
-                     // OuteTTS example seems to take only the first token of a word for guide tokens.
-                     // This might be specific to how OuteTTS uses guide tokens.
                     result_tokens.push_back(tmp_tokens[0]);
                 }
             }
@@ -614,8 +585,7 @@ namespace tts_internal {
         }
         return result_tokens;
     }
-    // --- End Speaker, Version, and Prompt helpers ---
-
+   
 } // namespace tts_internal
 
 
@@ -635,13 +605,13 @@ bool cactus_context::loadVocoderModel(const common_params_vocoder &vocoder_param
     }
 
     auto mparams = llama_model_default_params();
+
     // Vocoders might not need extensive GPU offloading or specific settings like main LLMs.
     // These params might need to be adjusted based on the vocoder model's requirements.
     // For now, use defaults and allow common_params to override if necessary via main params.
-    mparams.n_gpu_layers = params.n_gpu_layers; // Use main model's GPU layer count for now
+    mparams.n_gpu_layers = params.n_gpu_layers;
     mparams.main_gpu     = params.main_gpu;
     mparams.split_mode   = params.split_mode;
-    // Copy other relevant model params from `this->params` if needed.
 
     this->vocoder_model = llama_model_load_from_file(vocoder_params.model.path.c_str(), mparams);
     if (this->vocoder_model == nullptr) {
@@ -650,24 +620,17 @@ bool cactus_context::loadVocoderModel(const common_params_vocoder &vocoder_param
     }
 
     auto cparams = llama_context_default_params();
+
     // Context size for vocoders is usually small or fixed.
     // This might need to be determined from model metadata or tts.cpp example.
     // Max codes generated by primary TTS model is params.n_predict.
     // Vocoder context and batch size should accommodate this.
-    int max_codes = params.n_predict > 0 ? params.n_predict : 768; // Default from main.cpp if not set
-    cparams.n_ctx   = max_codes > 0 ? (uint32_t)max_codes : 1024; // Ensure context can hold max codes, min 1024
-    cparams.n_batch = max_codes > 0 ? (uint32_t)max_codes : 1024; // Batch size should be able to process all codes at once
-    cparams.n_ubatch = max_codes > 0 ? (uint32_t)max_codes : 1024; // Physical batch size also needs to be sufficient
-    cparams.attention_type = LLAMA_ATTENTION_TYPE_NON_CAUSAL; // Use this to specify non-causal attention for vocoder
-    cparams.embeddings = true; // Ensure vocoder context is set to output embeddings
-                                            // Seed is typically handled by llama_sampling_params or model_params for specific RNG needs.
-    // Copy other relevant context params from `this->params` if needed.
-    
-    // Check if a specific number of threads is set for the vocoder, otherwise use main params.
-    // int vocoder_threads = params.vocoder.n_threads > 0 ? params.vocoder.n_threads : params.cpuparams.n_threads;
-    // cparams.n_threads = vocoder_threads;
-    // cparams.n_threads_batch = vocoder_threads;
-    // Currently common_params_vocoder does not have n_threads, so we use main params.cpuparams
+    int max_codes = params.n_predict > 0 ? params.n_predict : 768; 
+    cparams.n_ctx   = max_codes > 0 ? (uint32_t)max_codes : 1024;
+    cparams.n_batch = max_codes > 0 ? (uint32_t)max_codes : 1024; 
+    cparams.n_ubatch = max_codes > 0 ? (uint32_t)max_codes : 1024; 
+    cparams.attention_type = LLAMA_ATTENTION_TYPE_NON_CAUSAL;
+    cparams.embeddings = true; 
     cparams.n_threads = params.cpuparams.n_threads;
     cparams.n_threads_batch = params.cpuparams.n_threads;
 
@@ -697,8 +660,10 @@ bool cactus_context::synthesizeSpeech(const std::string& text, const std::string
     nlohmann::ordered_json speaker_json;
     std::string actual_speaker_file_path = speaker_id_or_path;
     if (actual_speaker_file_path.empty()) actual_speaker_file_path = params.vocoder.speaker_file;
+
     if (!actual_speaker_file_path.empty()) {
         speaker_json = tts_internal::load_speaker_embedding_json(actual_speaker_file_path);
+
         if (speaker_json == nullptr || speaker_json.is_null()) {
             LOG_ERROR("Failed to load speaker data from: %s", actual_speaker_file_path.c_str());
         }
@@ -707,29 +672,36 @@ bool cactus_context::synthesizeSpeech(const std::string& text, const std::string
     tts_internal::outetts_version tts_version = tts_internal::determine_tts_version(this->model, speaker_json);
     std::string processed_text = tts_internal::process_input_text(text, tts_version);
     const llama_vocab * vocab = llama_model_get_vocab(this->model);
+
     if (!vocab) { LOG_ERROR("Failed to get vocabulary from primary TTS model."); return false; }
     
     llama_batch batch = llama_batch_init(params.n_batch, 0, 1);
     std::vector<llama_token> prompt_tokens;
     tts_internal::prompt_initialize(prompt_tokens, vocab);
+
     if (!speaker_json.is_null() && speaker_json.contains("words")) {
         std::string speaker_audio_text_str = tts_internal::get_speaker_audio_text(speaker_json, tts_version);
         if (!speaker_audio_text_str.empty()) {
             tts_internal::prompt_add_string(prompt_tokens, vocab, speaker_audio_text_str, true, true);
         }
     }
+
     tts_internal::prompt_add_string(prompt_tokens, vocab, processed_text, true, true);
     std::vector<llama_token> guide_tokens;
+
     if (params.vocoder.use_guide_tokens) {
         guide_tokens = tts_internal::prepare_guide_tokens(vocab, processed_text, tts_version);
     }
+
     tts_internal::prompt_add_string(prompt_tokens, vocab, "\n<|audio_start|>\n", true, true);
 
     if (prompt_tokens.empty()) { LOG_ERROR("Failed to tokenize prompt."); llama_batch_free(batch); return false; }
     LOG_INFO("Prompt tokenized into %zu tokens.", prompt_tokens.size());
+
     for (size_t i = 0; i < prompt_tokens.size(); ++i) {
         llama_batch_add(&batch, prompt_tokens[i], i, {0}, false);
     }
+
     // Ensure logits are requested for the last token of the initial prompt
     if (batch.n_tokens > 0) {
         batch.logits[batch.n_tokens - 1] = true;
@@ -751,14 +723,11 @@ bool cactus_context::synthesizeSpeech(const std::string& text, const std::string
     
     common_sampler_reset(this->ctx_sampling);
 
-    // Logic from original tts.cpp for guide token application
     bool next_token_uses_guide_token = true; 
-    // IMPORTANT: Confirm token 198 is the correct word separator for the model/tokenizer.
-    // It was used in the llama.cpp example. If OuteTTS uses <|space|> and that tokenizes to something else,
-    // this ID needs to be adjusted. For now, we use 198 as per the example.
-    llama_token word_separator_token_id = -1; // Default to an invalid token ID
+    llama_token word_separator_token_id = -1; 
     const std::string separator_str = (tts_version == tts_internal::OUTETTS_V0_3) ? "<|space|>" : "<|text_sep|>";
     std::vector<llama_token> sep_tokens = common_tokenize(vocab, separator_str, false, true);
+    
     if (!sep_tokens.empty()) {
         word_separator_token_id = sep_tokens[0];
         LOG_INFO("Using token ID %d for word separator '%s'", word_separator_token_id, separator_str.c_str());

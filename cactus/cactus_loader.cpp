@@ -78,6 +78,7 @@ const std::vector<lm_ggml_type> kv_cache_types = {
     LM_GGML_TYPE_Q5_1,
 };
 
+
 lm_ggml_type kv_cache_type_from_str(const std::string & s) {
     for (const auto & type : kv_cache_types) {
         if (lm_ggml_type_name(type) == s) {

@@ -1,12 +1,12 @@
-#include "ggml.h"   // Added: For ggml_log_level full definition
+#include "ggml.h"   
 #include "cactus.h"
-#include "common.h" // For common_sampler_sample, common_token_to_piece, common_tokenize, etc.
-#include "mtmd.h"   // Added for multimodal support
-#include <algorithm> // For std::min
+#include "common.h" 
+#include "mtmd.h"  
+#include <algorithm>
 #include <vector>
 #include <string>
-#include <sstream> // For LOG_INFO
-#include "llama.h" // For llama_kv_self_seq_rm, llama_decode, etc.
+#include <sstream> 
+#include "llama.h" 
 
 namespace cactus {
 
@@ -17,8 +17,10 @@ namespace cactus {
  */
 void cactus_context::truncatePrompt(std::vector<llama_token> &prompt_tokens) {
     const int n_left = n_ctx - params.n_keep;
+
     // Handle case where n_left might be zero or negative if n_keep >= n_ctx
     const int n_block_size = (n_left > 0) ? n_left / 2 : 0;
+
     // Avoid division by zero if n_block_size is 0
     const int erased_blocks = (n_block_size > 0) ? (prompt_tokens.size() - params.n_keep - n_block_size) / n_block_size : 0;
 
@@ -40,7 +42,6 @@ void cactus_context::truncatePrompt(std::vector<llama_token> &prompt_tokens) {
         n_ctx,
         params.n_keep,
         n_left,
-        // tokens_to_str(ctx, new_tokens.cbegin(), new_tokens.cend()).c_str(), // Can be too verbose
         new_tokens.size()
     );
 
@@ -65,12 +66,13 @@ void cactus_context::loadPrompt() {
                 // If this function could be part of a longer conversation turn, 
                 // n_past management would need to be more sophisticated.
 
+    // Check if multimodal context is available and prompt is not empty
     if (ctx_mtmd != nullptr && !params.image.empty() && !params.prompt.empty()) {
         LOG_INFO("Multimodal prompt detected. Using libmtmd.");
 
         mtmd_input_text input_text;
-        input_text.text = params.prompt.c_str(); // Prompt MUST contain image markers like <__image__>
-        input_text.add_special = true; // Or based on params? For now, true.
+        input_text.text = params.prompt.c_str(); 
+        input_text.add_special = true; 
         input_text.parse_special = true;
 
         mtmd_bitmap *bitmap = mtmd_helper_bitmap_init_from_file(params.image[0].c_str());
@@ -83,10 +85,11 @@ void cactus_context::loadPrompt() {
             goto text_only_prompt; // Jump to text-only processing if image load fails
         }
 
+        // Prepare the bitmap for mtmd_tokenize
         const mtmd_bitmap *bitmaps_array[] = {bitmap};
-        size_t n_bitmaps = 1; // Assuming one image for now, matching typical VLM examples.
-                              // params.image is a vector, so could support multiple if mtmd_tokenize handles it well.
+        size_t n_bitmaps = 1; 
 
+        // Initialize the chunks structure
         mtmd_input_chunks *chunks = mtmd_input_chunks_init();
         if (!chunks) {
             LOG_ERROR("Failed to initialize mtmd_input_chunks.");
@@ -95,7 +98,7 @@ void cactus_context::loadPrompt() {
         }
 
         int tokenize_res = mtmd_tokenize(ctx_mtmd, chunks, &input_text, bitmaps_array, n_bitmaps);
-        mtmd_bitmap_free(bitmap); // Free bitmap after mtmd_tokenize (it should copy data if needed)
+        mtmd_bitmap_free(bitmap);
 
         if (tokenize_res != 0) {
             LOG_ERROR("mtmd_tokenize failed with code %d. Check prompt markers and image count.", tokenize_res);
@@ -124,11 +127,10 @@ void cactus_context::loadPrompt() {
 
         llama_pos new_n_past = 0;
         int eval_res = mtmd_helper_eval_chunks(ctx_mtmd, ctx, chunks, (llama_pos)this->n_past, 0, params.n_batch, true, &new_n_past);
-        mtmd_input_chunks_free(chunks); // Now free chunks
+        mtmd_input_chunks_free(chunks); 
 
         if (eval_res == 0) {
             this->n_past = static_cast<size_t>(new_n_past);
-            // num_prompt_tokens was set above.
             LOG_INFO("mtmd_helper_eval_chunks successful. n_past updated to: %zu, num_prompt_tokens: %zu", this->n_past, this->num_prompt_tokens);
         } else {
             LOG_ERROR("mtmd_helper_eval_chunks failed with code %d.", eval_res);
@@ -138,6 +140,7 @@ void cactus_context::loadPrompt() {
         // TODO: Revisit how to correctly update sampler state after mtmd_helper_eval_chunks.
 
     } else {
+
 text_only_prompt:
         LOG_INFO("No image or mtmd_context not available/prompt not suitable. Processing as text-only prompt.");
         std::vector<llama_token> prompt_tokens_text = ::common_tokenize(ctx, params.prompt, true, true);
@@ -166,22 +169,21 @@ text_only_prompt:
             common_sampler_accept(ctx_sampling, token, false);
         }
 
-        // Original logic for text-only n_past and embd management
         // n_past here refers to overlap with previous `embd` content, which is now cleared.
         // So, common_part(this->embd, prompt_tokens_text) will be 0.
         this->n_past = common_part(this->embd, prompt_tokens_text); // embd is empty, so n_past = 0
         this->embd = prompt_tokens_text;
+
         // n_past = std::min(this->n_past, this->embd.size()); // n_past is 0
         // if (this->n_past == this->num_prompt_tokens && this->n_past > 0) { this->n_past--; }
         // if (this->n_past > 0) { llama_kv_self_seq_rm(ctx, 0, this->n_past, -1); }
-        // Simplified for fresh load (n_past remains 0, embd has tokens):
         if (this->num_prompt_tokens > 0 && this->n_past == this->num_prompt_tokens) {
             // This case means embd was identical to prompt_tokens_text and fully matched.
             // To ensure at least one token is evaluated to get logits for sampling.
             this->n_past--; 
+
         } else if (this->n_past > 0) {
              // This means some prefix of prompt_tokens_text matched a previous `embd` (not possible here as embd was cleared).
-             // The original logic removed this matching prefix from KV cache to re-evaluate.
              // Since common_part will be 0, this block won't run.
         }
          // If n_past is 0, all tokens in `this->embd` are new and need evaluation.
@@ -194,6 +196,7 @@ text_only_prompt:
     has_next_token = true;
 }
 
+
 /**
  * @brief Begins the completion/generation process
  * 
@@ -205,6 +208,7 @@ void cactus_context::beginCompletion() {
     llama_perf_context_reset(ctx);
     is_predicting = true;
 }
+
 
 /**
  * @brief Generates the next token
@@ -228,7 +232,7 @@ completion_token_output cactus_context::nextToken()
                 n_eval = params.n_batch;
             }
 
-            if (n_eval <= 0) { // Should not happen if embd.size() > n_past
+            if (n_eval <= 0) { 
                 LOG_WARNING("nextToken: No prompt tokens to evaluate in embd (n_eval=%d)", n_eval);
                 break; 
             }
@@ -242,7 +246,6 @@ completion_token_output cactus_context::nextToken()
 
             if(is_interrupted) {
                 LOG_INFO("nextToken: Decoding Interrupted during prompt processing");
-                // embd.resize(n_past); // Not strictly necessary here as we are returning
                 has_next_token = false;
                 return result;
             }
@@ -254,12 +257,12 @@ completion_token_output cactus_context::nextToken()
 
     // --- Token Generation Phase --- 
 
-    // Ensure model and vocab are valid (moved from original cactus_completion.cpp, good check)
     if (!model) {
         LOG_ERROR("Model is null in nextToken");
         has_next_token = false;
         return result;
     }
+
     const llama_vocab* vocab = llama_model_get_vocab(model);
     if (!vocab) {
          LOG_ERROR("Vocab is null in nextToken");
@@ -267,23 +270,24 @@ completion_token_output cactus_context::nextToken()
          return result;
     }
 
-    if (params.n_predict == 0 && n_remain == 0) { // n_remain might be 0 if n_predict was 0 initially
+    if (params.n_predict == 0 && n_remain == 0) { 
         has_next_token = false;
         result.tok = llama_vocab_eos(vocab);
         LOG_VERBOSE("nextToken: n_predict is 0, EOS token returned.", "");
         return result;
     }
     
-    if (n_remain == 0 && params.n_predict != -1) { // Used up prediction budget
+    // Check if prediction limit has been reached
+    if (n_remain == 0 && params.n_predict != -1) { 
         has_next_token = false;
-        result.tok = llama_vocab_eos(vocab); // Or a special marker for limit reached?
+        result.tok = llama_vocab_eos(vocab); 
         LOG_VERBOSE("nextToken: n_remain is 0, EOS token returned.", "");
-        stopped_limit = true; // Make sure this is set
+        stopped_limit = true; 
         return result;
     }
 
     // Sample the next token
-    result.tok = common_sampler_sample(ctx_sampling, ctx, -1); // model_eval_context is ctx
+    result.tok = common_sampler_sample(ctx_sampling, ctx, -1); 
     llama_token_data_array cur_p = *common_sampler_get_candidates(ctx_sampling);
     const int32_t n_probs = params.sampling.n_probs;
     for (size_t i = 0; i < std::min((size_t)cur_p.size, (size_t)n_probs); ++i) {
@@ -301,7 +305,9 @@ completion_token_output cactus_context::nextToken()
         has_next_token = false;
         return result;
     }
-    n_past += 1; // Increment n_past for the newly decoded token
+
+    // Increment n_past for the newly decoded token
+    n_past += 1; 
 
     // Add the newly generated token to embd for context management (e.g. sliding window)
     // This `embd` will be used by the context shifting logic if n_ctx is exceeded.
@@ -355,7 +361,7 @@ completion_token_output cactus_context::nextToken()
         }
     }
 
-    if(is_interrupted) { // Check interruption again after generation and potential shift
+    if(is_interrupted) { 
         LOG_INFO("nextToken: Decoding Interrupted after token generation");
         has_next_token = false;
         return result;
@@ -364,6 +370,7 @@ completion_token_output cactus_context::nextToken()
     has_next_token = params.n_predict == -1 || n_remain > 0;
     return result;
 }
+
 
 /**
  * @brief Searches for stopping strings in generated text
@@ -380,7 +387,7 @@ size_t cactus_context::findStoppingStrings(const std::string &text, const size_t
 
     for (const std::string &word : params.antiprompt)
     {
-        if (word.empty()) continue; // Skip empty stop words
+        if (word.empty()) continue;
 
         size_t pos;
         if (type == STOP_FULL)
@@ -417,6 +424,7 @@ size_t cactus_context::findStoppingStrings(const std::string &text, const size_t
     return stop_pos;
 }
 
+
 /**
  * @brief Performs a single completion step
  * 
@@ -429,7 +437,6 @@ completion_token_output cactus_context::doCompletion()
 
     // Handle potential error from nextToken where tok is -1
     if (token_with_probs.tok == -1 && !has_next_token) {
-        // If nextToken indicated an error or end of stream, propagate it
         return token_with_probs;
     }
 
@@ -438,6 +445,7 @@ completion_token_output cactus_context::doCompletion()
     if (ctx && token_with_probs.tok != -1) {
          token_text = common_token_to_piece(ctx, token_with_probs.tok);
     }
+
     generated_text += token_text;
 
     if (params.sampling.n_probs > 0)
@@ -446,32 +454,40 @@ completion_token_output cactus_context::doCompletion()
     }
 
     // check if there is incomplete UTF-8 character at the end
-    incomplete = false; // Assume complete unless found otherwise
+    incomplete = false; 
     if (!generated_text.empty()) {
          unsigned char c = generated_text.back();
          int expected_continuation_bytes = 0;
-         if ((c & 0xC0) == 0x80) { // Ends with continuation byte 10xxxxxx
-             // Need to check previous bytes to see if it's incomplete
+
+         // Check if the last character is a continuation byte
+         if ((c & 0xC0) == 0x80) { 
              int lookback = 1;
+
+             // Check previous bytes to see if it's incomplete
              while (lookback < 4 && lookback < generated_text.size()) {
                  unsigned char prev_c = generated_text[generated_text.size() - 1 - lookback];
+
+                 // Check if the previous byte is a start byte
                  if ((prev_c & 0xC0) == 0xC0) { // Found start byte 11xxxxxx
                      if      ((prev_c & 0xE0) == 0xC0) expected_continuation_bytes = 1;
                      else if ((prev_c & 0xF0) == 0xE0) expected_continuation_bytes = 2;
                      else if ((prev_c & 0xF8) == 0xF0) expected_continuation_bytes = 3;
                      incomplete = lookback < expected_continuation_bytes;
                      break;
-                 } else if ((prev_c & 0x80) == 0x00) { // Found ASCII byte 0xxxxxxx
-                     break; // Sequence broken by ASCII char
+
+                 // If the previous byte is an ASCII byte, the sequence is complete
+                 } else if ((prev_c & 0x80) == 0x00) { 
+                     break; 
+
                  } // else: found another continuation byte, keep looking back
                  lookback++;
              }
-         } else if ((c & 0xE0) == 0xC0) { // Starts with 110xxxxx
-            incomplete = true; // Needs 1 more byte
-         } else if ((c & 0xF0) == 0xE0) { // Starts with 1110xxxx
-             incomplete = true; // Needs 2 more bytes
-         } else if ((c & 0xF8) == 0xF0) { // Starts with 11110xxx
-             incomplete = true; // Needs 3 more bytes
+         } else if ((c & 0xE0) == 0xC0) { 
+            incomplete = true; 
+         } else if ((c & 0xF0) == 0xE0) { 
+             incomplete = true; 
+         } else if ((c & 0xF8) == 0xF0) { 
+             incomplete = true; 
          }
          // else: starts with ASCII 0xxxxxxx or invalid byte, considered complete
     }
@@ -485,6 +501,7 @@ completion_token_output cactus_context::doCompletion()
         }
     }
 
+    // Check if prediction limit has been reached
     if (!has_next_token && n_remain == 0 && params.n_predict != -1)
     {
         stopped_limit = true;

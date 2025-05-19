@@ -1,48 +1,49 @@
 #ifndef CACTUS_H
 #define CACTUS_H
 
-#include "cactus_shims.h" // Include the shims first!
+// Compatibility Shims for Vendored Headers (clip.h, mtmd.h, clip-impl.h)
+// This file is used to ensure consistent type definitions and function signatures
+// for vendored headers. Read more about it in the file `cactus_shims.h`.
+#include "cactus_shims.h" 
 
+// Standard Library Headers
 #include <sstream>
 #include <iostream>
 
-// Core llama.cpp / ggml headers are now in cactus_shims.h or included by other necessary headers
-// #include "ggml.h" // No longer needed here, in cactus_shims.h
-// #include "gguf.h" // No longer needed here, in cactus_shims.h
-// #include "ggml-common.h" // No longer needed here, in cactus_shims.h
+// llama.cpp Headers (used by mtmd_init_from_file for llama_model and llama_context)
+#include "llama.h" 
 
-// --- Compatibility Shims for Vendored Headers (clip.h, mtmd.h, clip-impl.h) ---
-// MOVED TO cactus_shims.h
-// --- End Compatibility Shims ---
+// common.h Headers (used by cactus_context for common_params, common_sampler, etc.)
+#include "common.h" 
 
-#include "llama.h"  // For llama_model, llama_context (used by mtmd_init_from_file)
-#include "common.h" // For common_params, common_sampler, etc. (used by cactus_context)
+// mtmd.h Headers (used by cactus_context for mtmd_context and its API, depends on shims, llama.h)
+#include "mtmd.h" 
 
-// Now include headers that might depend on the above
-#include "mtmd.h"   // For mtmd_context and its API (depends on shims, llama.h)
-#include "chat.h"   // For chat functionality if directly used in cactus_context types
-#include "sampling.h" // For sampling types if directly used in cactus_context types
+// chat.h Headers (used by cactus_context for chat functionality)
+#include "chat.h"   
 
-// gguf.h and llama-impl.h are often included by .cpp files or deeper internal headers as needed.
-// #include "gguf.h"   
-// #include "llama-impl.h"
+// sampling.h Headers (used by cactus_context for sampling types)
+#include "sampling.h" 
 
+// Android Log Header (used by cactus_context for logging if on Android)
 #if defined(__ANDROID__)
 #include <android/log.h>
 #endif
 
 /**
  * @namespace cactus
- * @brief High-level interface for llama.cpp LLM inference
+ * @brief The cactus namespace provides a simplified API for working with GGML-Org and GGUF models.
  * 
- * The cactus namespace provides a simplified API for working with llama.cpp
- * for Large Language Model inference. It handles model loading, text generation,
+ * For Large Language Model inference. It handles model loading, text generation,
  * token sampling, chat formatting, and other common LLM operations.
+ * 
+ * For Visual Language Model (VLM) inference, it handles image embedding generation.
+ *
+ * For Text-to-Speech (TTS) inference, it handles the loading of a vocoder model and the synthesis of speech from text.
  */
 namespace cactus {
 
-// Forward declaration for LLaVA image embedding structure (keep for now, might remove if fully unused)
-// struct llava_image_embed; 
+
 
 /**
  * @brief Converts a token to a formatted output string
@@ -55,6 +56,7 @@ namespace cactus {
  */
 std::string tokens_to_output_formatted_string(const llama_context *ctx, const llama_token token);
 
+
 /**
  * @brief Converts a range of tokens to a string
  * 
@@ -65,6 +67,7 @@ std::string tokens_to_output_formatted_string(const llama_context *ctx, const ll
  */
 std::string tokens_to_str(llama_context *ctx, const std::vector<llama_token>::const_iterator begin, const std::vector<llama_token>::const_iterator end);
 
+
 /**
  * @brief Converts a string to a KV cache type
  * 
@@ -73,6 +76,7 @@ std::string tokens_to_str(llama_context *ctx, const std::vector<llama_token>::co
  * @throws std::runtime_error if the cache type is unsupported
  */
 lm_ggml_type kv_cache_type_from_str(const std::string & s);
+
 
 /**
  * @enum stop_type
@@ -83,6 +87,7 @@ enum stop_type
     STOP_FULL,    /**< Full stop string found */
     STOP_PARTIAL, /**< Partial stop string found */
 };
+
 
 /**
  * @struct completion_token_output
@@ -104,6 +109,7 @@ struct completion_token_output
     llama_token tok;               /**< The selected token */
 };
 
+
 /**
  * @struct cactus_context
  * @brief Main context class for LLM operations
@@ -117,14 +123,6 @@ struct cactus_context {
     bool has_next_token = false;    /**< Whether there's another token to generate */
     std::string generated_text;     /**< The complete generated text */
     std::vector<completion_token_output> generated_token_probs; /**< Token probabilities */
-
-    // Remove previous LLaVA attempt members
-    // llava_image_embed *image_embed_result = nullptr;
-    // bool image_processed_and_evaluated = false;
-    // size_t n_eval_offset = 0; 
-
-    // Try using mtmd_context directly, assuming mtmd.h made it available globally
-    mtmd_context *ctx_mtmd = nullptr; 
 
     size_t num_prompt_tokens = 0;    /**< Number of tokens in the prompt */
     size_t num_tokens_predicted = 0; /**< Number of tokens predicted */
@@ -143,12 +141,10 @@ struct cactus_context {
     common_sampler *ctx_sampling = nullptr; /**< Sampler for token generation (using common_sampler) */
     common_chat_templates_ptr templates; /**< Chat templates for formatting */
 
-    // --- TTS Specific Members ---
+    // --- Multi-Modal Members ---
+    mtmd_context *ctx_mtmd = nullptr; 
     llama_model *vocoder_model = nullptr;   /**< Pointer to the vocoder model */
     llama_context *vocoder_ctx = nullptr; /**< llama context for the vocoder */
-    // Add speaker embedding data structure here if globally managed, e.g., json speaker_embedding_data;
-    // Or handle speaker data per synthesis call.
-    // --- End TTS Specific Members ---
 
     int n_ctx;                       /**< Context size */
 
@@ -161,12 +157,14 @@ struct cactus_context {
 
     std::vector<common_adapter_lora_info> lora; /**< LoRA adapters */
 
+
     /**
      * @brief Destructor for cactus_context
      * 
      * Cleans up resources, including the sampling context
      */
     ~cactus_context();
+
 
     /**
      * @brief Rewinds the context to start a new generation
@@ -175,6 +173,7 @@ struct cactus_context {
      */
     void rewind();
     
+
     /**
      * @brief Initializes the sampling context
      * 
@@ -182,6 +181,7 @@ struct cactus_context {
      */
     bool initSampling();
     
+
     /**
      * @brief Loads a language model
      * 
@@ -190,6 +190,7 @@ struct cactus_context {
      */
     bool loadModel(common_params &params_);
     
+
     /**
      * @brief Loads the vocoder model for Text-to-Speech
      * 
@@ -197,6 +198,7 @@ struct cactus_context {
      * @return true if loading succeeded, false otherwise.
      */
     bool loadVocoderModel(const common_params_vocoder &vocoder_params);
+
 
     /**
      * @brief Synthesizes speech from text and saves it to a WAV file.
@@ -210,6 +212,7 @@ struct cactus_context {
      */
     bool synthesizeSpeech(const std::string& text, const std::string& output_wav_path, const std::string& speaker_id = "");
     
+
     /**
      * @brief Validates if a chat template exists and is valid
      * 
@@ -219,6 +222,7 @@ struct cactus_context {
      */
     bool validateModelChatTemplate(bool use_jinja, const char *name) const;
     
+
     /**
      * @brief Formats a chat using Jinja templates
      * 
@@ -239,6 +243,7 @@ struct cactus_context {
       const std::string &tool_choice
     ) const;
     
+
     /**
      * @brief Formats a chat using standard templates
      * 
@@ -251,6 +256,7 @@ struct cactus_context {
       const std::string &chat_template
     ) const;
     
+
     /**
      * @brief Truncates a prompt if it's too long for the context
      * 
@@ -258,6 +264,7 @@ struct cactus_context {
      */
     void truncatePrompt(std::vector<llama_token> &prompt_tokens);
     
+
     /**
      * @brief Loads a prompt into the context
      * 
@@ -265,6 +272,7 @@ struct cactus_context {
      */
     void loadPrompt();
     
+
     /**
      * @brief Begins the completion/generation process
      * 
@@ -272,6 +280,7 @@ struct cactus_context {
      */
     void beginCompletion();
     
+
     /**
      * @brief Generates the next token
      * 
@@ -279,6 +288,7 @@ struct cactus_context {
      */
     completion_token_output nextToken();
     
+
     /**
      * @brief Searches for stopping strings in generated text
      * 
@@ -289,6 +299,7 @@ struct cactus_context {
      */
     size_t findStoppingStrings(const std::string &text, const size_t last_token_size, const stop_type type);
     
+
     /**
      * @brief Performs a single completion step
      * 
@@ -297,6 +308,7 @@ struct cactus_context {
      */
     completion_token_output doCompletion();
     
+
     /**
      * @brief Generates embeddings for the current prompt
      * 
@@ -305,6 +317,7 @@ struct cactus_context {
      */
     std::vector<float> getEmbedding(common_params &embd_params);
     
+
     /**
      * @brief Benchmarks the model performance
      * 
@@ -316,6 +329,7 @@ struct cactus_context {
      */
     std::string bench(int pp, int tg, int pl, int nr);
     
+
     /**
      * @brief Applies LoRA adapters to the model
      * 
@@ -324,6 +338,7 @@ struct cactus_context {
      */
     int applyLoraAdapters(std::vector<common_adapter_lora_info> lora);
     
+
     /**
      * @brief Removes all LoRA adapters from the model
      */
@@ -337,10 +352,12 @@ struct cactus_context {
     std::vector<common_adapter_lora_info> getLoadedLoraAdapters();
 };
 
+
 /** @var cactus_verbose
  *  @brief Flag controlling verbose logging
  */
 extern bool cactus_verbose;
+
 
 #if CACTUS_VERBOSE != 1
 #define LOG_VERBOSE(MSG, ...)
@@ -361,6 +378,7 @@ extern bool cactus_verbose;
     } while (0)
 #endif
 
+
 /**
  * @brief Logs error messages
  * 
@@ -368,6 +386,7 @@ extern bool cactus_verbose;
  * @param ... Format arguments
  */
 #define LOG_ERROR(MSG, ...) log("ERROR", __func__, __LINE__, MSG, ##__VA_ARGS__)
+
 
 /**
  * @brief Logs warning messages
@@ -377,6 +396,7 @@ extern bool cactus_verbose;
  */
 #define LOG_WARNING(MSG, ...) log("WARNING", __func__, __LINE__, MSG, ##__VA_ARGS__)
 
+
 /**
  * @brief Logs informational messages
  * 
@@ -384,8 +404,6 @@ extern bool cactus_verbose;
  * @param ... Format arguments
  */
 #define LOG_INFO(MSG, ...) log("INFO", __func__, __LINE__, MSG, ##__VA_ARGS__)
-
-// --- Utility Function Declarations ---
 
 /**
  * @brief Log function for different verbosity levels
@@ -398,32 +416,36 @@ extern bool cactus_verbose;
  */
 void log(const char *level, const char *function, int line, const char *format, ...);
 
+
 /**
  * @brief Clears a llama batch structure
  */
 void llama_batch_clear(llama_batch *batch);
+
 
 /**
  * @brief Adds a token to a llama batch
  */
 void llama_batch_add(llama_batch *batch, llama_token id, llama_pos pos, const std::vector<llama_seq_id>& seq_ids, bool logits);
 
+
 /**
  * @brief Find the common prefix between two token sequences
  */
 size_t common_part(const std::vector<llama_token> &a, const std::vector<llama_token> &b);
+
 
 /**
  * @brief Check if a string ends with a suffix
  */
 bool ends_with(const std::string &str, const std::string &suffix);
 
+
 /**
  * @brief Find a partial stop string in text
  */
 size_t find_partial_stop_string(const std::string &stop, const std::string &text);
 
-// --- End Utility Function Declarations ---
 
 } // namespace cactus
 
