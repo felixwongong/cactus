@@ -14,7 +14,7 @@ cactus_context::~cactus_context() {
         common_sampler_free(ctx_sampling);
         ctx_sampling = nullptr; 
     }
-    if (ctx_mtmd != nullptr) { // Added for libmtmd
+    if (ctx_mtmd != nullptr) { 
         mtmd_free(ctx_mtmd);
         ctx_mtmd = nullptr;
     }
@@ -41,13 +41,13 @@ cactus_context::~cactus_context() {
  */
 void cactus_context::rewind() {
     is_interrupted = false;
-    is_predicting = false; // Ensure predicting flag is reset too
+    is_predicting = false; 
     params.antiprompt.clear();
     params.sampling.grammar.clear();
     num_prompt_tokens = 0;
     num_tokens_predicted = 0;
     generated_text = "";
-    generated_text.reserve(params.n_ctx); // Reserve based on loaded context size
+    generated_text.reserve(params.n_ctx); 
     generated_token_probs.clear();
     truncated = false;
     stopped_eos = false;
@@ -59,7 +59,6 @@ void cactus_context::rewind() {
     n_past = 0;
     embd.clear(); 
     if (ctx_sampling) {
-        // Reset sampler state if it exists
         common_sampler_reset(ctx_sampling);
     }
     // params.sampling.n_prev = n_ctx; // This might be set dynamically or during initSampling

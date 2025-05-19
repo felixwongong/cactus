@@ -175,6 +175,8 @@ For more detailed documentation and examples, see the [React Native README](cact
 
 Cactus backend is written in C/C++, layered on top of GGML/GGUF to support models in the GGUF format. Developers and contributors in this niche can easily get started with examples for:
 
+N/B: Should have `CMake` installed, or install with `brew install cmake` (on macOS) or standard package managers on Linux.
+
 *   **Language Models:**
     1.  Navigate to the example directory: `cd example/cpp-llm`
     2.  Make the build script executable (only needs to be done once): `chmod +x build.sh`
