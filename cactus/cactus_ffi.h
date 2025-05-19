@@ -108,6 +108,18 @@ typedef struct cactus_completion_result_c {
     char* stopping_word; 
 } cactus_completion_result_c_t;
 
+typedef struct cactus_tts_params_c {
+    const char* text;
+    const char* speaker_file_path;
+    int32_t n_threads;
+    void (*progress_callback)(float progress);
+} cactus_tts_params_c_t;
+
+typedef struct cactus_tts_result_c {
+    float* audio_data;
+    int32_t sample_count;
+    int32_t sample_rate;
+} cactus_tts_result_c_t;
 
 // --- Core API Functions ---
 
@@ -177,6 +189,39 @@ CACTUS_FFI_EXPORT char* cactus_detokenize_c(cactus_context_handle_t handle, cons
  * @return A struct containing the embedding values. Caller must free the `values` array using cactus_free_float_array_c.
  */
 CACTUS_FFI_EXPORT cactus_float_array_c_t cactus_embedding_c(cactus_context_handle_t handle, const char* text);
+
+/**
+ * @brief Performs text-to-speech conversion based on the provided text and parameters.
+ *
+ * @param handle The context handle.
+ * @param params TTS parameters, including text and speaker settings.
+ * @param result Output struct to store the audio data and metadata.
+ * @return 0 on success, non-zero on failure.
+ */
+CACTUS_FFI_EXPORT int cactus_tts_c(
+    cactus_context_handle_t handle,
+    const cactus_tts_params_c_t* params,
+    cactus_tts_result_c_t* result
+);
+
+/**
+ * @brief Saves the TTS audio data to a WAV file.
+ *
+ * @param audio_data Pointer to the audio data.
+ * @param sample_count Number of samples in the audio data.
+ * @param sample_rate Sample rate of the audio data.
+ * @param file_path Path where the WAV file should be saved.
+ * @return 0 on success, non-zero on failure.
+ */
+CACTUS_FFI_EXPORT int cactus_save_wav_c(
+    const float* audio_data,
+    int32_t sample_count,
+    int32_t sample_rate,
+    const char* file_path
+);
+
+/** @brief Frees the audio data array allocated by the C API. */
+CACTUS_FFI_EXPORT void cactus_free_audio_data_c(cactus_tts_result_c_t* result);
 
 // --- Memory Freeing Functions ---
 // These MUST be called from Dart to free memory allocated by the C layer.
