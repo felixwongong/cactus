@@ -13,6 +13,7 @@ set(CACTUS_CORE_SOURCES
     cactus_embedding.cpp
     cactus_lora.cpp
     cactus_ffi.cpp
+    cactus_tts.cpp
     mtmd.cpp
     mtmd-helper.cpp
     clip.cpp

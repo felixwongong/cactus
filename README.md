@@ -17,7 +17,7 @@
 [discord-shield]: https://img.shields.io/badge/Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white
 [discord-url]: https://discord.gg/j4SS7Nwr
 
-[docs-shield]: https://img.shields.io/badge/Design_Docs-009485?style=for-the-badge&logo=readthedocs&logoColor=white
+[docs-shield]: https://img.shields.io/badge/DeepWiki-009485?style=for-the-badge&logo=readthedocs&logoColor=white
 [docs-url]: https://deepwiki.com/cactus-compute/cactus
 
 [website-shield]: https://img.shields.io/badge/Website-black?style=for-the-badge&logo=safari&logoColor=white
@@ -49,7 +49,10 @@ Contributors with any of the above experiences are welcome! Feel free to submit 
 - [Examples](#examples)
 - [Getting Started](#getting-started)
 - [Flutter (Dart)](#flutter-dart)
-- [React Native (TypeScript/JavaScript)](#react-native-typescriptjavascript)
+- [React Native (TS/JS)](#react-native-tsjs)
+- [Cactus Engine (C++) On-boarding](#cactus-engine-c-on-boarding)
+- [Docs](#docs)
+- [Contributing](#contributing)
 
 ## Technical Architecture
 
@@ -145,7 +148,7 @@ flutter pub get
 
 Full setup and API details are available in the [Flutter README](cactus-flutter/README.md).
 
-## React Native (TypeScript/JavaScript)
+## React Native (TS/JS)
 
 **1. Install Package:**
 
@@ -165,3 +168,50 @@ npx pod-install
 ```
 
 For more detailed documentation and examples, see the [React Native README](cactus-react/README.md).
+
+
+## Cactus Engine (C++) On-boarding
+
+Cactus backend is written in C/C++, layered on top of GGML/GGUF to support models in the GGUF format. Developers and contributors in this niche can easily get started with examples for:
+
+*   **Language Models:**
+    1.  Navigate to the example directory: `cd example/cpp-llm`
+    2.  Make the build script executable (only needs to be done once): `chmod +x build.sh`
+    3.  Run the example: `./build.sh` (This will download the Qwen 3 model)
+    4.  Play with models and prompts in `example/cpp-llm/main.cpp`. 
+
+*   **Vision-Language Models:**
+    1.  Navigate to the example directory: `cd example/cpp-vlm`
+    2.  Make the build script executable (only needs to be done once): `chmod +x build.sh`
+    3.  Run the example: `./build.sh` (This will download the SmolVLM model)
+    4.  Play with models and prompts in `example/cpp-vlm/main.cpp`.
+
+*   **Text-to-Speech:**
+    1.  Navigate to the example directory: `cd example/cpp-tts`
+    2.  Make the build script executable (only needs to be done once): `chmod +x build.sh`
+    3.  Run the example: `./build.sh` (This will download the OuteTTS model)
+    4.  Play with models and prompts in `example/cpp-tts/main.cpp`.
+
+Explanatory comments are included in each file, enjoy experimenting with the examples!
+
+## Docs
+
+[![Docs][docs-shield]][docs-url]
+
+We host our docs on Deep Wiki, so you can additionally ask Devin any question about Cactus! It does not index frequently enough to keep up with our update speed though, so we have manually written docs for the APIs
+
+1) [C++ Docs](docs/core.md)
+2) FLutter & React loading...
+
+## Contributing
+
+We welcome contributions! Here's how you can help:
+
+1.  **Clone the Repository:** For simplicity at this stage, clone the repository to your local machine.
+2.  **Create a Branch:** Create a new branch for your contribution.
+3.  **Implement Changes:** Make your desired changes or additions.
+4.  **Run Tests (for C/C++ contributors):**
+    *   Ensure all tests pass by running the script: `scripts/test-cactus.sh`
+5.  **Flutter & React-Native Testing:** (Testing procedures for these platforms will be updated soon.)
+6.  **Submit a Pull Request (PR):** Once you're ready, submit a PR with your changes!
+7.  **Contribution Ideas** Example apps, polishing the examples, features, submitting benchmarks, etc.

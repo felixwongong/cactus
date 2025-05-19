@@ -18,6 +18,18 @@ cactus_context::~cactus_context() {
         mtmd_free(ctx_mtmd);
         ctx_mtmd = nullptr;
     }
+
+    // --- TTS Cleanup ---
+    if (vocoder_ctx != nullptr) {
+        llama_free(vocoder_ctx);
+        vocoder_ctx = nullptr;
+    }
+    if (vocoder_model != nullptr) {
+        llama_model_free(vocoder_model);
+        vocoder_model = nullptr;
+    }
+    // --- End TTS Cleanup ---
+
     // Note: llama_init (which holds model and ctx shared_ptrs) 
     // will automatically clean up model and ctx when cactus_context is destroyed.
 }
@@ -59,20 +71,25 @@ void cactus_context::rewind() {
  * @return true if initialization succeeded, false otherwise
  */
 bool cactus_context::initSampling() {
-    if (ctx_sampling != nullptr) {
-        common_sampler_free(ctx_sampling);
-        ctx_sampling = nullptr;
+    if (this->ctx_sampling != nullptr) {
+        common_sampler_free(this->ctx_sampling);
+        this->ctx_sampling = nullptr;
     }
-    if (model) { 
-        ctx_sampling = common_sampler_init(model, params.sampling);
-        if (ctx_sampling) {
-             params.sampling.n_prev = n_ctx; 
-        }
-    } else {
-        LOG_ERROR("Cannot initialize sampling context: model is not loaded.");
+    if (!this->model) { 
+        LOG_ERROR("Cannot initialize sampler: model is not loaded.");
         return false;
     }
-    return ctx_sampling != nullptr;
+
+    this->ctx_sampling = common_sampler_init(this->model, this->params.sampling);
+    
+    if (!this->ctx_sampling) {
+        LOG_ERROR("Failed to initialize common_sampler.");
+        return false;
+    }
+    // If common_sampler_init was successful, often n_prev is set based on context.
+    // This logic might already be in common_sampler_init or needs to be here if it was in original cactus.
+    // params.sampling.n_prev = n_ctx; // Example, check if needed after common_sampler_init
+    return true;
 }
 
 

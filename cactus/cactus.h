@@ -135,13 +135,20 @@ struct cactus_context {
     common_params params;            /**< Model and generation parameters */
     common_init_result llama_init;   /**< llama.cpp initialization result */
 
-    llama_model *model = nullptr;    /**< Pointer to the llama model */
+    llama_model *model = nullptr;    /**< Shared pointer to the llama model */
     float loading_progress = 0;      /**< Model loading progress (0-1) */
     bool is_load_interrupted = false; /**< Whether model loading was interrupted */
 
     llama_context *ctx = nullptr;    /**< llama context for generation */
-    common_sampler *ctx_sampling = nullptr; /**< Sampler for token generation */
+    common_sampler *ctx_sampling = nullptr; /**< Sampler for token generation (using common_sampler) */
     common_chat_templates_ptr templates; /**< Chat templates for formatting */
+
+    // --- TTS Specific Members ---
+    llama_model *vocoder_model = nullptr;   /**< Pointer to the vocoder model */
+    llama_context *vocoder_ctx = nullptr; /**< llama context for the vocoder */
+    // Add speaker embedding data structure here if globally managed, e.g., json speaker_embedding_data;
+    // Or handle speaker data per synthesis call.
+    // --- End TTS Specific Members ---
 
     int n_ctx;                       /**< Context size */
 
@@ -182,6 +189,26 @@ struct cactus_context {
      * @return true if loading succeeded, false otherwise
      */
     bool loadModel(common_params &params_);
+    
+    /**
+     * @brief Loads the vocoder model for Text-to-Speech
+     * 
+     * @param vocoder_params Parameters for the vocoder model.
+     * @return true if loading succeeded, false otherwise.
+     */
+    bool loadVocoderModel(const common_params_vocoder &vocoder_params);
+
+    /**
+     * @brief Synthesizes speech from text and saves it to a WAV file.
+     * 
+     * Assumes primary TTS model and vocoder model have been loaded.
+     * 
+     * @param text The text to synthesize.
+     * @param output_wav_path Path to save the generated WAV file.
+     * @param speaker_id Optional identifier for a speaker (if using speaker embeddings).
+     * @return true if synthesis succeeded, false otherwise.
+     */
+    bool synthesizeSpeech(const std::string& text, const std::string& output_wav_path, const std::string& speaker_id = "");
     
     /**
      * @brief Validates if a chat template exists and is valid
