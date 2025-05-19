@@ -109,6 +109,35 @@ typedef struct cactus_completion_result_c {
 } cactus_completion_result_c_t;
 
 
+// --- TTS Specific Structures ---
+
+/**
+ * @brief Parameters for loading a vocoder model (mirrors internal common_params_model).
+ */
+typedef struct cactus_vocoder_model_params_c {
+    const char* path;    // Local path to the vocoder model file
+    // Add other fields like url, hf_repo, hf_file if needed for FFI-based downloading
+} cactus_vocoder_model_params_c_t;
+
+/**
+ * @brief Parameters for initializing the vocoder component within a cactus_context.
+ */
+typedef struct cactus_vocoder_load_params_c {
+    cactus_vocoder_model_params_c_t model_params; // Vocoder model details
+    const char* speaker_file;                     // Path to speaker embedding file (optional)
+    bool use_guide_tokens;                        // Whether to use guide tokens
+} cactus_vocoder_load_params_c_t;
+
+/**
+ * @brief Parameters for speech synthesis.
+ */
+typedef struct cactus_synthesize_speech_params_c {
+    const char* text_input;      // The text to synthesize
+    const char* output_wav_path; // Path to save the output WAV file
+    const char* speaker_id;      // Optional speaker ID (can be NULL or empty)
+} cactus_synthesize_speech_params_c_t;
+
+
 // --- Core API Functions ---
 
 /**
@@ -177,6 +206,36 @@ CACTUS_FFI_EXPORT char* cactus_detokenize_c(cactus_context_handle_t handle, cons
  * @return A struct containing the embedding values. Caller must free the `values` array using cactus_free_float_array_c.
  */
 CACTUS_FFI_EXPORT cactus_float_array_c_t cactus_embedding_c(cactus_context_handle_t handle, const char* text);
+
+// --- TTS API Functions ---
+
+/**
+ * @brief Loads the vocoder model required for Text-to-Speech.
+ *        This should be called after cactus_init_context_c if TTS is needed.
+ *        The main model (TTS model) should be loaded via cactus_init_context_c.
+ *
+ * @param handle The context handle returned by cactus_init_context_c.
+ * @param params Parameters for loading the vocoder model.
+ * @return 0 on success, non-zero on failure.
+ */
+CACTUS_FFI_EXPORT int cactus_load_vocoder_c(
+    cactus_context_handle_t handle,
+    const cactus_vocoder_load_params_c_t* params
+);
+
+/**
+ * @brief Synthesizes speech from the given text and saves it to a WAV file.
+ *        Both the main TTS model (via cactus_init_context_c) and the vocoder model
+ *        (via cactus_load_vocoder_c) must be loaded before calling this.
+ *
+ * @param handle The context handle.
+ * @param params Parameters for synthesis, including input text and output path.
+ * @return 0 on success, non-zero on failure.
+ */
+CACTUS_FFI_EXPORT int cactus_synthesize_speech_c(
+    cactus_context_handle_t handle,
+    const cactus_synthesize_speech_params_c_t* params
+);
 
 // --- Memory Freeing Functions ---
 // These MUST be called from Dart to free memory allocated by the C layer.

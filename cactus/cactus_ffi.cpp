@@ -386,4 +386,70 @@ void cactus_free_completion_result_members_c(cactus_completion_result_c_t* resul
     }
 }
 
+// --- TTS API Function Implementations ---
+
+int cactus_load_vocoder_c(
+    cactus_context_handle_t handle,
+    const cactus_vocoder_load_params_c_t* params
+) {
+    if (!handle || !params || !params->model_params.path) {
+        std::cerr << "Error: Invalid arguments to cactus_load_vocoder_c." << std::endl;
+        return -1; // Invalid arguments
+    }
+    cactus::cactus_context* context = reinterpret_cast<cactus::cactus_context*>(handle);
+
+    try {
+        common_params_vocoder vocoder_cpp_params;
+        vocoder_cpp_params.model.path = params->model_params.path;
+        // Note: common_params_model has url, hf_repo, hf_file which are not in cactus_vocoder_model_params_c_t yet.
+        // Add them to cactus_vocoder_model_params_c_t and here if FFI-based downloading is a requirement.
+
+        if (params->speaker_file) {
+            vocoder_cpp_params.speaker_file = params->speaker_file;
+        }
+        vocoder_cpp_params.use_guide_tokens = params->use_guide_tokens;
+
+        if (!context->loadVocoderModel(vocoder_cpp_params)) {
+            std::cerr << "Error: Failed to load vocoder model." << std::endl;
+            return -2; // Vocoder model loading failed
+        }
+        return 0; // Success
+    } catch (const std::exception& e) {
+        std::cerr << "Exception in cactus_load_vocoder_c: " << e.what() << std::endl;
+        return -3; // Exception occurred
+    } catch (...) {
+        std::cerr << "Unknown exception in cactus_load_vocoder_c." << std::endl;
+        return -4; // Unknown exception
+    }
+}
+
+int cactus_synthesize_speech_c(
+    cactus_context_handle_t handle,
+    const cactus_synthesize_speech_params_c_t* params
+) {
+    if (!handle || !params || !params->text_input || !params->output_wav_path) {
+        std::cerr << "Error: Invalid arguments to cactus_synthesize_speech_c." << std::endl;
+        return -1; // Invalid arguments
+    }
+    cactus::cactus_context* context = reinterpret_cast<cactus::cactus_context*>(handle);
+
+    try {
+        std::string text_input_str = params->text_input;
+        std::string output_wav_path_str = params->output_wav_path;
+        std::string speaker_id_str = params->speaker_id ? params->speaker_id : "";
+
+        if (!context->synthesizeSpeech(text_input_str, output_wav_path_str, speaker_id_str)) {
+            std::cerr << "Error: Speech synthesis failed." << std::endl;
+            return -2; // Synthesis failed
+        }
+        return 0; // Success
+    } catch (const std::exception& e) {
+        std::cerr << "Exception in cactus_synthesize_speech_c: " << e.what() << std::endl;
+        return -3; // Exception occurred
+    } catch (...) {
+        std::cerr << "Unknown exception in cactus_synthesize_speech_c." << std::endl;
+        return -4; // Unknown exception
+    }
+}
+
 } // extern "C" 
