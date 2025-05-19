@@ -34,6 +34,7 @@ Flutter and React-Native.
 
 Cactus currently leverages GGML backends to support any GGUF model already compatible with [![Llama.cpp](https://img.shields.io/badge/Llama.cpp-000000?style=flat&logo=github&logoColor=white)](https://github.com/ggerganov/llama.cpp), while we focus on broadly supporting every moblie app development platform, as well as upcoming features like:
 
+- agentic workflows (cross-app interactions etc.)
 - phone tool use (gallery search, read email, DM...) 
 - thinking mode (planning, evals...) 
 - higher-level APIs (sentiments, OCR, TTS...) 
