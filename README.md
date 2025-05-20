@@ -4,15 +4,9 @@
 [![Discord][discord-shield]][discord-url]
 [![Design Docs][docs-shield]][docs-url]
 ![License](https://img.shields.io/github/license/cactus-compute/cactus?style=for-the-badge)
-[![Stars][stars-shield]][github-url]
-[![Forks][forks-shield]][github-url]
-
 
 [gmail-shield]: https://img.shields.io/badge/Gmail-red?style=for-the-badge&logo=gmail&logoColor=white
 [gmail-url]: founders@cactuscompute.com
-
-[linkedin-shield]: https://img.shields.io/badge/-LinkedIn-blue.svg?style=for-the-badge&logo=linkedin&colorB=blue
-[linkedin-url]: https://www.linkedin.com/company/106281696
 
 [discord-shield]: https://img.shields.io/badge/Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white
 [discord-url]: https://discord.gg/j4SS7Nwr
@@ -20,34 +14,31 @@
 [docs-shield]: https://img.shields.io/badge/DeepWiki-009485?style=for-the-badge&logo=readthedocs&logoColor=white
 [docs-url]: https://deepwiki.com/cactus-compute/cactus
 
-[website-shield]: https://img.shields.io/badge/Website-black?style=for-the-badge&logo=safari&logoColor=white
-[website-url]: https://cactuscompute.com
+Cactus is a lightweight, high-performance framework for running AI models on mobile devices, with simple and consistent APIs across Flutter and React-Native. Cactus currently leverages GGML backends to support any GGUF model already compatible with Llama.cpp. 
 
-[stars-shield]: https://img.shields.io/github/stars/cactus-compute/cactus?style=for-the-badge&color=yellow
-[forks-shield]: https://img.shields.io/github/forks/cactus-compute/cactus?style=for-the-badge&color=blue
-[issues-shield]: https://img.shields.io/github/issues/cactus-compute/cactus?style=for-the-badge
-[prs-shield]: https://img.shields.io/github/issues-pr/cactus-compute/cactus?style=for-the-badge
-[github-url]: https://github.com/cactus-compute/cactus
+## ![Features](https://img.shields.io/badge/Features-grey.svg?style=for-the-badge)
 
-Cactus is a lightweight, high-performance framework for running AI models on mobile devices, with simple and consistent APIs across Flutter and React-Native. Cactus currently leverages GGML backends to support any GGUF model already compatible with [![Llama.cpp](https://img.shields.io/badge/Llama.cpp-000000?style=flat&logo=github&logoColor=white)](https://github.com/ggerganov/llama.cpp), we are empowering models on mobile on-device with more upcoming functionalities:
+Shipped: 
 
-- agentic workflows (cross-app interactions etc.)
-- phone tool use (gallery search, read email, DM...) 
-- thinking mode (planning, evals...) 
-- higher-level APIs (sentiments, OCR, TTS...) 
+- Text completion and chat completion
+- Vision Language Models
+- Streaming token generation 
+- Embedding generation
+- Text-to-speech model support (early stages)
+- JSON mode with schema validation
+- Chat templates with Jinja2 support
+- Low memory footprint
+- Battery-efficient inference
+- Background processing
 
-## Table of Contents
+Upcoming:
 
-- [Architecture](#architecture)
-- [Flutter](#flutter)
-- [React Native](#react-native)
-- [C++](#c)
-- [Docs](#docs)
-- [Example Apps](#example-apps)
-- [Contributions](#contributions)
-- [Performance](#performance)
+- Agentic workflows (cross-app interactions etc.)
+- Phone tool use (gallery search, read email, DM...) 
+- Thinking mode (planning, evals...) 
+- Higher-level APIs (sentiments, OCR, TTS...) 
 
-## Architecture
+## ![Architecture](https://img.shields.io/badge/Architecture-grey.svg?style=for-the-badge)
 
 ```
 ┌─────────────────────────────────────────────────────────┐
@@ -69,21 +60,8 @@ Cactus is a lightweight, high-performance framework for running AI models on mob
 │   Llama.cpp Core    │ │    GGML/GGUF Model Format       │
 └─────────────────────┘ └─────────────────────────────────┘
 ```
-- **Features**:
-  - Text completion and chat completion
-  - Vision Language Models
-  - Streaming token generation 
-  - Embedding generation
-  - Text-to-speech model support (early stages)
-  - JSON mode with schema validation
-  - Chat templates with Jinja2 support
-  - Low memory footprint
-  - Battery-efficient inference
-  - Background processing
 
-## ![Flutter](https://img.shields.io/badge/Flutter-%2302569B.svg?style=for-the-badge&logo=Flutter&logoColor=white)
-
-To integrate Cactus into your Flutter application:
+## ![Flutter](https://img.shields.io/badge/Flutter-grey.svg?style=for-the-badge&logo=Flutter&logoColor=white)
 
 1.  **Update `pubspec.yaml`:**
     Add `cactus` to your project's dependencies. Ensure you have `flutter: sdk: flutter` (usually present by default).
@@ -99,9 +77,7 @@ To integrate Cactus into your Flutter application:
     flutter pub get
     ```
 
-## ![React Native](https://img.shields.io/badge/React%20Native-%2320232a.svg?style=for-the-badge&logo=react&logoColor=%2361DAFB)
-
-To use Cactus in your React Native project:
+## ![React Native](https://img.shields.io/badge/React%20Native-grey.svg?style=for-the-badge&logo=react&logoColor=%2361DAFB)
 
 1.  **Install the `cactus-react-native` package:**
     Using npm:
@@ -115,14 +91,10 @@ To use Cactus in your React Native project:
 2.  **Install iOS Pods (if not using Expo):**
     For native iOS projects, ensure you link the native dependencies. Navigate to your `ios` directory and run:
     ```bash
-    pod install
-    ```
-    Alternatively, you can run this command from your project root (often simpler):
-    ```bash
     npx pod-install
     ```
 
-## ![C++](https://img.shields.io/badge/C%2B%2B-%2300599C.svg?style=for-the-badge&logo=c%2B%2B&logoColor=white)
+## ![C++](https://img.shields.io/badge/C%2B%2B-grey.svg?style=for-the-badge&logo=c%2B%2B&logoColor=white)
 
 Cactus backend is written in C/C++, layered on top of GGML/GGUF to support models in the GGUF format. Developers and contributors in this niche can easily get started with examples for:
 
@@ -156,7 +128,7 @@ We host our docs on Deep Wiki, so you can additionally ask Devin any question ab
 - [React-Native Docs](cactus-react/README.md))
 
 
-## ![Example Apps](https://img.shields.io/badge/Examples-coral.svg?style=for-the-badge)
+## ![Example Apps](https://img.shields.io/badge/Examples-grey.svg?style=for-the-badge)
 
 We have ready-to-run-and-deploy example apps:
 
@@ -169,7 +141,7 @@ We have ready-to-run-and-deploy example apps:
 7. [C++ Vision-Language Model (VLM)](examples/cpp-vlm)
 8. [C++ Text-to-Speech (TTS)](examples/cpp-tts)
 
-## ![Contributions](https://img.shields.io/badge/Contributions-olive.svg?style=for-the-badge)
+## ![Contributions](https://img.shields.io/badge/Contributions-grey.svg?style=for-the-badge)
 
 We welcome contributions! Here's how you can help:
 
@@ -182,7 +154,7 @@ We welcome contributions! Here's how you can help:
 6.  **Submit a Pull Request (PR):** Once you're ready, submit a PR with your changes!
 7.  **Contribution Ideas** Example apps, polishing the examples, features, submitting benchmarks, etc.
 
-## ![Performance](https://img.shields.io/badge/Performance-red.svg?style=for-the-badge)
+## ![Performance](https://img.shields.io/badge/Performance-grey.svg?style=for-the-badge)
 
 | Device                        | Gemma-3 1B Q8 (toks/sec) | Qwen-2.5 1.5B Q8 (toks/sec) | SmolLM2 360M Q8 (toks/sec) |
 |:------------------------------|:------------------------:|:---------------------------:|:--------------------------:|
