@@ -553,4 +553,55 @@ int cactus_synthesize_speech_c(
     }
 }
 
+/**
+ * @brief Formats a list of chat messages using the appropriate chat template.  
+ * @param handle The handle to the cactus context.
+ * @param messages_json A JSON string representing an array of chat messages (e.g., [{"role": "user", "content": "Hello"}]).
+ * @param override_chat_template An optional chat template string to use. If NULL or empty,
+ *                               the template from context initialization or the model's default will be used.
+ * @return A newly allocated C string containing the fully formatted prompt. Caller must free using cactus_free_string_c.
+ *         Returns an empty string on failure.
+ */
+char* cactus_get_formatted_chat_c(
+    cactus_context_handle_t handle,
+    const char* messages_json,
+    const char* override_chat_template
+) {
+    if (!handle || !messages_json) {
+        std::cerr << "Error: Invalid arguments to cactus_get_formatted_chat_c (handle or messages_json is null)." << std::endl;
+        return safe_strdup(""); // Return empty string on error to avoid crashing Dart side
+    }
+
+    cactus::cactus_context* context = reinterpret_cast<cactus::cactus_context*>(handle);
+    if (!context->ctx) { // Ensure the underlying llama_context is initialized
+        std::cerr << "Error: cactus_context not fully initialized (llama_context is null) in cactus_get_formatted_chat_c." << std::endl;
+        return safe_strdup("");
+    }
+
+    try {
+        std::string messages_std_string(messages_json);
+        std::string template_to_use_std_string;
+
+        if (override_chat_template && strlen(override_chat_template) > 0) {
+            template_to_use_std_string = override_chat_template;
+        } else if (!context->params.chat_template.empty()) {
+            template_to_use_std_string = context->params.chat_template;
+        }
+
+        std::string formatted_prompt_std_string = context->getFormattedChat(
+            messages_std_string,
+            template_to_use_std_string
+        );
+        
+        return safe_strdup(formatted_prompt_std_string);
+
+    } catch (const std::exception& e) {
+        std::cerr << "Exception in cactus_get_formatted_chat_c: " << e.what() << std::endl;
+        return safe_strdup(""); 
+    } catch (...) {
+        std::cerr << "Unknown exception in cactus_get_formatted_chat_c." << std::endl;
+        return safe_strdup("");
+    }
+}
+
 } // extern "C" 

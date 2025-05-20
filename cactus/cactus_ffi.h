@@ -242,6 +242,23 @@ CACTUS_FFI_EXPORT int cactus_synthesize_speech_c(
 );
 
 
+/**
+ * @brief Formats a list of chat messages using the appropriate chat template.
+ *
+ * @param handle The context handle.
+ * @param messages_json A JSON string representing an array of chat messages (e.g., [{"role": "user", "content": "Hello"}]).
+ * @param override_chat_template An optional chat template string to use. If NULL or empty,
+ *                               the template from context initialization or the model's default will be used.
+ * @return A newly allocated C string containing the fully formatted prompt. Caller must free using cactus_free_string_c.
+ *         Returns an empty string on failure.
+ */
+CACTUS_FFI_EXPORT char* cactus_get_formatted_chat_c(
+    cactus_context_handle_t handle,
+    const char* messages_json,
+    const char* override_chat_template
+);
+
+
 /** @brief Frees a string allocated by the C API. */
 CACTUS_FFI_EXPORT void cactus_free_string_c(char* str);
 

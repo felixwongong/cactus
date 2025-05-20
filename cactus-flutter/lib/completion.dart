@@ -13,6 +13,10 @@ class CactusCompletionParams {
   /// or contain a single user message with the prompt.
   final List<ChatMessage> messages;
 
+  /// Optional path to an image file for multimodal models (e.g., LLaVA).
+  /// If provided, the model will process this image in conjunction with the text prompt.
+  final String? imagePath;
+
   /// The maximum number of tokens to predict (often `n_predict`).
   /// A value of -1 means predict indefinitely (until EOS or other stopping conditions).
   /// Defaults to -1.
@@ -114,9 +118,15 @@ class CactusCompletionParams {
   /// Return `false` from the callback to stop the generation early.
   final CactusTokenCallback? onNewToken;
 
+  /// Optional custom chat template string (e.g., a Jinja2-like format) to override
+  /// the one set during context initialization for this specific completion request.
+  /// If null or empty, the context's default or the model's internal template is used.
+  final String? chatTemplate;
+
   /// Creates parameters for a completion request.
   CactusCompletionParams({
     required this.messages,
+    this.imagePath,
     this.maxPredictedTokens = -1,
     this.threads = 0,
     this.seed = -1,
@@ -137,6 +147,7 @@ class CactusCompletionParams {
     this.stopSequences,
     this.grammar,
     this.onNewToken,
+    this.chatTemplate,
   });
 }
 

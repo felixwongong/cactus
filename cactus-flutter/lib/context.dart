@@ -11,6 +11,7 @@ import './init_params.dart';
 import './completion.dart';
 import './model_downloader.dart';
 import './chat.dart';
+import './tts_params.dart';
 
 // --- Custom Exception Classes ---
 
@@ -52,6 +53,12 @@ class CactusCompletionException extends CactusException {
 class CactusOperationException extends CactusException {
   CactusOperationException(String operation, String message, [dynamic underlyingError])
       : super('$operation failed: $message', underlyingError);
+}
+
+/// Exception thrown for errors during TTS operations.
+class CactusTTSException extends CactusException {
+  CactusTTSException(String operation, String message, [dynamic underlyingError])
+      : super('TTS $operation failed: $message', underlyingError);
 }
 
 // --- End Custom Exception Classes ---
@@ -186,6 +193,7 @@ class CactusContext {
     
     final cParams = calloc<bindings.CactusInitParamsC>();
     Pointer<Utf8> modelPathC = nullptr;
+    Pointer<Utf8> mmprojPathC = nullptr;
     Pointer<Utf8> chatTemplateForC = nullptr;
     Pointer<Utf8> cacheTypeKC = nullptr;
     Pointer<Utf8> cacheTypeVC = nullptr;
@@ -194,16 +202,22 @@ class CactusContext {
     try {
       modelPathC = effectiveModelPath.toNativeUtf8(allocator: calloc);
       
-      // Use user-provided template or the default Jinja template
-      final String templateToUse = (params.chatTemplate != null && params.chatTemplate!.isNotEmpty)
-          ? params.chatTemplate!
-          : defaultChatMLTemplate;
-      chatTemplateForC = templateToUse.toNativeUtf8(allocator: calloc);
+      if (params.mmprojPath != null && params.mmprojPath!.isNotEmpty) {
+        mmprojPathC = params.mmprojPath!.toNativeUtf8(allocator: calloc);
+      }
+      
+      // Now, pass the user-provided template, or nullptr to let native side use model's default.
+      if (params.chatTemplate != null && params.chatTemplate!.isNotEmpty) {
+        chatTemplateForC = params.chatTemplate!.toNativeUtf8(allocator: calloc);
+      } else {
+        chatTemplateForC = nullptr; // Let native side use its default if no template is supplied by user for init
+      }
       
       cacheTypeKC = params.cacheTypeK?.toNativeUtf8(allocator: calloc) ?? nullptr;
       cacheTypeVC = params.cacheTypeV?.toNativeUtf8(allocator: calloc) ?? nullptr;
 
       cParams.ref.model_path = modelPathC;
+      cParams.ref.mmproj_path = mmprojPathC ?? nullptr;
       cParams.ref.chat_template = chatTemplateForC;
       cParams.ref.n_ctx = params.contextSize;
       cParams.ref.n_batch = params.batchSize;
@@ -238,6 +252,7 @@ class CactusContext {
       throw CactusInitializationException(msg, e);
     } finally {
       if (modelPathC != nullptr) calloc.free(modelPathC);
+      if (mmprojPathC != nullptr) calloc.free(mmprojPathC);
       if (chatTemplateForC != nullptr) calloc.free(chatTemplateForC);
       if (cacheTypeKC != nullptr) calloc.free(cacheTypeKC);
       if (cacheTypeVC != nullptr) calloc.free(cacheTypeVC);
@@ -381,20 +396,23 @@ class CactusContext {
     Pointer<bindings.CactusCompletionParamsC> cCompParams = nullptr;
     Pointer<bindings.CactusCompletionResultC> cResult = nullptr;
     Pointer<Utf8> promptC = nullptr;
+    Pointer<Utf8> imagePathC = nullptr;
     Pointer<Utf8> grammarC = nullptr;
     Pointer<Pointer<Utf8>> stopSequencesC = nullptr;
 
     try {
-      // --- Prompt Formatting: Always send messages as JSON ---
-      // Assumes the native side (if using Jinja or another template) can parse this.
-      final List<Map<String, String>> messagesJson = params.messages.map((m) => m.toJson()).toList();
-      final String formattedPrompt = jsonEncode(messagesJson);
+      // --- Prompt Formatting: Use new _getFormattedChat method ---
+      final String formattedPromptString = await _getFormattedChat(params.messages, params.chatTemplate);
       // --- End Prompt Formatting ---
 
       cCompParams = calloc<bindings.CactusCompletionParamsC>();
       cResult = calloc<bindings.CactusCompletionResultC>();
-      promptC = formattedPrompt.toNativeUtf8(allocator: calloc);
+      promptC = formattedPromptString.toNativeUtf8(allocator: calloc);
       grammarC = params.grammar?.toNativeUtf8(allocator: calloc) ?? nullptr;
+
+      if (params.imagePath != null && params.imagePath!.isNotEmpty) {
+        imagePathC = params.imagePath!.toNativeUtf8(allocator: calloc);
+      }
 
       if (params.stopSequences != null && params.stopSequences!.isNotEmpty) {
         stopSequencesC = calloc<Pointer<Utf8>>(params.stopSequences!.length);
@@ -410,6 +428,7 @@ class CactusContext {
       }
 
       cCompParams.ref.prompt = promptC;
+      cCompParams.ref.image_path = imagePathC ?? nullptr;
       cCompParams.ref.n_predict = params.maxPredictedTokens;
       cCompParams.ref.n_threads = params.threads;
       cCompParams.ref.seed = params.seed;
@@ -459,6 +478,7 @@ class CactusContext {
       _currentOnNewTokenCallback = null; 
 
       if (promptC != nullptr) calloc.free(promptC);
+      if (imagePathC != nullptr) calloc.free(imagePathC);
       if (grammarC != nullptr) calloc.free(grammarC);
       if (stopSequencesC != nullptr) {
         for (int i = 0; i < (params.stopSequences?.length ?? 0); i++) {
@@ -484,4 +504,122 @@ class CactusContext {
   void stopCompletion() {
     bindings.stopCompletion(_handle);
   }
+
+  // +++ New Helper Method +++
+  Future<String> _getFormattedChat(List<ChatMessage> messages, String? overrideChatTemplate) async {
+    Pointer<Utf8> messagesJsonC = nullptr;
+    Pointer<Utf8> overrideChatTemplateC = nullptr;
+    Pointer<Utf8> formattedPromptC = nullptr;
+    try {
+      final messagesJsonString = jsonEncode(messages.map((m) => m.toJson()).toList());
+      messagesJsonC = messagesJsonString.toNativeUtf8(allocator: calloc);
+
+      if (overrideChatTemplate != null && overrideChatTemplate.isNotEmpty) {
+        overrideChatTemplateC = overrideChatTemplate.toNativeUtf8(allocator: calloc);
+      } else {
+        // If no override, pass nullptr to let native use context's default (from init) or model's default
+        overrideChatTemplateC = nullptr;
+      }
+
+      formattedPromptC = bindings.getFormattedChat(_handle, messagesJsonC, overrideChatTemplateC);
+
+      if (formattedPromptC == nullptr) {
+        throw CactusOperationException("ChatFormatting", "Native chat formatting returned null. Ensure 'cactus_get_formatted_chat_c' is implemented correctly in native code.");
+      }
+      final formattedPrompt = formattedPromptC.toDartString();
+      return formattedPrompt;
+    } catch (e) {
+      // Log or handle the error appropriately
+      if (e is CactusException) rethrow;
+      throw CactusOperationException("ChatFormatting", "Error during _getFormattedChat: ${e.toString()}", e);
+    } finally {
+      if (messagesJsonC != nullptr) calloc.free(messagesJsonC);
+      if (overrideChatTemplateC != nullptr) calloc.free(overrideChatTemplateC);
+      if (formattedPromptC != nullptr) bindings.freeString(formattedPromptC);
+    }
+  }
+  // +++ End New Helper Method +++
+
+  // --- New TTS Methods ---
+
+  /// Loads the vocoder model required for Text-to-Speech operations.
+  ///
+  /// This should be called after [CactusContext.init] if TTS is needed.
+  /// The main TTS model (if separate) should be loaded via [CactusContext.init].
+  ///
+  /// [vocoderParams] Parameters for loading the vocoder model.
+  /// Throws [CactusTTSException] if loading fails.
+  Future<void> loadVocoder(VocoderLoadParams vocoderParams) async {
+    Pointer<bindings.CactusVocoderLoadParamsC> cLoadParams = nullptr;
+    Pointer<Utf8> vocoderModelPathC = nullptr;
+    Pointer<Utf8> speakerFileC = nullptr;
+
+    try {
+      cLoadParams = calloc<bindings.CactusVocoderLoadParamsC>();
+      
+      // VocoderModelParams is nested, so we need to allocate its path separately
+      vocoderModelPathC = vocoderParams.modelParams.path.toNativeUtf8(allocator: calloc);
+      cLoadParams.ref.model_params.path = vocoderModelPathC;
+
+      if (vocoderParams.speakerFile != null && vocoderParams.speakerFile!.isNotEmpty) {
+        speakerFileC = vocoderParams.speakerFile!.toNativeUtf8(allocator: calloc);
+      }
+      cLoadParams.ref.speaker_file = speakerFileC ?? nullptr;
+      cLoadParams.ref.use_guide_tokens = vocoderParams.useGuideTokens;
+
+      final status = bindings.loadVocoder(_handle, cLoadParams);
+      if (status != 0) {
+        throw CactusTTSException("LoadVocoder", "Native vocoder loading failed with status: $status. Check native logs.");
+      }
+    } catch (e) {
+      if (e is CactusException) rethrow;
+      throw CactusTTSException("LoadVocoder", "Error during vocoder loading: ${e.toString()}", e);
+    } finally {
+      if (vocoderModelPathC != nullptr) calloc.free(vocoderModelPathC);
+      if (speakerFileC != nullptr) calloc.free(speakerFileC);
+      if (cLoadParams != nullptr) calloc.free(cLoadParams);
+    }
+  }
+
+  /// Synthesizes speech from the given text and saves it to a WAV file.
+  ///
+  /// Both the main TTS model (via [CactusContext.init]) and the vocoder model
+  /// (via [loadVocoder]) must be loaded before calling this.
+  ///
+  /// [ttsParams] Parameters for synthesis, including input text and output path.
+  /// Throws [CactusTTSException] if synthesis fails.
+  Future<void> synthesizeSpeech(SynthesizeSpeechParams ttsParams) async {
+    Pointer<bindings.CactusSynthesizeSpeechParamsC> cSynthParams = nullptr;
+    Pointer<Utf8> textInputC = nullptr;
+    Pointer<Utf8> outputWavPathC = nullptr;
+    Pointer<Utf8> speakerIdC = nullptr;
+
+    try {
+      cSynthParams = calloc<bindings.CactusSynthesizeSpeechParamsC>();
+
+      textInputC = ttsParams.textInput.toNativeUtf8(allocator: calloc);
+      outputWavPathC = ttsParams.outputWavPath.toNativeUtf8(allocator: calloc);
+      if (ttsParams.speakerId != null && ttsParams.speakerId!.isNotEmpty) {
+        speakerIdC = ttsParams.speakerId!.toNativeUtf8(allocator: calloc);
+      }
+
+      cSynthParams.ref.text_input = textInputC;
+      cSynthParams.ref.output_wav_path = outputWavPathC;
+      cSynthParams.ref.speaker_id = speakerIdC ?? nullptr;
+
+      final status = bindings.synthesizeSpeech(_handle, cSynthParams);
+      if (status != 0) {
+        throw CactusTTSException("SynthesizeSpeech", "Native speech synthesis failed with status: $status. Check native logs.");
+      }
+    } catch (e) {
+      if (e is CactusException) rethrow;
+      throw CactusTTSException("SynthesizeSpeech", "Error during speech synthesis: ${e.toString()}", e);
+    } finally {
+      if (textInputC != nullptr) calloc.free(textInputC);
+      if (outputWavPathC != nullptr) calloc.free(outputWavPathC);
+      if (speakerIdC != nullptr) calloc.free(speakerIdC);
+      if (cSynthParams != nullptr) calloc.free(cSynthParams);
+    }
+  }
+  // --- End New TTS Methods ---
 } 

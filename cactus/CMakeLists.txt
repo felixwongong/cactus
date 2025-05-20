@@ -5,6 +5,7 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 set(CACTUS_CORE_SOURCES
+    cactus.cpp
     cactus_context.cpp
     cactus_loader.cpp
     cactus_completion.cpp

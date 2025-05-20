@@ -28,6 +28,10 @@ class CactusInitParams {
   /// A default name like "downloaded_model.gguf" is used if inference fails.
   final String? modelFilename;
 
+  /// Optional path to a multimodal projector file (e.g., for LLaVA models).
+  /// This is used in conjunction with the main model file for vision capabilities.
+  final String? mmprojPath;
+
   /// Optional custom chat template string (e.g., a Jinja2-like format).
   ///
   /// If null or empty, the native layer will attempt to use a default template
@@ -144,6 +148,7 @@ class CactusInitParams {
     this.modelPath,
     this.modelUrl,
     this.modelFilename,
+    this.mmprojPath,
     this.chatTemplate,
     this.contextSize = 512,
     this.batchSize = 512,

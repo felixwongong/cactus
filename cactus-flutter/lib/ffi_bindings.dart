@@ -8,6 +8,7 @@ typedef CactusContextHandle = Pointer<CactusContextOpaque>;
 
 final class CactusInitParamsC extends Struct {
   external Pointer<Utf8> model_path;
+  external Pointer<Utf8> mmproj_path;
   external Pointer<Utf8> chat_template; 
 
   @Int32()
@@ -40,6 +41,8 @@ final class CactusInitParamsC extends Struct {
 
 final class CactusCompletionParamsC extends Struct {
   external Pointer<Utf8> prompt;
+  external Pointer<Utf8> image_path;
+
   @Int32()
   external int n_predict;
   @Int32()
@@ -111,6 +114,24 @@ final class CactusCompletionResultC extends Struct {
   external Pointer<Utf8> stopping_word;
 }
 
+final class CactusVocoderModelParamsC extends Struct {
+  external Pointer<Utf8> path;
+}
+
+final class CactusVocoderLoadParamsC extends Struct {
+  external CactusVocoderModelParamsC model_params;
+
+  external Pointer<Utf8> speaker_file;
+  @Bool()
+  external bool use_guide_tokens;
+}
+
+final class CactusSynthesizeSpeechParamsC extends Struct {
+  external Pointer<Utf8> text_input;
+  external Pointer<Utf8> output_wav_path;
+  external Pointer<Utf8> speaker_id;
+}
+
 typedef InitContextCNative = Pointer<CactusContextOpaque> Function(
     Pointer<CactusInitParamsC> params);
 typedef InitContextDart = Pointer<CactusContextOpaque> Function(
@@ -139,6 +160,34 @@ typedef DetokenizeDart = Pointer<Utf8> Function(CactusContextHandle handle, Poin
 
 typedef EmbeddingCNative = CactusFloatArrayC Function(CactusContextHandle handle, Pointer<Utf8> text);
 typedef EmbeddingDart = CactusFloatArrayC Function(CactusContextHandle handle, Pointer<Utf8> text);
+
+typedef GetFormattedChatCNative = Pointer<Utf8> Function(
+    CactusContextHandle handle,
+    Pointer<Utf8> messages_json,
+    Pointer<Utf8> override_chat_template);
+
+typedef GetFormattedChatDart = Pointer<Utf8> Function(
+    CactusContextHandle handle,
+    Pointer<Utf8> messages_json,
+    Pointer<Utf8> override_chat_template);
+
+typedef LoadVocoderCNative = Int32 Function(
+    CactusContextHandle handle,
+    Pointer<CactusVocoderLoadParamsC> params
+);
+typedef LoadVocoderDart = int Function(
+    CactusContextHandle handle,
+    Pointer<CactusVocoderLoadParamsC> params
+);
+
+typedef SynthesizeSpeechCNative = Int32 Function(
+    CactusContextHandle handle,
+    Pointer<CactusSynthesizeSpeechParamsC> params
+);
+typedef SynthesizeSpeechDart = int Function(
+    CactusContextHandle handle,
+    Pointer<CactusSynthesizeSpeechParamsC> params
+);
 
 typedef FreeStringCNative = Void Function(Pointer<Utf8> str);
 typedef FreeStringDart = void Function(Pointer<Utf8> str);
@@ -196,6 +245,10 @@ final embedding = cactusLib
     .lookup<NativeFunction<EmbeddingCNative>>('cactus_embedding_c')
     .asFunction<EmbeddingDart>();
 
+final getFormattedChat = cactusLib
+    .lookup<NativeFunction<GetFormattedChatCNative>>('cactus_get_formatted_chat_c')
+    .asFunction<GetFormattedChatDart>();
+
 final freeString = cactusLib
     .lookup<NativeFunction<FreeStringCNative>>('cactus_free_string_c')
     .asFunction<FreeStringDart>();
@@ -211,3 +264,11 @@ final freeFloatArray = cactusLib
 final freeCompletionResultMembers = cactusLib
     .lookup<NativeFunction<FreeCompletionResultMembersCNative>>('cactus_free_completion_result_members_c')
     .asFunction<FreeCompletionResultMembersDart>();
+
+final loadVocoder = cactusLib
+    .lookup<NativeFunction<LoadVocoderCNative>>('cactus_load_vocoder_c')
+    .asFunction<LoadVocoderDart>();
+
+final synthesizeSpeech = cactusLib
+    .lookup<NativeFunction<SynthesizeSpeechCNative>>('cactus_synthesize_speech_c')
+    .asFunction<SynthesizeSpeechDart>();
