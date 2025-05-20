@@ -1,4 +1,4 @@
-<img src="assets/banner.jpg" alt="Logo" style="border-radius: 30px; width: 80%;">
+<img src="assets/banner.jpg" alt="Logo" style="border-radius: 30px; width: 10%;">
 
 [![Email][gmail-shield]][gmail-url]&nbsp;&nbsp;&nbsp;[![Discord][discord-shield]][discord-url]&nbsp;&nbsp;&nbsp;[![Design Docs][docs-shield]][docs-url]&nbsp;&nbsp;&nbsp;[![Apache 2.0][apache-shield]][apache-url]
 
