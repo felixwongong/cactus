@@ -13,9 +13,7 @@
 
 Cactus is a lightweight, high-performance framework for running AI models on mobile devices, with simple and consistent APIs across Flutter and React-Native. Cactus currently leverages GGML backends to support any GGUF model already compatible with Llama.cpp. 
 
-## ![Features](https://img.shields.io/badge/Features-grey.svg?style=for-the-badge)
-
-Shipped: 
+## ![Shippes](https://img.shields.io/badge/Shipped-grey.svg?style=for-the-badge)
 
 - Text completion and chat completion
 - Vision Language Models
@@ -28,7 +26,7 @@ Shipped:
 - Battery-efficient inference
 - Background processing
 
-Upcoming:
+## ![Upcoming](https://img.shields.io/badge/Upcoming-grey.svg?style=for-the-badge)
 
 - Agentic workflows (cross-app interactions etc.)
 - Phone tool use (gallery search, read email, DM...) 
