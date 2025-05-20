@@ -3,7 +3,7 @@
 [![Email][gmail-shield]][gmail-url]&nbsp;&nbsp;&nbsp;[![Discord][discord-shield]][discord-url]&nbsp;&nbsp;&nbsp;[![Design Docs][docs-shield]][docs-url]&nbsp;&nbsp;&nbsp;
 
 [gmail-shield]: https://img.shields.io/badge/Gmail-red?style=for-the-badge&logo=gmail&logoColor=white
-[gmail-url]: founders@cactuscompute.com
+[gmail-url]: mailto:founders@cactuscompute.com
 
 [discord-shield]: https://img.shields.io/badge/Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white
 [discord-url]: https://discord.gg/j4SS7Nwr
