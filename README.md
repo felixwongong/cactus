@@ -1,6 +1,6 @@
 <img src="assets/banner.jpg" alt="Logo" style="border-radius: 30px; width: 100%;">
 
-[![Email][gmail-shield]][gmail-url]&nbsp;&nbsp;&nbsp;[![Discord][discord-shield]][discord-url]&nbsp;&nbsp;&nbsp;[![Design Docs][docs-shield]][docs-url]&nbsp;&nbsp;&nbsp;[![Apache 2.0][apache-shield]][apache-url]
+[![Email][gmail-shield]][gmail-url]&nbsp;&nbsp;&nbsp;[![Discord][discord-shield]][discord-url]&nbsp;&nbsp;&nbsp;[![Design Docs][docs-shield]][docs-url]&nbsp;&nbsp;&nbsp;
 
 [gmail-shield]: https://img.shields.io/badge/Gmail-red?style=for-the-badge&logo=gmail&logoColor=white
 [gmail-url]: founders@cactuscompute.com
@@ -10,8 +10,6 @@
 
 [docs-shield]: https://img.shields.io/badge/DeepWiki-009485?style=for-the-badge&logo=readthedocs&logoColor=white
 [docs-url]: https://deepwiki.com/cactus-compute/cactus
-[apache-shield]: https://img.shields.io/badge/Apache%202.0-blue.svg?style=for-the-badge&logo=apache&logoColor=white
-[apache-url]: https://www.apache.org/licenses/LICENSE-2.0
 
 Cactus is a lightweight, high-performance framework for running AI models on mobile devices, with simple and consistent APIs across Flutter and React-Native. Cactus currently leverages GGML backends to support any GGUF model already compatible with Llama.cpp. 
 
@@ -40,24 +38,24 @@ Upcoming:
 ## ![Architecture](https://img.shields.io/badge/Architecture-grey.svg?style=for-the-badge)
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                     Applications                        │
-└───────────────┬─────────────────┬───────────────────────┘
-                │                 │                
-┌───────────────┼─────────────────┼───────────────────────-┐
-│ ┌─────────────▼─────┐ ┌─────────▼───────┐ ┌─────────────┐|
-│ │     React API     │ │   Flutter API   │ │  Native APIs│|
-│ └───────────────────┘ └─────────────────┘ └─────────────┘|
-│                Platform Bindings                         │
-└───────────────┬─────────────────┬───────────────────────-┘
-                │                 │                
-┌───────────────▼─────────────────▼───────────────────────┐
-│                 Cactus Core (C++)                       │
-└───────────────┬─────────────────┬───────────────────────┘
-                │                 │                
-┌───────────────▼─────┐ ┌─────────▼───────────────────────┐
-│   Llama.cpp Core    │ │    GGML/GGUF Model Format       │
-└─────────────────────┘ └─────────────────────────────────┘
+┌─────────────────────────────────────────┐
+│                   Apps                  │
+└─────────────┬─────────────┬─────────────┘
+              │             │              
+┌─────────────▼─────────────▼─────────────┐
+│   ┌───-───┐   ┌────-────┐   ┌───-───┐   │
+│   │ React │   │ Flutter │   │ Native│   │
+│   └───────┘   └─────────┘   └───────┘   │
+│                 Bindings                │
+└─────────────┬─────────────┬─────────────┘
+              │             │              
+┌─────────────▼─────────────▼─────────────┐
+│              Cactus Core C++            │
+└─────────────┬─────────────┬─────────────┘
+              │             │       
+       ┌─────-▼────┐  ┌─────▼─────┐  
+       │ Llama.cpp │  │ GGML/GGUF │  
+       └───────────┘  └───────────┘  
 ```
 
 ## ![Flutter](https://img.shields.io/badge/Flutter-grey.svg?style=for-the-badge&logo=Flutter&logoColor=white)
@@ -187,7 +185,7 @@ We welcome contributions! Here's how you can help:
 
 ##
 
-we created a demo chat app we use for benchmarking, you can download and try different models:
+We created a demo chat app we use for benchmarking:
 
 [![Download App](https://img.shields.io/badge/Download_iOS_App-grey?style=for-the-badge&logo=apple&logoColor=white)](https://apps.apple.com/gb/app/cactus-chat/id6744444212)
 [![Download App](https://img.shields.io/badge/Download_Android_App-grey?style=for-the-badge&logo=android&logoColor=white)](https://play.google.com/store/apps/details?id=com.rshemetsubuser.myapp&pcampaignid=web_share)
