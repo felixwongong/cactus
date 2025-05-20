@@ -1,20 +1,19 @@
-![Logo](assets/banner.jpg)
+<img src="assets/banner.jpg" alt="Logo" style="border-radius: 50px; width: 100%;">
 
-[![Email][gmail-shield]][gmail-url]
-[![Discord][discord-shield]][discord-url]
-[![Design Docs][docs-shield]][docs-url]
-![License](https://img.shields.io/github/license/cactus-compute/cactus?style=for-the-badge)
+A lightweight, high-performance framework for running AI models on mobile devices, with simple and consistent APIs across Flutter and React-Native. Cactus currently leverages GGML backends to support any GGUF model already compatible with Llama.cpp. 
 
-[gmail-shield]: https://img.shields.io/badge/Gmail-red?style=for-the-badge&logo=gmail&logoColor=white
+[![Email][gmail-shield]][gmail-url]&nbsp;&nbsp;&nbsp;[![Discord][discord-shield]][discord-url]&nbsp;&nbsp;&nbsp;[![Design Docs][docs-shield]][docs-url]&nbsp;&nbsp;&nbsp;[![Apache 2.0][apache-shield]][apache-url]
+
+[gmail-shield]: https://img.shields.io/badge/Gmail-red?style=plastic&logo=gmail&logoColor=white
 [gmail-url]: founders@cactuscompute.com
 
-[discord-shield]: https://img.shields.io/badge/Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white
+[discord-shield]: https://img.shields.io/badge/Discord-5865F2?style=plastic&logo=discord&logoColor=white
 [discord-url]: https://discord.gg/j4SS7Nwr
 
-[docs-shield]: https://img.shields.io/badge/DeepWiki-009485?style=for-the-badge&logo=readthedocs&logoColor=white
+[docs-shield]: https://img.shields.io/badge/DeepWiki-009485?style=plastic&logo=readthedocs&logoColor=white
 [docs-url]: https://deepwiki.com/cactus-compute/cactus
-
-Cactus is a lightweight, high-performance framework for running AI models on mobile devices, with simple and consistent APIs across Flutter and React-Native. Cactus currently leverages GGML backends to support any GGUF model already compatible with Llama.cpp. 
+[apache-shield]: https://img.shields.io/badge/Apache%202.0-blue.svg?style=plastic&logo=apache&logoColor=white
+[apache-url]: https://www.apache.org/licenses/LICENSE-2.0
 
 ## ![Features](https://img.shields.io/badge/Features-grey.svg?style=for-the-badge)
 
