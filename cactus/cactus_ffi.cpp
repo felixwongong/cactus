@@ -10,6 +10,7 @@
 #include <cstdlib> 
 #include <sstream> 
 #include <iostream> 
+#include <cstdio> // For printf
 
 
 /**
@@ -53,6 +54,46 @@ static char* safe_strdup(const std::string& str) {
 
 extern "C" {
 
+CACTUS_FFI_EXPORT cactus_init_params_c_t cactus_default_init_params_c() {
+    common_params cpp_defaults; // C++ default construction
+    cactus_init_params_c_t c_params = {}; // Zero-initialize C struct first
+
+    // Manually translate relevant fields from cpp_defaults to c_params
+    // Paths will be null by default, user must set them.
+    // cpp_defaults.model.path and mmproj.path are std::string, convert to const char*
+    // For strings, if the default is empty, it's fine, they'll be nullptr or empty string after strdup.
+    // However, for most paths, the C++ default is an empty string, which is not useful for the C FFI user directly.
+    // It's better to leave path char* as nullptr by default from zero-initialization.
+
+    c_params.chat_template = nullptr; // Default to nullptr, model/library will pick internal default.
+
+    c_params.n_ctx = cpp_defaults.n_ctx;
+    c_params.n_batch = cpp_defaults.n_batch;
+    c_params.n_ubatch = cpp_defaults.n_ubatch;
+    c_params.n_gpu_layers = cpp_defaults.n_gpu_layers; // Key field for GPU offload default (-1)
+    c_params.n_threads = cpp_defaults.cpuparams.n_threads;
+    c_params.use_mmap = cpp_defaults.use_mmap;
+    c_params.use_mlock = cpp_defaults.use_mlock;
+    c_params.embedding = cpp_defaults.embedding;
+    c_params.pooling_type = static_cast<int32_t>(cpp_defaults.pooling_type);
+    c_params.embd_normalize = cpp_defaults.embd_normalize;
+    c_params.flash_attn = cpp_defaults.flash_attn;
+    
+    // For cache_type_k and cache_type_v, common_params defaults to F16. 
+    // We need to convert these enum values back to strings for the C API if needed,
+    // or decide on a string default. For simplicity, let's default to nullptr, meaning
+    // the underlying C++ layer will use its F16 default if these are not set by the user.
+    c_params.cache_type_k = nullptr; 
+    c_params.cache_type_v = nullptr;
+
+    c_params.progress_callback = nullptr;
+    c_params.warmup = cpp_defaults.warmup;
+    c_params.mmproj_use_gpu = cpp_defaults.mmproj_use_gpu;
+    c_params.main_gpu = cpp_defaults.main_gpu;
+
+    return c_params;
+}
+
 /**
  * @brief Initializes a new cactus context with the given parameters.
  * This function loads the model and prepares it for use.
@@ -61,20 +102,26 @@ extern "C" {
  * @return A handle to the created cactus context, or nullptr on failure.
  */
 cactus_context_handle_t cactus_init_context_c(const cactus_init_params_c_t* params) {
-    if (!params || !params->model_path) {
+    printf("[DEBUG] cactus_ffi.cpp: Entering cactus_init_context_c\n");
+    if (!params) {
+        printf("[ERROR] cactus_ffi.cpp: cactus_init_params_c_t is NULL\n");
         return nullptr;
     }
 
     cactus::cactus_context* context = nullptr;
     try {
         context = new cactus::cactus_context();
+        printf("[DEBUG] cactus_ffi.cpp: cactus_context object created\n");
 
         common_params cpp_params;
         cpp_params.model.path = params->model_path;
-        if (params->mmproj_path) {
+        printf("[DEBUG] cactus_ffi.cpp: model_path = %s\n", params->model_path ? params->model_path : "NULL");
+        if (params->mmproj_path && params->mmproj_path[0] != '\0') {
             cpp_params.mmproj.path = params->mmproj_path;
+        } else {
+            cpp_params.mmproj.path = "";
         }
-        if (params->chat_template) {
+        if (params->chat_template && params->chat_template[0] != '\0') {
             cpp_params.chat_template = params->chat_template;
         }
         cpp_params.n_ctx = params->n_ctx;
@@ -120,21 +167,26 @@ cactus_context_handle_t cactus_init_context_c(const cactus_init_params_c_t* para
              cpp_params.progress_callback = nullptr;
              cpp_params.progress_callback_user_data = nullptr;
         }
+        cpp_params.warmup = params->warmup;
+        cpp_params.mmproj_use_gpu = params->mmproj_use_gpu;
 
         if (!context->loadModel(cpp_params)) {
             // loadModel logs errors internally
             delete context;
+            printf("[ERROR] cactus_ffi.cpp: loadModel failed\n");
             return nullptr;
         }
+        printf("[DEBUG] cactus_ffi.cpp: loadModel succeeded\n");
 
         return reinterpret_cast<cactus_context_handle_t>(context);
 
     } catch (const std::exception& e) {
-        std::cerr << "Error initializing context: " << e.what() << std::endl;
+        // It's good practice to log the exception message if possible
+        printf("[ERROR] cactus_ffi.cpp: Exception during context initialization: %s\n", e.what());
         if (context) delete context;
         return nullptr;
     } catch (...) {
-        std::cerr << "Unknown error initializing context." << std::endl;
+        printf("[ERROR] cactus_ffi.cpp: Unknown exception during context initialization\n");
         if (context) delete context;
         return nullptr;
     }

@@ -56,6 +56,9 @@ typedef struct cactus_init_params_c {
     const char* cache_type_k; 
     const char* cache_type_v; 
     void (*progress_callback)(float progress); 
+    bool warmup;
+    bool mmproj_use_gpu;
+    int32_t main_gpu;
 
 } cactus_init_params_c_t;
 
@@ -137,6 +140,8 @@ typedef struct cactus_synthesize_speech_params_c {
     const char* speaker_id;      // Optional speaker ID (can be NULL or empty)
 } cactus_synthesize_speech_params_c_t;
 
+
+CACTUS_FFI_EXPORT cactus_init_params_c_t cactus_default_init_params_c();
 
 /**
  * @brief Initializes a cactus context with the given parameters.

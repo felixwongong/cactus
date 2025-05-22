@@ -11,7 +11,7 @@
 
 namespace cactus {
 
-bool cactus_verbose = false; 
+bool cactus_verbose = true; 
 
 void log(const char *level, const char *function, int line,
                 const char *format, ...)

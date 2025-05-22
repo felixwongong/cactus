@@ -63,9 +63,11 @@ class CactusInitParams {
   ///
   /// Offloading layers to the GPU can significantly speed up inference.
   /// A value of 0 means CPU-only inference. Positive values indicate the number of layers.
+  /// If null (the default), the native library's default behavior is used (typically
+  /// attempting to offload all possible layers, equivalent to -1 in the C++ backend).
   /// The optimal number depends on the model and available VRAM.
-  /// Defaults to 0.
-  final int gpuLayers;
+  /// Defaults to null.
+  final int? gpuLayers;
 
   /// Number of threads to use for computation on the CPU.
   ///
@@ -153,7 +155,7 @@ class CactusInitParams {
     this.contextSize = 512,
     this.batchSize = 512,
     this.ubatchSize = 512,
-    this.gpuLayers = 0,
+    this.gpuLayers,
     this.threads = 4,
     this.useMmap = true,
     this.useMlock = false,

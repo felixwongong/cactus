@@ -32,7 +32,6 @@ set(PUBLIC_HEADERS
 
 # Create library target
 add_library(cactus SHARED
-    ${SOURCE_DIR}/cactus.cpp
     ${SOURCE_DIR}/cactus_context.cpp
     ${SOURCE_DIR}/cactus_loader.cpp
     ${SOURCE_DIR}/cactus_completion.cpp

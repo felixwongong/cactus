@@ -1,8 +1,8 @@
 #include "ggml.h"  
 #include "cactus.h"
-#include "common.h"
-#include "mtmd.h" 
 #include <stdexcept> 
+#include "llama.h"
+#include <vector>
 
 namespace cactus {
 
@@ -23,6 +23,7 @@ bool cactus_context::loadModel(common_params &params_)
         LOG_ERROR("unable to load model: %s", params.model.path.c_str());
         return false;
     }
+
     templates = common_chat_templates_init(model, params.chat_template);
     n_ctx = llama_n_ctx(ctx);
 
@@ -30,13 +31,59 @@ bool cactus_context::loadModel(common_params &params_)
         struct mtmd_context_params mtmd_params = mtmd_context_params_default();
         mtmd_params.use_gpu = params.mmproj_use_gpu;
         mtmd_params.n_threads = params.cpuparams.n_threads; 
-        mtmd_params.verbosity = params.verbosity > 0 ? GGML_LOG_LEVEL_INFO : GGML_LOG_LEVEL_ERROR; 
+        mtmd_params.verbosity = params.verbosity > 0 ? LM_GGML_LOG_LEVEL_INFO : LM_GGML_LOG_LEVEL_ERROR; 
         ctx_mtmd = mtmd_init_from_file(params.mmproj.path.c_str(), model, mtmd_params);
 
         if (ctx_mtmd == nullptr) {
             LOG_ERROR("Failed to initialize mtmd_context with mmproj: %s", params.mmproj.path.c_str());
         } else {
             LOG_INFO("mtmd_context initialized successfully with mmproj: %s", params.mmproj.path.c_str());
+
+            if (ctx != nullptr) {
+                LOG_INFO("Performing dummy multimodal decode to ensure graph allocator is prepared...");
+                
+                const int n_embd_model = llama_model_n_embd(model);
+                const int n_dummy_img_tokens = 1;
+
+                if (n_embd_model > 0) {
+                    std::vector<float> dummy_embd_vec(n_dummy_img_tokens * n_embd_model, 0.0f);
+                    
+                    std::vector<llama_pos> dummy_pos_vec(n_dummy_img_tokens);
+                    std::vector<int32_t> dummy_n_seq_id_vec(n_dummy_img_tokens);
+                    std::vector<llama_seq_id*> dummy_seq_id_ptr_vec(n_dummy_img_tokens);
+                    std::vector<llama_seq_id> dummy_seq_id_val_vec(n_dummy_img_tokens);
+
+                    for(int i = 0; i < n_dummy_img_tokens; ++i) {
+                        dummy_pos_vec[i] = i;
+                        dummy_n_seq_id_vec[i] = 1;
+                        dummy_seq_id_val_vec[i] = 0;
+                        dummy_seq_id_ptr_vec[i] = &dummy_seq_id_val_vec[i];
+                    }
+                    
+                    struct llama_batch dummy_batch = {
+                        n_dummy_img_tokens,
+                        nullptr,
+                        dummy_embd_vec.data(),
+                        dummy_pos_vec.data(),
+                        dummy_n_seq_id_vec.data(),
+                        dummy_seq_id_ptr_vec.data(),
+                        nullptr
+                    };
+
+                    int decode_result = llama_decode(ctx, dummy_batch);
+                    if (decode_result != 0) {
+                        LOG_WARNING("Dummy multimodal decode finished with code %d. This might be expected during initial graph preparation if internal reservation occurs.", decode_result);
+                    } else {
+                        LOG_INFO("Dummy multimodal decode successful.");
+                    }
+
+                    llama_kv_self_clear(ctx);
+                    LOG_INFO("KV cache cleared after dummy decode.");
+
+                } else {
+                    LOG_WARNING("Model embedding size is 0, skipping dummy multimodal decode.");
+                }
+            }
         }
     } else if (!params.mmproj.path.empty() && model == nullptr) {
         LOG_ERROR("Cannot initialize mtmd_context because base model failed to load.");
