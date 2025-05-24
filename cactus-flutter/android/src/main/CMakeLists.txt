@@ -9,7 +9,6 @@ include_directories(${SOURCE_DIR} ${SOURCE_DIR}/ggml-cpu)
 
 set(
     SOURCE_FILES
-    ${SOURCE_DIR}/cactus.cpp
     ${SOURCE_DIR}/cactus_context.cpp
     ${SOURCE_DIR}/cactus_loader.cpp
     ${SOURCE_DIR}/cactus_completion.cpp
@@ -55,10 +54,8 @@ set(
     ${SOURCE_DIR}/json-schema-to-grammar.cpp
     ${SOURCE_DIR}/unicode.cpp
     ${SOURCE_DIR}/unicode-data.cpp
+    ${SOURCE_DIR}/cactus_bench.cpp
     ${SOURCE_DIR}/cactus_chat.cpp
-    ${SOURCE_DIR}/json.hpp
-
-    # ggml-cpu files
     ${SOURCE_DIR}/ggml-cpu/amx/amx.cpp
     ${SOURCE_DIR}/ggml-cpu/amx/mmq.cpp
     ${SOURCE_DIR}/ggml-cpu/ggml-cpu.c
@@ -71,6 +68,7 @@ set(
     ${SOURCE_DIR}/ggml-cpu/sgemm.cpp
     ${SOURCE_DIR}/ggml-cpu/vec.cpp
     ${SOURCE_DIR}/ggml-cpu/ops.cpp
+    ${SOURCE_DIR}/json.hpp
 )
 
 find_library(LOG_LIB log)
