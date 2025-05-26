@@ -142,6 +142,23 @@ class CactusInitParams {
   /// which includes model download (if applicable) and native context setup.
   final OnInitProgress? onInitProgress;
 
+  /// Whether to perform a warmup run after model loading to pre-initialize GPU kernels
+  /// and other components. This can reduce the latency of the first inference request.
+  /// Corresponds to the `warmup` field in the native parameters.
+  /// Defaults to false.
+  final bool warmup;
+
+  /// Whether to attempt to use the GPU for the multimodal projector (mmproj) model,
+  /// if one is loaded and GPU support is active.
+  /// Corresponds to the `mmproj_use_gpu` field in the native parameters.
+  /// Defaults to true (assuming if GPU is used for main model, it might be for mmproj too).
+  final bool mmprojUseGpu;
+
+  /// The index of the main GPU to use for model offloading, relevant in multi-GPU setups.
+  /// Corresponds to the `main_gpu` field in the native parameters.
+  /// Defaults to 0.
+  final int mainGpu;
+
   /// Creates parameters for [CactusContext] initialization.
   ///
   /// At least one of [modelPath] or [modelUrl] must be provided.
@@ -166,6 +183,9 @@ class CactusInitParams {
     this.cacheTypeK,
     this.cacheTypeV,
     this.onInitProgress,
+    this.warmup = false,
+    this.mmprojUseGpu = true,
+    this.mainGpu = 0,
   }) {
     if (modelPath == null && modelUrl == null) {
       throw ArgumentError('Either modelPath or modelUrl must be provided.');

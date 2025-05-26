@@ -12,6 +12,9 @@
 #include <iostream> 
 #include <cstdio> // For printf
 
+// Bring symbols from the cactus namespace into the current scope for unqualified lookup.
+// This will allow the 'log' call within the LOG_INFO macro to find 'cactus::log'.
+using namespace cactus;
 
 /**
  * @brief Converts a C-style array of strings to a C++ vector of strings.
@@ -235,9 +238,11 @@ int cactus_completion_c(
     try {
         context->rewind();
 
-        context->params.prompt = params->prompt;
+        if (params->prompt) {
+            context->params.prompt = params->prompt;
+        }
 
-        if (params->image_path) {
+        if (params->image_path && params->image_path[0] != '\0') {
             context->params.image.clear();
             context->params.image.push_back(params->image_path);
         } else {

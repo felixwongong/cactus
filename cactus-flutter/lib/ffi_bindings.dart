@@ -37,6 +37,12 @@ final class CactusInitParamsC extends Struct {
   external Pointer<Utf8> cache_type_v;
 
   external Pointer<NativeFunction<Void Function(Float)>> progress_callback;
+  @Bool()
+  external bool warmup;
+  @Bool()
+  external bool mmproj_use_gpu;
+  @Int32()
+  external int main_gpu;
 }
 
 final class CactusCompletionParamsC extends Struct {
@@ -272,3 +278,162 @@ final loadVocoder = cactusLib
 final synthesizeSpeech = cactusLib
     .lookup<NativeFunction<SynthesizeSpeechCNative>>('cactus_synthesize_speech_c')
     .asFunction<SynthesizeSpeechDart>();
+
+// +++ LoRA Adapter Management FFI Definitions +++
+final class CactusLoraAdapterInfoC extends Struct {
+  external Pointer<Utf8> path;
+  @Float()
+  external double scale; // Dart double for C float
+}
+
+typedef ApplyLoraAdaptersCNative = Int32 Function(
+    CactusContextHandle handle,
+    Pointer<CactusLoraAdapterInfoC> adapters,
+    Int32 count);
+typedef ApplyLoraAdaptersDart = int Function(
+    CactusContextHandle handle,
+    Pointer<CactusLoraAdapterInfoC> adapters,
+    int count);
+
+typedef RemoveLoraAdaptersCNative = Void Function(CactusContextHandle handle);
+typedef RemoveLoraAdaptersDart = void Function(CactusContextHandle handle);
+
+typedef GetLoadedLoraAdaptersCNative = Pointer<CactusLoraAdapterInfoC> Function(
+    CactusContextHandle handle,
+    Pointer<Int32> count);
+typedef GetLoadedLoraAdaptersDart = Pointer<CactusLoraAdapterInfoC> Function(
+    CactusContextHandle handle,
+    Pointer<Int32> count);
+
+typedef FreeLoraAdaptersArrayCNative = Void Function(
+    Pointer<CactusLoraAdapterInfoC> adapters,
+    Int32 count);
+typedef FreeLoraAdaptersArrayDart = void Function(
+    Pointer<CactusLoraAdapterInfoC> adapters,
+    int count);
+// --- End LoRA FFI Definitions ---
+
+
+// +++ Benchmarking FFI Definitions +++
+typedef BenchCNative = Pointer<Utf8> Function(
+    CactusContextHandle handle,
+    Int32 pp,
+    Int32 tg,
+    Int32 pl,
+    Int32 nr);
+typedef BenchDart = Pointer<Utf8> Function(
+    CactusContextHandle handle,
+    int pp,
+    int tg,
+    int pl,
+    int nr);
+// --- End Benchmarking FFI Definitions ---
+
+
+// +++ Advanced Chat Formatting FFI Definitions +++
+final class CactusFormattedChatResultC extends Struct {
+  external Pointer<Utf8> prompt;
+  external Pointer<Utf8> grammar;
+  // Add other fields here if they were added to the C struct
+}
+
+typedef GetFormattedChatJinjaCNative = Int32 Function(
+    CactusContextHandle handle,
+    Pointer<Utf8> messages_json,
+    Pointer<Utf8> override_chat_template,
+    Pointer<Utf8> json_schema,
+    Pointer<Utf8> tools_json,
+    Bool parallel_tool_calls,
+    Pointer<Utf8> tool_choice,
+    Pointer<CactusFormattedChatResultC> result);
+typedef GetFormattedChatJinjaDart = int Function(
+    CactusContextHandle handle,
+    Pointer<Utf8> messages_json,
+    Pointer<Utf8> override_chat_template,
+    Pointer<Utf8> json_schema,
+    Pointer<Utf8> tools_json,
+    bool parallel_tool_calls,
+    Pointer<Utf8> tool_choice,
+    Pointer<CactusFormattedChatResultC> result);
+
+typedef FreeFormattedChatResultMembersCNative = Void Function(
+    Pointer<CactusFormattedChatResultC> result);
+typedef FreeFormattedChatResultMembersDart = void Function(
+    Pointer<CactusFormattedChatResultC> result);
+// --- End Advanced Chat Formatting FFI Definitions ---
+
+
+// +++ Model Information and Validation FFI Definitions +++
+typedef ValidateModelChatTemplateCNative = Bool Function(
+    CactusContextHandle handle,
+    Bool use_jinja,
+    Pointer<Utf8> name);
+typedef ValidateModelChatTemplateDart = bool Function(
+    CactusContextHandle handle,
+    bool use_jinja,
+    Pointer<Utf8> name);
+
+final class CactusModelMetaC extends Struct {
+  external Pointer<Utf8> desc;
+  @Int64()
+  external int size;
+  @Int64()
+  external int n_params;
+}
+
+typedef GetModelMetaCNative = Void Function(
+    CactusContextHandle handle,
+    Pointer<CactusModelMetaC> meta);
+typedef GetModelMetaDart = void Function(
+    CactusContextHandle handle,
+    Pointer<CactusModelMetaC> meta);
+
+typedef FreeModelMetaMembersCNative = Void Function(
+    Pointer<CactusModelMetaC> meta);
+typedef FreeModelMetaMembersDart = void Function(
+    Pointer<CactusModelMetaC> meta);
+// --- End Model Information and Validation FFI Definitions ---
+
+// +++ LoRA Lookups +++
+final applyLoraAdapters = cactusLib
+    .lookup<NativeFunction<ApplyLoraAdaptersCNative>>('cactus_apply_lora_adapters_c')
+    .asFunction<ApplyLoraAdaptersDart>();
+
+final removeLoraAdapters = cactusLib
+    .lookup<NativeFunction<RemoveLoraAdaptersCNative>>('cactus_remove_lora_adapters_c')
+    .asFunction<RemoveLoraAdaptersDart>();
+
+final getLoadedLoraAdapters = cactusLib
+    .lookup<NativeFunction<GetLoadedLoraAdaptersCNative>>('cactus_get_loaded_lora_adapters_c')
+    .asFunction<GetLoadedLoraAdaptersDart>();
+
+final freeLoraAdaptersArray = cactusLib
+    .lookup<NativeFunction<FreeLoraAdaptersArrayCNative>>('cactus_free_lora_adapters_array_c')
+    .asFunction<FreeLoraAdaptersArrayDart>();
+
+// +++ Benchmarking Lookup +++
+final bench = cactusLib
+    .lookup<NativeFunction<BenchCNative>>('cactus_bench_c')
+    .asFunction<BenchDart>();
+
+// +++ Advanced Chat Formatting Lookups +++
+final getFormattedChatJinja = cactusLib
+    .lookup<NativeFunction<GetFormattedChatJinjaCNative>>('cactus_get_formatted_chat_jinja_c')
+    .asFunction<GetFormattedChatJinjaDart>();
+
+final freeFormattedChatResultMembers = cactusLib
+    .lookup<NativeFunction<FreeFormattedChatResultMembersCNative>>('cactus_free_formatted_chat_result_members_c')
+    .asFunction<FreeFormattedChatResultMembersDart>();
+
+// +++ Model Info/Validation Lookups +++
+final validateModelChatTemplate = cactusLib
+    .lookup<NativeFunction<ValidateModelChatTemplateCNative>>('cactus_validate_model_chat_template_c')
+    .asFunction<ValidateModelChatTemplateDart>();
+
+final getModelMeta = cactusLib
+    .lookup<NativeFunction<GetModelMetaCNative>>('cactus_get_model_meta_c')
+    .asFunction<GetModelMetaDart>();
+
+final freeModelMetaMembers = cactusLib
+    .lookup<NativeFunction<FreeModelMetaMembersCNative>>('cactus_free_model_meta_members_c')
+    .asFunction<FreeModelMetaMembersDart>();

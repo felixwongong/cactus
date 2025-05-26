@@ -57,6 +57,14 @@ void cactus_context::truncatePrompt(std::vector<llama_token> &prompt_tokens) {
  * Otherwise, it processes as a text-only prompt.
  */
 void cactus_context::loadPrompt() {
+    // Automatically prepend <__image__> tag if an image is provided and the tag is missing.
+    if (!this->params.image.empty() && !this->params.image[0].empty()) {
+        if (this->params.prompt.find("<__image__>") == std::string::npos) {
+            this->params.prompt = "<__image__>\n" + this->params.prompt;
+            LOG_INFO("Automatically prepended <__image__> tag to prompt in CactusContext::loadPrompt().");
+        }
+    }
+
     // Ensure embd is clear for this new prompt load, n_past should be 0 (typically after rewind)
     // rewind() clears embd and sets n_past to 0.
     // If loadPrompt is called without rewind, existing n_past and embd state might interfere.

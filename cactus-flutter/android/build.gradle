@@ -10,7 +10,7 @@ buildscript {
     }
 
     dependencies {
-        classpath("com.android.tools.build:gradle:8.7.0")
+        classpath 'com.android.tools.build:gradle:7.3.0' // Or your preferred AGP version
     }
 }
 
@@ -25,79 +25,83 @@ apply plugin: "com.android.library"
 
 task unzipJniLibsTask(type: Copy) {
     def jniLibsDir = file("src/main/jniLibs")
-    def jniLibsZipFile = file("jniLibs.zip") // Assumes jniLibs.zip is in cactus-flutter/android/
+    def jniLibsZipFile = file("jniLibs.zip") 
 
+    // Only run if the zip file exists AND the jniLibs dir is missing or perhaps a marker file from last unzip is missing.
+    // This prevents re-unzipping on every build if not necessary, but ensures it runs if zip is newer or target is clean.
+    // For simplicity now, we rely on doFirst to delete and recreate, ensuring it always runs if zip exists.
+    
     from zipTree(jniLibsZipFile)
     into jniLibsDir
-    // If your .zip file has an unnecessary leading directory, you might need:
-    // eachFile { fcd ->
-    //    fcd.relativePath = new RelativePath(true, fcd.relativePath.segments.drop(1))
-    // }
-
+    
     doFirst {
         if (!jniLibsZipFile.exists()) {
-            throw new InvalidUserDataException("jniLibs.zip not found at ${jniLibsZipFile.absolutePath}. This file is required for the cactus-flutter plugin.")
+            throw new InvalidUserDataException("!!! ERROR: jniLibs.zip not found at ${jniLibsZipFile.absolutePath}. Run the script that creates this (scripts/build-flutter-android.sh) first. This file is required for the cactus-flutter plugin.")
         }
-        println "unzipJniLibsTask: Deleting old jniLibs directory: ${jniLibsDir}"
+        println "=== CACTUS PLUGIN: unzipJniLibsTask: Deleting old jniLibs directory: ${jniLibsDir}"
         delete(jniLibsDir)
-        println "unzipJniLibsTask: Creating jniLibs directory: ${jniLibsDir}"
+        println "=== CACTUS PLUGIN: unzipJniLibsTask: Creating jniLibs directory: ${jniLibsDir}"
         jniLibsDir.mkdirs()
-        println "unzipJniLibsTask: Unzipping ${jniLibsZipFile.name} to ${jniLibsDir}"
+        println "=== CACTUS PLUGIN: unzipJniLibsTask: Unzipping ${jniLibsZipFile.name} to ${jniLibsDir}"
     }
 
     doLast {
-        println "unzipJniLibsTask: Finished unzipping ${jniLibsZipFile.name}."
-        // Example check for one of the expected files
+        println "=== CACTUS PLUGIN: unzipJniLibsTask: Finished unzipping ${jniLibsZipFile.name}."
         def unzippedSoFile = file("${jniLibsDir}/arm64-v8a/libcactus.so")
         if (unzippedSoFile.exists()) {
-            println "unzipJniLibsTask: Successfully unzipped ${unzippedSoFile.name} (size: ${unzippedSoFile.length()} bytes)"
+            println "=== CACTUS PLUGIN: unzipJniLibsTask: Successfully unzipped ${unzippedSoFile.name} (size: ${unzippedSoFile.length()} bytes)"
         } else {
-            println "unzipJniLibsTask: WARNING - ${unzippedSoFile.path} was not found after unzipping."
-            println "unzipJniLibsTask: Please ensure jniLibs.zip contains the expected .so files (e.g., arm64-v8a/libcactus.so)."
+            println "=== CACTUS PLUGIN: unzipJniLibsTask: CRITICAL WARNING - ${unzippedSoFile.path} was not found after unzipping."
+            println "=== CACTUS PLUGIN: unzipJniLibsTask: Please ensure jniLibs.zip contains the expected .so files (e.g., arm64-v8a/libcactus.so)."
             // List contents for debugging if the main file isn't found
-            println "Contents of ${jniLibsDir}:"
-            jniLibsDir.eachFileRecurse { f -> println "  - ${f.name}" }
+            println "=== CACTUS PLUGIN: Contents of ${jniLibsDir} after unzip attempt:"
+            if (jniLibsDir.exists()) {
+                jniLibsDir.eachFileRecurse { f -> println "    - ${f.name} (${f.length()} bytes)" }
+            } else {
+                println "    Directory ${jniLibsDir} does not exist."
+            }
         }
     }
 }
 
 android {
     namespace = "com.cactus.flutter"
-    compileSdk = 35
+    compileSdk = 35 // Or your preferred compile SDK
     ndkVersion = rootProject.ext.has("ndkVersion") ? rootProject.ext.get("ndkVersion") : "26.1.10909125"
 
     sourceSets {
-        main.jniLibs.srcDirs += ['src/main/jniLibs'] // Rely only on this for .so files
+        main.jniLibs.srcDirs += ['src/main/jniLibs'] // Gradle will pick up .so files from here
     }
 
     defaultConfig {
         minSdk = 21
-        // No ndk.abiFilters here, let jniLibs content define ABIs for packaging
-        // No externalNativeBuild.cmake block here for the module itself
     }
   
-    // No externalNativeBuild block here for the module itself
-
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
     }
 }
 
-afterEvaluate {
-    android.libraryVariants.all { variant ->
-        // Ensure the unzip task runs before the preBuild task for each variant.
-        // For AGP 7.0+ preBuild is a direct task provider.
-        // For older versions, you might need variant.preBuild or variant.preBuildProvider.get()
-        def preBuildTaskName = "pre${variant.name.capitalize()}Build"
-        tasks.named(preBuildTaskName).configure {
-            it.dependsOn(unzipJniLibsTask)
+// Hook into preBuild: This task runs before most other compilation and packaging for the library.
+if (tasks.findByName("preBuild")) {
+    tasks.named("preBuild").configure {
+        it.dependsOn(unzipJniLibsTask)
+        println "=== CACTUS PLUGIN: Hooked unzipJniLibsTask to preBuild ==="
+    }
+} else {
+    println "=== CACTUS PLUGIN: WARNING - Could not find preBuild task to hook unzipJniLibsTask. Unzipping might not occur at the correct time."
+    // Fallback: Try to add it as a dependency to a very early configuration task if preBuild is not found.
+    // This is less ideal and more of a last resort for older AGP versions.
+    project.afterEvaluate { // Use project.afterEvaluate for broader scope if preBuild isn't found directly
+        android.libraryVariants.all { variant ->
+            def mergeJniTaskName = "merge${variant.name.capitalize()}JniLibFolders"
+            if (tasks.findByName(mergeJniTaskName)) {
+                tasks.named(mergeJniTaskName).configure {
+                    it.dependsOn(unzipJniLibsTask)
+                    println "=== CACTUS PLUGIN: Fallback hook: unzipJniLibsTask to ${mergeJniTaskName} ==="
+                }
+            }
         }
-
-        // Alternative, more general way to ensure it runs before JNI libs are merged.
-        // This can be more robust across AGP versions if preBuild hook is tricky.
-        // tasks.matching { it.name.startsWith("merge") && it.name.endsWith("JniLibFolders") }.all {
-        //    it.dependsOn(unzipJniLibsTask)
-        // }
     }
 }

@@ -84,9 +84,10 @@ import 'package:path_provider/path_provider.dart'; // Added for getTemporaryDire
 export 'chat.dart';
 export 'init_params.dart';
 export 'completion.dart';
-export 'context.dart';
-export 'model_downloader.dart';
-export 'tts_params.dart'; 
+export './context.dart';
+export './model_downloader.dart';
+export './tts_params.dart'; 
+export './structs.dart';
 
 // --- New Image Downloader Utility ---
 

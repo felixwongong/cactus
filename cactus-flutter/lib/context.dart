@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:ffi';
 import 'dart:io'; 
+import 'dart:math'; // For min() in FormattedChatResult.toString, will be moved
 
 import 'package:ffi/ffi.dart';
 import 'package:path_provider/path_provider.dart';
@@ -12,6 +13,7 @@ import './completion.dart';
 import './model_downloader.dart';
 import './chat.dart';
 import './tts_params.dart';
+import './structs.dart'; // Added import for structs
 
 // --- Custom Exception Classes ---
 
@@ -233,6 +235,9 @@ class CactusContext {
       cParams.ref.cache_type_k = cacheTypeKC;
       cParams.ref.cache_type_v = cacheTypeVC;
       cParams.ref.progress_callback = progressCallbackC;
+      cParams.ref.warmup = params.warmup;
+      cParams.ref.mmproj_use_gpu = params.mmprojUseGpu;
+      cParams.ref.main_gpu = params.mainGpu;
 
       final bindings.CactusContextHandle handle = bindings.initContext(cParams);
 
@@ -622,4 +627,186 @@ class CactusContext {
     }
   }
   // --- End New TTS Methods ---
+
+  // +++ LoRA Adapter Management +++
+
+  /// Applies a list of LoRA adapters to the model.
+  /// Throws [CactusOperationException] on failure.
+  void applyLoraAdapters(List<LoraAdapterInfo> adapters) {
+    if (adapters.isEmpty) return;
+
+    final Pointer<bindings.CactusLoraAdapterInfoC> cAdapters = calloc<bindings.CactusLoraAdapterInfoC>(adapters.length);
+    List<Pointer<Utf8>> pathPointers = [];
+
+    try {
+      for (int i = 0; i < adapters.length; i++) {
+        final pathC = adapters[i].path.toNativeUtf8(allocator: calloc);
+        pathPointers.add(pathC);
+        cAdapters[i].path = pathC;
+        cAdapters[i].scale = adapters[i].scale;
+      }
+
+      final status = bindings.applyLoraAdapters(_handle, cAdapters, adapters.length);
+      if (status != 0) {
+        throw CactusOperationException("ApplyLoRA", "Native LoRA application failed with status: $status");
+      }
+    } finally {
+      for (final ptr in pathPointers) {
+        calloc.free(ptr);
+      }
+      calloc.free(cAdapters);
+    }
+  }
+
+  /// Removes all currently applied LoRA adapters from the model.
+  void removeLoraAdapters() {
+    bindings.removeLoraAdapters(_handle);
+  }
+
+  /// Retrieves information about currently loaded LoRA adapters.
+  /// Returns an empty list if no adapters are loaded or on error.
+  List<LoraAdapterInfo> getLoadedLoraAdapters() {
+    Pointer<Int32> countPtr = calloc<Int32>();
+    Pointer<bindings.CactusLoraAdapterInfoC> cAdapters = nullptr;
+    List<LoraAdapterInfo> resultAdapters = [];
+
+    try {
+      cAdapters = bindings.getLoadedLoraAdapters(_handle, countPtr);
+      final count = countPtr.value;
+
+      if (cAdapters != nullptr && count > 0) {
+        for (int i = 0; i < count; i++) {
+          resultAdapters.add(LoraAdapterInfo(
+            path: cAdapters[i].path.toDartString(),
+            scale: cAdapters[i].scale,
+          ));
+        }
+      }
+      return resultAdapters;
+    } finally {
+      if (cAdapters != nullptr) {
+        bindings.freeLoraAdaptersArray(cAdapters, countPtr.value); // Assumes paths are freed by C
+      }
+      calloc.free(countPtr);
+    }
+  }
+  // --- End LoRA Adapter Management ---
+
+  // +++ Benchmarking +++
+  /// Runs a benchmark on the loaded model.
+  /// Throws [CactusOperationException] on failure.
+  BenchResult bench({int pp = 512, int tg = 128, int pl = 1, int nr = 1}) {
+    Pointer<Utf8> resultJsonC = nullptr;
+    try {
+      resultJsonC = bindings.bench(_handle, pp, tg, pl, nr);
+      if (resultJsonC == nullptr || resultJsonC.toDartString().isEmpty || resultJsonC.toDartString() == "[]") {
+        throw CactusOperationException("Benchmarking", "Native benchmarking returned null or empty result.");
+      }
+      final resultString = resultJsonC.toDartString();
+      final List<dynamic> decodedJson = jsonDecode(resultString);
+      return BenchResult.fromJson(decodedJson);
+    } catch (e) {
+      if (e is CactusException) rethrow;
+      throw CactusOperationException("Benchmarking", "Error during benchmarking: ${e.toString()}", e);
+    } finally {
+      if (resultJsonC != nullptr) bindings.freeString(resultJsonC);
+    }
+  }
+  // --- End Benchmarking ---
+
+  // +++ Advanced Chat Formatting +++
+  /// Formats a list of chat messages using Jinja templating, potentially with tools and schema.
+  /// Throws [CactusOperationException] on failure.
+  Future<FormattedChatResult> getFormattedChatJinja({
+    required List<ChatMessage> messages,
+    String? chatTemplateOverride,
+    String? jsonSchema,
+    String? toolsJson,
+    bool parallelToolCalls = false,
+    String? toolChoice,
+  }) async {
+    Pointer<Utf8> messagesJsonC = nullptr;
+    Pointer<Utf8> templateOverrideC = nullptr;
+    Pointer<Utf8> schemaC = nullptr;
+    Pointer<Utf8> toolsC = nullptr;
+    Pointer<Utf8> choiceC = nullptr;
+    Pointer<bindings.CactusFormattedChatResultC> resultC = calloc<bindings.CactusFormattedChatResultC>();
+
+    try {
+      final messagesJsonString = jsonEncode(messages.map((m) => m.toJson()).toList());
+      messagesJsonC = messagesJsonString.toNativeUtf8(allocator: calloc);
+      if (chatTemplateOverride != null) templateOverrideC = chatTemplateOverride.toNativeUtf8(allocator: calloc);
+      if (jsonSchema != null) schemaC = jsonSchema.toNativeUtf8(allocator: calloc);
+      if (toolsJson != null) toolsC = toolsJson.toNativeUtf8(allocator: calloc);
+      if (toolChoice != null) choiceC = toolChoice.toNativeUtf8(allocator: calloc);
+
+      final status = bindings.getFormattedChatJinja(
+        _handle,
+        messagesJsonC,
+        templateOverrideC ?? nullptr,
+        schemaC ?? nullptr,
+        toolsC ?? nullptr,
+        parallelToolCalls,
+        choiceC ?? nullptr,
+        resultC,
+      );
+
+      if (status != 0) {
+        throw CactusOperationException("GetFormattedChatJinja", "Native call failed with status $status");
+      }
+
+      final prompt = resultC.ref.prompt.toDartString();
+      final grammar = resultC.ref.grammar == nullptr ? null : resultC.ref.grammar.toDartString();
+      
+      return FormattedChatResult(prompt: prompt, grammar: grammar);
+    } catch (e) {
+      if (e is CactusException) rethrow;
+      throw CactusOperationException("GetFormattedChatJinja", "Error: ${e.toString()}", e);
+    } finally {
+      if (messagesJsonC != nullptr) calloc.free(messagesJsonC);
+      if (templateOverrideC != nullptr) calloc.free(templateOverrideC);
+      if (schemaC != nullptr) calloc.free(schemaC);
+      if (toolsC != nullptr) calloc.free(toolsC);
+      if (choiceC != nullptr) calloc.free(choiceC);
+      bindings.freeFormattedChatResultMembers(resultC); // Frees internal strings
+      calloc.free(resultC); // Frees the struct itself
+    }
+  }
+  // --- End Advanced Chat Formatting ---
+
+  // +++ Model Information and Validation +++
+  /// Validates if a chat template for the loaded model is valid.
+  bool validateModelChatTemplate({bool useJinja = false, String? name}) {
+    Pointer<Utf8> nameC = nullptr;
+    try {
+      if (name != null) nameC = name.toNativeUtf8(allocator: calloc);
+      return bindings.validateModelChatTemplate(_handle, useJinja, nameC ?? nullptr);
+    } finally {
+      if (nameC != nullptr) calloc.free(nameC);
+    }
+  }
+
+  /// Retrieves metadata about the loaded model.
+  /// Throws [CactusOperationException] if model not loaded.
+  ModelMeta getModelMeta() {
+    Pointer<bindings.CactusModelMetaC> metaC = calloc<bindings.CactusModelMetaC>();
+    try {
+      bindings.getModelMeta(_handle, metaC);
+      // Check if desc is null, which might happen if native side couldn't get it.
+      // The native side should ideally return an error or set a flag if meta couldn't be obtained.
+      // For now, we rely on native side populating correctly or desc being nullable.
+      final description = metaC.ref.desc == nullptr ? "" : metaC.ref.desc.toDartString();
+      
+      final meta = ModelMeta(
+        description: description,
+        size: metaC.ref.size,
+        nParams: metaC.ref.n_params,
+      );
+      return meta;
+    } finally {
+      bindings.freeModelMetaMembers(metaC); // Frees internal strings like desc
+      calloc.free(metaC);
+    }
+  }
+  // --- End Model Information and Validation ---
 } 
