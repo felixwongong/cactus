@@ -30,6 +30,14 @@
   #endif
 #endif
 
+// Completion Result Codes
+#define CACTUS_COMPLETION_OK 0                        // Success
+#define CACTUS_COMPLETION_ERROR_UNKNOWN 1             // General, unspecified error
+#define CACTUS_COMPLETION_ERROR_INVALID_ARGUMENTS 2   // Invalid arguments passed to the function
+#define CACTUS_COMPLETION_ERROR_CONTEXT_FAILED 3      // Error during llama_eval or other core context operation
+#define CACTUS_COMPLETION_ERROR_NULL_CONTEXT 4        // The internal llama_context (ctx) is NULL when completion is attempted
+// Add other specific error codes here as needed, incrementing the values.
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -109,6 +117,7 @@ typedef struct cactus_completion_result_c {
     bool stopped_word;
     bool stopped_limit;
     char* stopping_word; 
+    int64_t generation_time_us; /**< Total time for token generation in microseconds */
 } cactus_completion_result_c_t;
 
 
@@ -139,6 +148,19 @@ typedef struct cactus_synthesize_speech_params_c {
     const char* output_wav_path; // Path to save the output WAV file
     const char* speaker_id;      // Optional speaker ID (can be NULL or empty)
 } cactus_synthesize_speech_params_c_t;
+
+
+// +++ Advanced Chat Formatting FFI Definitions +++
+/**
+ * @brief Structure to hold the results of advanced chat formatting (e.g., Jinja templating).
+ * The C strings (prompt, grammar) must be freed by the caller using cactus_free_string_c.
+ */
+typedef struct cactus_formatted_chat_result_c {
+    char* prompt;   // The fully formatted prompt string.
+    char* grammar;  // The grammar string, if generated (e.g., from JSON schema).
+    // Add other fields here if they are added to the C++ struct counterpart
+} cactus_formatted_chat_result_c_t;
+// --- End Advanced Chat Formatting FFI Definitions ---
 
 
 CACTUS_FFI_EXPORT cactus_init_params_c_t cactus_default_init_params_c();
@@ -254,13 +276,15 @@ CACTUS_FFI_EXPORT int cactus_synthesize_speech_c(
  * @param messages_json A JSON string representing an array of chat messages (e.g., [{"role": "user", "content": "Hello"}]).
  * @param override_chat_template An optional chat template string to use. If NULL or empty,
  *                               the template from context initialization or the model's default will be used.
+ * @param image_path An optional path to an image file to be included in the prompt (for multimodal models).
  * @return A newly allocated C string containing the fully formatted prompt. Caller must free using cactus_free_string_c.
- *         Returns an empty string on failure.
+ *         Returns NULL on failure or if inputs are invalid.
  */
 CACTUS_FFI_EXPORT char* cactus_get_formatted_chat_c(
     cactus_context_handle_t handle,
     const char* messages_json,
-    const char* override_chat_template
+    const char* override_chat_template,
+    const char* image_path
 );
 
 
@@ -275,6 +299,36 @@ CACTUS_FFI_EXPORT void cactus_free_float_array_c(cactus_float_array_c_t arr);
 
 /** @brief Frees the members *within* a completion result struct (like text, stopping_word). */
 CACTUS_FFI_EXPORT void cactus_free_completion_result_members_c(cactus_completion_result_c_t* result);
+
+/**
+ * @brief Frees the members *within* a formatted chat result struct (like prompt, grammar).
+ */
+CACTUS_FFI_EXPORT void cactus_free_formatted_chat_result_members_c(cactus_formatted_chat_result_c_t* result);
+
+
+// +++ Benchmarking FFI Functions +++
+/**
+ * @brief Benchmarks the model performance using the C FFI.
+ * The caller is responsible for freeing the returned JSON string using cactus_free_string_c.
+ *
+ * @param handle Handle to the cactus context.
+ * @param pp Prompt processing tokens.
+ * @param tg Text generation iterations.
+ * @param pl Parallel tokens to predict.
+ * @param nr Number of repetitions.
+ * @return JSON string with benchmark results, or nullptr on error.
+ */
+CACTUS_FFI_EXPORT char* cactus_bench_c(
+    cactus_context_handle_t handle,
+    int32_t pp,
+    int32_t tg,
+    int32_t pl,
+    int32_t nr
+);
+// --- End Benchmarking FFI Functions ---
+
+
+// +++ LoRA Adapter Management FFI Functions +++
 
 
 #ifdef __cplusplus

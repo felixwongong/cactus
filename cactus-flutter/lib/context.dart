@@ -135,133 +135,133 @@ class CactusContext {
   /// - [CactusInitializationException] if native context initialization fails for other reasons.
   /// - [ArgumentError] if [params] are invalid (e.g., neither modelPath nor modelUrl provided).
   static Future<CactusContext> init(CactusInitParams params) async {
-    params.onInitProgress?.call(null, 'Initialization started.', false);
+    String? effectiveModelPath = params.modelPath;
+    String? effectiveMmprojPath = params.mmprojPath;
 
-    String effectiveModelPath;
-
-    if (params.modelUrl != null) {
-      params.onInitProgress?.call(null, 'Resolving model path from URL...', false);
-      try {
+    try {
+      // Handle main model download if URL is provided
+      if (params.modelUrl != null && params.modelUrl!.isNotEmpty) {
         final Directory appDocDir = await getApplicationDocumentsDirectory();
-        String filename = params.modelFilename ?? params.modelUrl!.split('/').last;
-        if (filename.contains('?')) {
-          filename = filename.split('?').first;
-        }
-        if (filename.isEmpty) {
-          filename = "downloaded_model.gguf";
-        }
-        effectiveModelPath = '${appDocDir.path}/$filename';
+        String modelFilename = params.modelFilename ?? params.modelUrl!.split('/').last;
+        if (modelFilename.isEmpty) modelFilename = "downloaded_model.gguf"; // Fallback filename
+        effectiveModelPath = '${appDocDir.path}/$modelFilename';
+        final modelFile = File(effectiveModelPath!);
 
-        final modelFile = File(effectiveModelPath);
-        final bool fileExists = await modelFile.exists();
-
-        params.onInitProgress?.call(
-            null,
-            fileExists
-                ? 'Model found at $effectiveModelPath.'
-                : 'Model not found locally. Preparing to download from ${params.modelUrl} to $effectiveModelPath.',
-            false);
-
-        if (!fileExists) {
+        if (!await modelFile.exists()) {
+          params.onInitProgress?.call(0.0, "Downloading model from ${params.modelUrl}...", false);
           await downloadModel(
             params.modelUrl!,
             effectiveModelPath,
             onProgress: (progress, status) {
-              params.onInitProgress?.call(progress, status, false);
+              params.onInitProgress?.call(progress, "Model: $status", false);
             },
           );
-          params.onInitProgress?.call(1.0, 'Model download complete.', false);
+          params.onInitProgress?.call(1.0, "Model download complete.", false);
+        } else {
+          params.onInitProgress?.call(null, "Model found locally at $effectiveModelPath", false);
         }
+      } else if (effectiveModelPath == null || effectiveModelPath.isEmpty) {
+        throw ArgumentError('No modelPath or modelUrl provided in CactusInitParams.');
+      }
+
+      // Handle multimodal projector download if URL is provided
+      if (params.mmprojUrl != null && params.mmprojUrl!.isNotEmpty) {
+        final Directory appDocDir = await getApplicationDocumentsDirectory();
+        String mmprojFilename = params.mmprojFilename ?? params.mmprojUrl!.split('/').last;
+        if (mmprojFilename.isEmpty) mmprojFilename = "downloaded_mmproj.gguf"; // Fallback filename
+        effectiveMmprojPath = '${appDocDir.path}/$mmprojFilename';
+        final mmprojFile = File(effectiveMmprojPath!);
+
+        if (!await mmprojFile.exists()) {
+          params.onInitProgress?.call(0.0, "Downloading mmproj from ${params.mmprojUrl}...", false);
+          await downloadModel(
+            params.mmprojUrl!,
+            effectiveMmprojPath,
+            onProgress: (progress, status) {
+              params.onInitProgress?.call(progress, "MMProj: $status", false);
+            },
+          );
+          params.onInitProgress?.call(1.0, "MMProj download complete.", false);
+        } else {
+          params.onInitProgress?.call(null, "MMProj found locally at $effectiveMmprojPath", false);
+        }
+      } // If mmprojUrl is null, effectiveMmprojPath (from params.mmprojPath) will be used as is, or null if not provided.
+
+      params.onInitProgress?.call(null, "Initializing native context...", false);
+
+      final cParams = calloc<bindings.CactusInitParamsC>();
+      Pointer<Utf8> modelPathC = nullptr;
+      Pointer<Utf8> mmprojPathC = nullptr;
+      Pointer<Utf8> chatTemplateForC = nullptr;
+      Pointer<Utf8> cacheTypeKC = nullptr;
+      Pointer<Utf8> cacheTypeVC = nullptr;
+      Pointer<NativeFunction<Void Function(Float)>> progressCallbackC = nullptr;
+
+      try {
+        modelPathC = effectiveModelPath.toNativeUtf8(allocator: calloc);
+        
+        if (effectiveMmprojPath != null && effectiveMmprojPath.isNotEmpty) {
+          mmprojPathC = effectiveMmprojPath.toNativeUtf8(allocator: calloc);
+        }
+        
+        // Now, pass the user-provided template, or nullptr to let native side use model's default.
+        if (params.chatTemplate != null && params.chatTemplate!.isNotEmpty) {
+          chatTemplateForC = params.chatTemplate!.toNativeUtf8(allocator: calloc);
+        } else {
+          chatTemplateForC = nullptr; // Let native side use its default if no template is supplied by user for init
+        }
+        
+        cacheTypeKC = params.cacheTypeK?.toNativeUtf8(allocator: calloc) ?? nullptr;
+        cacheTypeVC = params.cacheTypeV?.toNativeUtf8(allocator: calloc) ?? nullptr;
+
+        cParams.ref.model_path = modelPathC;
+        cParams.ref.mmproj_path = mmprojPathC ?? nullptr;
+        cParams.ref.chat_template = chatTemplateForC;
+        cParams.ref.n_ctx = params.contextSize;
+        cParams.ref.n_batch = params.batchSize;
+        cParams.ref.n_ubatch = params.ubatchSize;
+        cParams.ref.n_gpu_layers = params.gpuLayers ?? 0;
+        cParams.ref.n_threads = params.threads;
+        cParams.ref.use_mmap = params.useMmap;
+        cParams.ref.use_mlock = params.useMlock;
+        cParams.ref.embedding = params.generateEmbeddings;
+        cParams.ref.pooling_type = params.poolingType;
+        cParams.ref.embd_normalize = params.normalizeEmbeddings;
+        cParams.ref.flash_attn = params.useFlashAttention;
+        cParams.ref.cache_type_k = cacheTypeKC;
+        cParams.ref.cache_type_v = cacheTypeVC;
+        cParams.ref.progress_callback = progressCallbackC;
+        cParams.ref.warmup = params.warmup;
+        cParams.ref.mmproj_use_gpu = params.mmprojUseGpu;
+        cParams.ref.main_gpu = params.mainGpu;
+
+        final bindings.CactusContextHandle handle = bindings.initContext(cParams);
+
+        if (handle == nullptr) {
+          const msg = 'Failed to initialize native cactus context. Handle was null. Check native logs for details.';
+          params.onInitProgress?.call(null, msg, true);
+          throw CactusInitializationException(msg);
+        }
+        
+        final context = CactusContext._(handle);
+        params.onInitProgress?.call(1.0, 'CactusContext initialized successfully.', false);
+        return context;
       } catch (e) {
-        final msg = 'Error during model download/path resolution: $e';
+        final msg = 'Error during native context initialization: $e';
         params.onInitProgress?.call(null, msg, true);
-        throw CactusModelPathException(msg, e);
+        if (e is CactusException) rethrow;
+        throw CactusInitializationException(msg, e);
+      } finally {
+        if (modelPathC != nullptr) calloc.free(modelPathC);
+        if (mmprojPathC != nullptr) calloc.free(mmprojPathC);
+        if (chatTemplateForC != nullptr) calloc.free(chatTemplateForC);
+        if (cacheTypeKC != nullptr) calloc.free(cacheTypeKC);
+        if (cacheTypeVC != nullptr) calloc.free(cacheTypeVC);
+        calloc.free(cParams);
       }
-    } else if (params.modelPath != null) {
-      effectiveModelPath = params.modelPath!;
-      params.onInitProgress?.call(null, 'Using provided model path: $effectiveModelPath', false);
-      if (!await File(effectiveModelPath).exists()) {
-        final msg = 'Provided modelPath does not exist: $effectiveModelPath';
-        params.onInitProgress?.call(null, msg, true);
-        throw CactusModelPathException(msg);
-      }
-    } else {
-      const msg = 'No valid model source (URL or path) provided.';
-      params.onInitProgress?.call(null, msg, true);
-      throw ArgumentError(msg);
-    }
-
-    params.onInitProgress?.call(null, 'Initializing native context with model: $effectiveModelPath', false);
-    
-    final cParams = calloc<bindings.CactusInitParamsC>();
-    Pointer<Utf8> modelPathC = nullptr;
-    Pointer<Utf8> mmprojPathC = nullptr;
-    Pointer<Utf8> chatTemplateForC = nullptr;
-    Pointer<Utf8> cacheTypeKC = nullptr;
-    Pointer<Utf8> cacheTypeVC = nullptr;
-    Pointer<NativeFunction<Void Function(Float)>> progressCallbackC = nullptr;
-
-    try {
-      modelPathC = effectiveModelPath.toNativeUtf8(allocator: calloc);
-      
-      if (params.mmprojPath != null && params.mmprojPath!.isNotEmpty) {
-        mmprojPathC = params.mmprojPath!.toNativeUtf8(allocator: calloc);
-      }
-      
-      // Now, pass the user-provided template, or nullptr to let native side use model's default.
-      if (params.chatTemplate != null && params.chatTemplate!.isNotEmpty) {
-        chatTemplateForC = params.chatTemplate!.toNativeUtf8(allocator: calloc);
-      } else {
-        chatTemplateForC = nullptr; // Let native side use its default if no template is supplied by user for init
-      }
-      
-      cacheTypeKC = params.cacheTypeK?.toNativeUtf8(allocator: calloc) ?? nullptr;
-      cacheTypeVC = params.cacheTypeV?.toNativeUtf8(allocator: calloc) ?? nullptr;
-
-      cParams.ref.model_path = modelPathC;
-      cParams.ref.mmproj_path = mmprojPathC ?? nullptr;
-      cParams.ref.chat_template = chatTemplateForC;
-      cParams.ref.n_ctx = params.contextSize;
-      cParams.ref.n_batch = params.batchSize;
-      cParams.ref.n_ubatch = params.ubatchSize;
-      cParams.ref.n_gpu_layers = params.gpuLayers ?? -1;
-      cParams.ref.n_threads = params.threads;
-      cParams.ref.use_mmap = params.useMmap;
-      cParams.ref.use_mlock = params.useMlock;
-      cParams.ref.embedding = params.generateEmbeddings;
-      cParams.ref.pooling_type = params.poolingType;
-      cParams.ref.embd_normalize = params.normalizeEmbeddings;
-      cParams.ref.flash_attn = params.useFlashAttention;
-      cParams.ref.cache_type_k = cacheTypeKC;
-      cParams.ref.cache_type_v = cacheTypeVC;
-      cParams.ref.progress_callback = progressCallbackC;
-      cParams.ref.warmup = params.warmup;
-      cParams.ref.mmproj_use_gpu = params.mmprojUseGpu;
-      cParams.ref.main_gpu = params.mainGpu;
-
-      final bindings.CactusContextHandle handle = bindings.initContext(cParams);
-
-      if (handle == nullptr) {
-        const msg = 'Failed to initialize native cactus context. Handle was null. Check native logs for details.';
-        params.onInitProgress?.call(null, msg, true);
-        throw CactusInitializationException(msg);
-      }
-      
-      final context = CactusContext._(handle);
-      params.onInitProgress?.call(1.0, 'CactusContext initialized successfully.', false);
-      return context;
     } catch (e) {
-      final msg = 'Error during native context initialization: $e';
-      params.onInitProgress?.call(null, msg, true);
       if (e is CactusException) rethrow;
-      throw CactusInitializationException(msg, e);
-    } finally {
-      if (modelPathC != nullptr) calloc.free(modelPathC);
-      if (mmprojPathC != nullptr) calloc.free(mmprojPathC);
-      if (chatTemplateForC != nullptr) calloc.free(chatTemplateForC);
-      if (cacheTypeKC != nullptr) calloc.free(cacheTypeKC);
-      if (cacheTypeVC != nullptr) calloc.free(cacheTypeVC);
-      calloc.free(cParams);
+      throw CactusInitializationException("Error during initialization: ${e.toString()}", e);
     }
   }
 
@@ -401,22 +401,28 @@ class CactusContext {
     Pointer<bindings.CactusCompletionParamsC> cCompParams = nullptr;
     Pointer<bindings.CactusCompletionResultC> cResult = nullptr;
     Pointer<Utf8> promptC = nullptr;
-    Pointer<Utf8> imagePathC = nullptr;
+    Pointer<Utf8> imagePathForCompletionParamsC = nullptr;
     Pointer<Utf8> grammarC = nullptr;
     Pointer<Pointer<Utf8>> stopSequencesC = nullptr;
 
     try {
-      // --- Prompt Formatting: Use new _getFormattedChat method ---
-      final String formattedPromptString = await _getFormattedChat(params.messages, params.chatTemplate);
-      // --- End Prompt Formatting ---
-
+      // Pass params.imagePath to _getFormattedChat
+      final String formattedPromptString = await _getFormattedChat(params.messages, params.chatTemplate, params.imagePath);
+      
       cCompParams = calloc<bindings.CactusCompletionParamsC>();
       cResult = calloc<bindings.CactusCompletionResultC>();
       promptC = formattedPromptString.toNativeUtf8(allocator: calloc);
       grammarC = params.grammar?.toNativeUtf8(allocator: calloc) ?? nullptr;
 
+      // image_path in cactus_completion_params_c is still needed for the native completion function
+      // if it does further processing with the image beyond just templating (e.g., loading pixel data).
+      // If all image handling is done by cactus_get_formatted_chat_c and the image is embedded
+      // as a token/placeholder, then params.imagePath might not be strictly needed here for the C FFI call to cactus_completion_c.
+      // However, the current FFI struct `cactus_completion_params_c` includes `image_path`.
+      // So we continue to pass it. The C++ `cactus_completion_c` should know whether to use it
+      // if the prompt already contains image info from `cactus_get_formatted_chat_c`.
       if (params.imagePath != null && params.imagePath!.isNotEmpty) {
-        imagePathC = params.imagePath!.toNativeUtf8(allocator: calloc);
+        imagePathForCompletionParamsC = params.imagePath!.toNativeUtf8(allocator: calloc);
       }
 
       if (params.stopSequences != null && params.stopSequences!.isNotEmpty) {
@@ -433,7 +439,7 @@ class CactusContext {
       }
 
       cCompParams.ref.prompt = promptC;
-      cCompParams.ref.image_path = imagePathC ?? nullptr;
+      cCompParams.ref.image_path = imagePathForCompletionParamsC ?? nullptr;
       cCompParams.ref.n_predict = params.maxPredictedTokens;
       cCompParams.ref.n_threads = params.threads;
       cCompParams.ref.seed = params.seed;
@@ -472,6 +478,7 @@ class CactusContext {
         stoppedWord: cResult.ref.stopped_word,
         stoppedLimit: cResult.ref.stopped_limit,
         stoppingWord: cResult.ref.stopping_word.toDartString(),
+        generationTimeUs: cResult.ref.generation_time_us,
       );
 
       return result;
@@ -483,7 +490,7 @@ class CactusContext {
       _currentOnNewTokenCallback = null; 
 
       if (promptC != nullptr) calloc.free(promptC);
-      if (imagePathC != nullptr) calloc.free(imagePathC);
+      if (imagePathForCompletionParamsC != nullptr) calloc.free(imagePathForCompletionParamsC);
       if (grammarC != nullptr) calloc.free(grammarC);
       if (stopSequencesC != nullptr) {
         for (int i = 0; i < (params.stopSequences?.length ?? 0); i++) {
@@ -511,9 +518,10 @@ class CactusContext {
   }
 
   // +++ New Helper Method +++
-  Future<String> _getFormattedChat(List<ChatMessage> messages, String? overrideChatTemplate) async {
+  Future<String> _getFormattedChat(List<ChatMessage> messages, String? overrideChatTemplate, String? imagePath) async {
     Pointer<Utf8> messagesJsonC = nullptr;
     Pointer<Utf8> overrideChatTemplateC = nullptr;
+    Pointer<Utf8> imagePathC = nullptr;
     Pointer<Utf8> formattedPromptC = nullptr;
     try {
       final messagesJsonString = jsonEncode(messages.map((m) => m.toJson()).toList());
@@ -522,24 +530,34 @@ class CactusContext {
       if (overrideChatTemplate != null && overrideChatTemplate.isNotEmpty) {
         overrideChatTemplateC = overrideChatTemplate.toNativeUtf8(allocator: calloc);
       } else {
-        // If no override, pass nullptr to let native use context's default (from init) or model's default
         overrideChatTemplateC = nullptr;
       }
 
-      formattedPromptC = bindings.getFormattedChat(_handle, messagesJsonC, overrideChatTemplateC);
+      if (imagePath != null && imagePath.isNotEmpty) {
+        imagePathC = imagePath.toNativeUtf8(allocator: calloc);
+      } else {
+        imagePathC = nullptr;
+      }
+
+      formattedPromptC = bindings.getFormattedChat(
+        _handle, 
+        messagesJsonC, 
+        overrideChatTemplateC ?? nullptr,
+        imagePathC ?? nullptr
+      );
 
       if (formattedPromptC == nullptr) {
-        throw CactusOperationException("ChatFormatting", "Native chat formatting returned null. Ensure 'cactus_get_formatted_chat_c' is implemented correctly in native code.");
+        throw CactusOperationException("ChatFormatting", "Native chat formatting returned null. Ensure 'cactus_get_formatted_chat_c' is implemented correctly in native code and handles parameters.");
       }
       final formattedPrompt = formattedPromptC.toDartString();
       return formattedPrompt;
     } catch (e) {
-      // Log or handle the error appropriately
       if (e is CactusException) rethrow;
       throw CactusOperationException("ChatFormatting", "Error during _getFormattedChat: ${e.toString()}", e);
     } finally {
       if (messagesJsonC != nullptr) calloc.free(messagesJsonC);
       if (overrideChatTemplateC != nullptr) calloc.free(overrideChatTemplateC);
+      if (imagePathC != nullptr) calloc.free(imagePathC);
       if (formattedPromptC != nullptr) bindings.freeString(formattedPromptC);
     }
   }
