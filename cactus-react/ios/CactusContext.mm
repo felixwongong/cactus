@@ -82,7 +82,7 @@
     BOOL isAsset = [params[@"is_model_asset"] boolValue];
     NSString *path = modelPath;
     if (isAsset) path = [[NSBundle mainBundle] pathForResource:modelPath ofType:nil];
-    defaultParams.model = [path UTF8String];
+    defaultParams.model.path = [path UTF8String];
 
     NSString *chatTemplate = params[@"chat_template"];
     if (chatTemplate) {
@@ -700,6 +700,25 @@
     return result;
 }
 
+- (NSArray *)tokenize:(NSString *)text withMediaPaths:(NSArray *)mediaPaths {
+    std::vector<std::string> media_paths_vector;
+    if (mediaPaths) {
+        for (NSString *mediaPath in mediaPaths) {
+            media_paths_vector.push_back([mediaPath UTF8String]);
+        }
+    }
+    
+    cactus::cactus_tokenize_result tokenize_result = llama->tokenize([text UTF8String], media_paths_vector);
+    
+    // Return just the tokens array to match the method signature
+    NSMutableArray *tokens = [[NSMutableArray alloc] init];
+    for (const auto &tok : tokenize_result.tokens) {
+        [tokens addObject:@(tok)];
+    }
+    
+    return tokens;
+}
+
 - (NSString *)detokenize:(NSArray *)tokens {
     std::vector<llama_token> toks;
     for (NSNumber *tok in tokens) {
@@ -827,9 +846,165 @@
     return result;
 }
 
+// New Multimodal Methods
+- (BOOL)initMultimodal:(NSString *)mmprojPath useGpu:(BOOL)useGpu {
+    return llama->initMultimodal([mmprojPath UTF8String], useGpu);
+}
+
+- (BOOL)isMultimodalEnabled {
+    return llama->isMultimodalEnabled();
+}
+
+- (BOOL)isMultimodalSupportVision {
+    return llama->isMultimodalSupportVision();
+}
+
+- (BOOL)isMultimodalSupportAudio {
+    return llama->isMultimodalSupportAudio();
+}
+
+- (void)releaseMultimodal {
+    llama->releaseMultimodal();
+}
+
+- (NSDictionary *)multimodalCompletion:(NSString *)prompt 
+    withMediaPaths:(NSArray *)mediaPaths 
+    params:(NSDictionary *)params 
+    onToken:(void (^)(NSMutableDictionary *tokenResult))onToken {
+    
+    if (!llama->isMultimodalEnabled()) {
+        @throw [NSException exceptionWithName:@"LlamaException" reason:@"Multimodal is not enabled" userInfo:nil];
+    }
+    
+    llama->rewind();
+    
+    llama->params.prompt = [prompt UTF8String];
+    llama->params.sampling.seed = params[@"seed"] ? [params[@"seed"] intValue] : -1;
+    
+    // Set all completion parameters (similar to existing completion method)
+    if (params[@"n_threads"]) {
+        int nThreads = [params[@"n_threads"] intValue];
+        const int maxThreads = (int) [[NSProcessInfo processInfo] processorCount];
+        const int defaultNThreads = nThreads == 4 ? 2 : MIN(4, maxThreads);
+        llama->params.cpuparams.n_threads = nThreads > 0 ? nThreads : defaultNThreads;
+    }
+    if (params[@"n_predict"]) llama->params.n_predict = [params[@"n_predict"] intValue];
+    if (params[@"ignore_eos"]) llama->params.sampling.ignore_eos = [params[@"ignore_eos"] boolValue];
+    
+    auto & sparams = llama->params.sampling;
+    if (params[@"temperature"]) sparams.temp = [params[@"temperature"] doubleValue];
+    if (params[@"top_k"]) sparams.top_k = [params[@"top_k"] intValue];
+    if (params[@"top_p"]) sparams.top_p = [params[@"top_p"] doubleValue];
+    
+    // Convert media paths
+    std::vector<std::string> media_paths_vector;
+    if (mediaPaths) {
+        for (NSString *mediaPath in mediaPaths) {
+            media_paths_vector.push_back([mediaPath UTF8String]);
+        }
+    }
+    
+    if (!llama->initSampling()) {
+        @throw [NSException exceptionWithName:@"LlamaException" reason:@"Failed to initialize sampling" userInfo:nil];
+    }
+    
+    llama->beginCompletion();
+    
+    @try {
+        llama->loadPrompt(media_paths_vector);
+    } @catch (NSException *exception) {
+        @throw [NSException exceptionWithName:@"LlamaException" reason:exception.reason userInfo:nil];
+    }
+    
+    size_t sent_count = 0;
+    while (llama->has_next_token && !llama->is_interrupted) {
+        const cactus::completion_token_output token_with_probs = llama->doCompletion();
+        if (token_with_probs.tok == -1 || llama->incomplete) {
+            continue;
+        }
+        
+        const std::string token_text = common_token_to_piece(llama->ctx, token_with_probs.tok);
+        size_t pos = std::min(sent_count, llama->generated_text.size());
+        const std::string str_test = llama->generated_text.substr(pos);
+        
+        size_t stop_pos = llama->findStoppingStrings(str_test, token_text.size(), cactus::STOP_FULL);
+        
+        if (stop_pos == std::string::npos || (!llama->has_next_token && stop_pos > 0)) {
+            const std::string to_send = llama->generated_text.substr(pos, std::string::npos);
+            sent_count += to_send.size();
+            
+            if (onToken) {
+                NSMutableDictionary *tokenResult = [[NSMutableDictionary alloc] init];
+                tokenResult[@"token"] = [NSString stringWithUTF8String:to_send.c_str()];
+                onToken(tokenResult);
+            }
+        }
+    }
+    
+    llama->is_predicting = false;
+    
+    NSMutableDictionary *result = [[NSMutableDictionary alloc] init];
+    result[@"text"] = [NSString stringWithUTF8String:llama->generated_text.c_str()];
+    result[@"tokens_predicted"] = @(llama->num_tokens_predicted);
+    result[@"tokens_evaluated"] = @(llama->num_prompt_tokens);
+    result[@"truncated"] = @(llama->truncated);
+    result[@"stopped_eos"] = @(llama->stopped_eos);
+    result[@"stopped_word"] = @(llama->stopped_word);
+    result[@"stopped_limit"] = @(llama->stopped_limit);
+    result[@"stopping_word"] = [NSString stringWithUTF8String:llama->stopping_word.c_str()];
+    result[@"tokens_cached"] = @(llama->n_past);
+    
+    return result;
+}
+
+- (void)releaseVocoder {
+    llama->releaseVocoder();
+}
+
 - (void)invalidate {
     delete llama;
     // llama_backend_free();
+}
+
+// New TTS/Vocoder Methods
+- (BOOL)initVocoder:(NSString *)vocoderModelPath {
+    return llama->initVocoder([vocoderModelPath UTF8String]);
+}
+
+- (BOOL)isVocoderEnabled {
+    return llama->isVocoderEnabled();
+}
+
+- (int)getTTSType {
+    return static_cast<int>(llama->getTTSType());
+}
+
+- (NSString *)getFormattedAudioCompletion:(NSString *)speakerJsonStr textToSpeak:(NSString *)textToSpeak {
+    std::string result = llama->getFormattedAudioCompletion([speakerJsonStr UTF8String], [textToSpeak UTF8String]);
+    return [NSString stringWithUTF8String:result.c_str()];
+}
+
+- (NSArray *)getAudioCompletionGuideTokens:(NSString *)textToSpeak {
+    std::vector<llama_token> tokens = llama->getAudioCompletionGuideTokens([textToSpeak UTF8String]);
+    NSMutableArray *result = [[NSMutableArray alloc] init];
+    for (const auto &token : tokens) {
+        [result addObject:@(token)];
+    }
+    return result;
+}
+
+- (NSArray *)decodeAudioTokens:(NSArray *)tokens {
+    std::vector<llama_token> token_vector;
+    for (NSNumber *token in tokens) {
+        token_vector.push_back([token intValue]);
+    }
+    
+    std::vector<float> audio_data = llama->decodeAudioTokens(token_vector);
+    NSMutableArray *result = [[NSMutableArray alloc] init];
+    for (const auto &sample : audio_data) {
+        [result addObject:@(sample)];
+    }
+    return result;
 }
 
 @end

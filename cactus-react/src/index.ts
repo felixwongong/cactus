@@ -14,6 +14,10 @@ import type {
   NativeCompletionTokenProbItem,
   NativeCompletionResultTimings,
   JinjaFormattedChatResult,
+  NativeTTSType,
+  NativeAudioCompletionResult,
+  NativeAudioTokensResult,
+  NativeAudioDecodeResult,
 } from './NativeCactus'
 import type {
   SchemaGrammarConverterPropOrder,
@@ -21,7 +25,6 @@ import type {
 } from './grammar'
 import { SchemaGrammarConverter, convertJsonSchemaToGrammar } from './grammar'
 import type { CactusMessagePart, CactusOAICompatibleMessage } from './chat'
-import { ModelDownloader } from './modelDownloader'
 import { formatChat } from './chat'
 import { Tools, injectToolsIntoMessages, parseAndExecuteTool, updateMessagesWithToolCall } from './tools'
 export type {
@@ -525,26 +528,66 @@ export async function releaseAllLlama(): Promise<void> {
   return Cactus.releaseAllContexts()
 }
 
-
-type DownloadOptions = {
-  modelUrl?: string;
-  modelFolderName?: string;
-  onProgress?: (progress: number) => void;
-  onSuccess?: (modelPath: string) => void;
+export const initContext = async (params: NativeContextParams) => {
+  return await Cactus.initContext(contextIdCounter++, params);
 };
 
-/**
- * Download a model from a given URL and save it to a given folder name.
- * @param options - The options for the download.
- * @param options.modelUrl - The URL of the model to download. If not provided, the default model URL will be used.
- * @param options.modelFolderName - The folder name to save the model to. If not provided, the default model folder name will be used.
- * @param options.onProgress - A callback function that is called with the progress of the download. Returns a percentage of the download as an integer. Useful for displaying a progress bar.
- * @param options.onSuccess - A callback function that is called when the download is successful.
- * @returns A promise that resolves to the full model path.
- */
-export function downloadModelIfNotExists(
-  options: DownloadOptions
-): Promise<string> {
-  const modelDownloader = new ModelDownloader(options.modelUrl , options.modelFolderName)
-  return modelDownloader.downloadModelIfNotExists(options.onProgress, options.onSuccess)
-}
+export const initMultimodal = async (contextId: number, mmprojPath: string, useGpu: boolean = false) => {
+  return await Cactus.initMultimodal(contextId, mmprojPath, useGpu);
+};
+
+export const isMultimodalEnabled = async (contextId: number) => {
+  return await Cactus.isMultimodalEnabled(contextId);
+};
+
+export const isMultimodalSupportVision = async (contextId: number) => {
+  return await Cactus.isMultimodalSupportVision(contextId);
+};
+
+export const isMultimodalSupportAudio = async (contextId: number) => {
+  return await Cactus.isMultimodalSupportAudio(contextId);
+};
+
+export const releaseMultimodal = async (contextId: number) => {
+  return await Cactus.releaseMultimodal(contextId);
+};
+
+export const multimodalCompletion = async (contextId: number, prompt: string, mediaPaths: string[], params: NativeCompletionParams): Promise<NativeCompletionResult> => {
+  return await Cactus.multimodalCompletion(contextId, prompt, mediaPaths, params);
+};
+
+export const initVocoder = async (contextId: number, vocoderModelPath: string) => {
+  return await Cactus.initVocoder(contextId, vocoderModelPath);
+};
+
+export const isVocoderEnabled = async (contextId: number) => {
+  return await Cactus.isVocoderEnabled(contextId);
+};
+
+export const getTTSType = async (contextId: number): Promise<NativeTTSType> => {
+  return await Cactus.getTTSType(contextId);
+};
+
+export const getFormattedAudioCompletion = async (contextId: number, speakerJsonStr: string, textToSpeak: string): Promise<NativeAudioCompletionResult> => {
+  return await Cactus.getFormattedAudioCompletion(contextId, speakerJsonStr, textToSpeak);
+};
+
+export const getAudioCompletionGuideTokens = async (contextId: number, textToSpeak: string): Promise<NativeAudioTokensResult> => {
+  return await Cactus.getAudioCompletionGuideTokens(contextId, textToSpeak);
+};
+
+export const decodeAudioTokens = async (contextId: number, tokens: number[]): Promise<NativeAudioDecodeResult> => {
+  return await Cactus.decodeAudioTokens(contextId, tokens);
+};
+
+export const releaseVocoder = async (contextId: number) => {
+  return await Cactus.releaseVocoder(contextId);
+};
+
+export const tokenize = async (contextId: number, text: string, mediaPaths?: string[]): Promise<NativeTokenizeResult> => {
+  if (mediaPaths && mediaPaths.length > 0) {
+    return await Cactus.tokenize(contextId, text, mediaPaths);
+  } else {
+    return await Cactus.tokenize(contextId, text);
+  }
+};

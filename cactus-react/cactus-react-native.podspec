@@ -8,11 +8,8 @@ if ENV["CACTUS_DISABLE_METAL"] != "1" then
   base_compiler_flags += " -DLM_GGML_USE_METAL -DLM_GGML_METAL_USE_BF16" # -DLM_GGML_METAL_NDEBUG
 end
 
-# Use base_optimizer_flags = "" for debug builds
-# base_optimizer_flags = ""
 base_optimizer_flags = "-O3 -DNDEBUG"
 
-# We always use the local ios directory since we're now copying the files
 ios_path = 'ios'
 
 Pod::Spec.new do |s|
