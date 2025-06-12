@@ -6,7 +6,7 @@
 [gmail-url]: mailto:founders@cactuscompute.com
 
 [discord-shield]: https://img.shields.io/badge/Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white
-[discord-url]: https://discord.gg/j4SS7Nwr
+[discord-url]: https://discord.gg/SdZjmfWQ
 
 [docs-shield]: https://img.shields.io/badge/DeepWiki-009485?style=for-the-badge&logo=readthedocs&logoColor=white
 [docs-url]: https://deepwiki.com/cactus-compute/cactus
@@ -228,7 +228,7 @@ First, clone the repo with `git clone https://github.com/cactus-compute/cactus.g
 4. **Contributing**
     - To contribute a bug fix, create a branch after making your changes with `git checkout -b <branch-name>` and submit a PR. 
     - To contribute a feature, please raise as issue first so it can be discussed, to avoid intersecting with someone else.
-    - [Join our discord](https://discord.gg/j4SS7Nwr)
+    - [Join our discord](https://discord.gg/SdZjmfWQ)
 
 ## ![Performance](https://img.shields.io/badge/Performance-grey.svg?style=for-the-badge)
 
