@@ -26,7 +26,7 @@ Cactus is a lightweight, high-performance framework for running AI models on mob
 - Battery-efficient inference 
 - Background processing 
 
-## ![Why Cactus?](https://img.shields.io/badge/Shipped_Features-grey.svg?style=for-the-badge)
+## ![Why Cactus?](https://img.shields.io/badge/Features-grey.svg?style=for-the-badge)
 
 - APIs are increasingly becoming expensive, especially at scale 
 - Private and local, data do not leave the device whatsoever 
