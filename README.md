@@ -222,7 +222,7 @@ Cactus backend is written in C/C++ and can run directly on any ARM/X86/Raspberry
 
 ## ![Using this Repo & Example Apps](https://img.shields.io/badge/Using_Repo_And_Examples-grey.svg?style=for-the-badge)
 
-First, clone the repo and make all scripts executable with `git clone https://github.com/cactus-compute/cactus.git && chmod +x scripts/*.sh`
+First, clone the repo with `git clone https://github.com/cactus-compute/cactus.git`, cd into it and make all scripts executable with `chmod +x scripts/*.sh`
 
 1. **Flutter**
     - Build the Android JNILibs with `scripts/build-flutter-android.sh`.
