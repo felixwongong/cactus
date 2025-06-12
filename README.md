@@ -37,29 +37,6 @@ Cactus is a lightweight, high-performance framework for running AI models on mob
 - iOS xcframework and JNILibs ifworking in native setup
 - Neat and tiny C++ build for custom hardware 
 
-## ![Architecture](https://img.shields.io/badge/Architecture-grey.svg?style=for-the-badge)
-
-```
-┌─────────────────────────────────────────┐
-│              Your apps                  │
-└─────────────┬─────────────┬─────────────┘
-              │             │              
-┌─────────────▼─────────────▼─────────────┐
-│   ┌───-───┐   ┌────-────┐   ┌───-───┐   │
-│   │ React │   │ Flutter │   │ Native│   │
-│   └───────┘   └─────────┘   └───────┘   │
-│                 Bindings                │
-└─────────────┬─────────────┬─────────────┘
-              │             │              
-┌─────────────▼─────────────▼─────────────┐
-│              Cactus Core C++            │
-└─────────────┬─────────────┬─────────────┘
-              │             │       
-       ┌─────-▼────┐  ┌─────▼─────┐  
-       │ Llama.cpp │  │ GGML/GGUF │  
-       └───────────┘  └───────────┘  
-```
-
 ## ![Flutter](https://img.shields.io/badge/Flutter-grey.svg?style=for-the-badge&logo=Flutter&logoColor=white)
 
 1.  **Update `pubspec.yaml`:**
