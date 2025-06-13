@@ -102,18 +102,18 @@ Cactus is a lightweight, high-performance framework for running AI models on mob
 
     // Initialize a context
     const context = await initLlama({
-    model: '/path/to/your/model.gguf',
-    n_ctx: 2048,
-    n_threads: 4,
+        model: '/path/to/your/model.gguf',
+        n_ctx: 2048,
+        n_threads: 4,
     });
 
     // Generate text
     const result = await context.completion({
-    messages: [
-        { role: 'user', content: 'Hello, how are you?' }
-    ],
-    n_predict: 100,
-    temperature: 0.7,
+        messages: [
+            { role: 'user', content: 'Hello, how are you?' }
+        ],
+        n_predict: 100,
+        temperature: 0.7,
     });
 
     console.log(result.text);
