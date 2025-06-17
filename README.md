@@ -265,13 +265,4 @@ We created a demo chat app we use for benchmarking:
 [![Download App](https://img.shields.io/badge/Download_Android_App-grey?style=for-the-badge&logo=android&logoColor=white)](https://play.google.com/store/apps/details?id=com.rshemetsubuser.myapp&pcampaignid=web_share)
 
 ## ![Recommendations](https://img.shields.io/badge/Our_Recommendations-grey.svg?style=for-the-badge)
-You can run up to 10B models at Q4 on most devices, but it is not recommended for production due to file size, speed, battery, heating performance. 
-We generally give the following recommendation.
-
-- **Language Generation**: `SmolLM2-360m`, `Qwen-3-600m-Q6`, `Gemma-3-1B-Q6`, `Qwen-3-1.7B-Q6`
-- **Multimodal Language Generation**: `Smol-VLM-500m-Q6`, `Gemma-3n-2B-Q6`
-- **Embeddings**: `nomic-v2-moe-300m-Q6`, `jina-v3-570m-Q6`
-- **Text-To-Speech**: `OuteTTS-0.2-500m-Q6`
-
-Gemma-3n-2B-Q6 is a great omni model and beats GPT 4.1 across many metrics. It is multimodal (vision, audio) and can perfectly be used for embedding
-text, images, audio, as well as zero-shot classification and more, with clever prompt engineering. We are trying hard to get the weights.
+We provide a colleaction of recommended models on our [HuggingFace Page](https://huggingface.co/Cactus-Compute?sort_models=alphabetical#models)
