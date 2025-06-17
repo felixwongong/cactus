@@ -232,30 +232,30 @@ First, clone the repo with `git clone https://github.com/cactus-compute/cactus.g
 
 ## ![Performance](https://img.shields.io/badge/Performance-grey.svg?style=for-the-badge)
 
-| Device                        | Gemma-3 1B Q8 (toks/sec) | Qwen-2.5 1.5B Q8 (toks/sec) |  
+| Device                        |  Gemma3 1B Q4 (toks/sec) |    Qwen3 4B Q4 (toks/sec)   |  
 |:------------------------------|:------------------------:|:---------------------------:|
-| iPhone 16 Pro Max             |            46            |             37              |
-| iPhone 16 Pro                 |            46            |             37              |
-| iPhone 16                     |            42            |             36              |
-| iPhone 15 Pro Max             |            39            |             31              |
-| iPhone 15 Pro                 |            39            |             31              |
-| iPhone 14 Pro Max             |            38            |             29              |
-| OnePlus 13 5G                 |            37            |             -               |
-| Samsung Galaxy S24 Ultra      |            36            |             -               |
-| iPhone 15                     |            36            |             25              |
-| OnePlus Open                  |            33            |             -               |
-| Samsung Galaxy S23 5G         |            32            |             -               |
-| Samsung Galaxy S24            |            31            |             -               |
-| iPhone 13 Pro                 |            30            |             -               |
-| OnePlus 12                    |            30            |             -               |
-| Galaxy S25 Ultra              |            25            |             -               |
-| OnePlus 11                    |            23            |             -               |
-| iPhone 13 mini                |            22            |             -               |
-| Redmi K70 Ultra               |            21            |             -               |
-| Xiaomi 13                     |            21            |             -               |
-| Samsung Galaxy S24+           |            19            |             -               |
-| Samsung Galaxy Z Fold 4       |            19            |             -               |
-| Xiaomi Poco F6 5G             |            19            |             -               |
+| iPhone 16 Pro Max             |            54            |             18              |
+| iPhone 16 Pro                 |            54            |             18              |
+| iPhone 16                     |            49            |             16              |
+| iPhone 15 Pro Max             |            45            |             15              |
+| iPhone 15 Pro                 |            45            |             15              |
+| iPhone 14 Pro Max             |            44            |             14              |
+| OnePlus 13 5G                 |            43            |             14              |
+| Samsung Galaxy S24 Ultra      |            42            |             14              |
+| iPhone 15                     |            42            |             14              |
+| OnePlus Open                  |            38            |             13              |
+| Samsung Galaxy S23 5G         |            37            |             12              |
+| Samsung Galaxy S24            |            36            |             12              |
+| iPhone 13 Pro                 |            35            |             11              |
+| OnePlus 12                    |            35            |             11              |
+| Galaxy S25 Ultra              |            29            |             9               |
+| OnePlus 11                    |            26            |             8               |
+| iPhone 13 mini                |            25            |             8               |
+| Redmi K70 Ultra               |            24            |             8               |
+| Xiaomi 13                     |            24            |             8               |
+| Samsung Galaxy S24+           |            22            |             7               |
+| Samsung Galaxy Z Fold 4       |            22            |             7               |
+| Xiaomi Poco F6 5G             |            22            |             6               |
 
 ## ![Demo](https://img.shields.io/badge/Demo-grey.svg?style=for-the-badge)
 
