@@ -21,11 +21,14 @@ import java.util.Random;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.PushbackInputStream;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public class Cactus implements LifecycleEventListener {
   public static final String NAME = "Cactus";
 
   private ReactApplicationContext reactContext;
+  private final ExecutorService singleThreadExecutor = Executors.newSingleThreadExecutor();
 
   public Cactus(ReactApplicationContext reactContext) {
     reactContext.addLifecycleEventListener(this);
@@ -95,7 +98,7 @@ public class Cactus implements LifecycleEventListener {
         }
         promise.resolve(result);
       }
-    }.executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR);
+    }.executeOnExecutor(singleThreadExecutor);
   }
 
   public void initContext(double id, final ReadableMap params, final Promise promise) {
@@ -139,7 +142,7 @@ public class Cactus implements LifecycleEventListener {
         promise.resolve(result);
         tasks.remove(this);
       }
-    }.executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR);
+    }.executeOnExecutor(singleThreadExecutor);
     tasks.put(task, "initContext");
   }
 
@@ -178,7 +181,7 @@ public class Cactus implements LifecycleEventListener {
         promise.resolve(result);
         tasks.remove(this);
       }
-    }.executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR);
+    }.executeOnExecutor(singleThreadExecutor);
     tasks.put(task, "getFormattedChat-" + contextId);
   }
 
@@ -211,7 +214,7 @@ public class Cactus implements LifecycleEventListener {
         promise.resolve(result);
         tasks.remove(this);
       }
-    }.executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR);
+    }.executeOnExecutor(singleThreadExecutor);
     tasks.put(task, "loadSession-" + contextId);
   }
 
@@ -244,12 +247,12 @@ public class Cactus implements LifecycleEventListener {
         promise.resolve(result);
         tasks.remove(this);
       }
-    }.executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR);
+    }.executeOnExecutor(singleThreadExecutor);
     tasks.put(task, "saveSession-" + contextId);
   }
 
   public void completion(double id, final ReadableMap params, final Promise promise) {
-    Log.d(NAME, "🟢 BRIDGE: completion() method called with contextId=" + (int)id);
+    Log.d(NAME, "BRIDGE: completion() method called with contextId=" + (int)id);
     final int contextId = (int) id;
     AsyncTask task = new AsyncTask<Void, Void, WritableMap>() {
       private Exception exception;
@@ -260,20 +263,20 @@ public class Cactus implements LifecycleEventListener {
         try {
           LlamaContext context = contexts.get(contextId);
           if (context == null) {
-            Log.e(NAME, "❌ BRIDGE: Context not found for id=" + contextId);
+            Log.e(NAME, "BRIDGE: Context not found for id=" + contextId);
             throw new Exception("Context not found");
           }
-          Log.d(NAME, "✅ BRIDGE: Context found, checking if predicting...");
+          Log.d(NAME, "BRIDGE: Context found, checking if predicting...");
           if (context.isPredicting()) {
-            Log.e(NAME, "❌ BRIDGE: Context is busy (predicting)");
+            Log.e(NAME, "BRIDGE: Context is busy (predicting)");
             throw new Exception("Context is busy");
           }
-          Log.d(NAME, "🚀 BRIDGE: About to call context.completion()...");
+          Log.d(NAME, "BRIDGE: About to call context.completion()...");
           WritableMap result = context.completion(params);
-          Log.d(NAME, "✅ BRIDGE: context.completion() returned successfully");
+          Log.d(NAME, "BRIDGE: context.completion() returned successfully");
           return result;
         } catch (Exception e) {
-          Log.e(NAME, "❌ BRIDGE: Exception in doInBackground: " + e.getMessage());
+          Log.e(NAME, "BRIDGE: Exception in doInBackground: " + e.getMessage());
           exception = e;
         }
         return null;
@@ -281,19 +284,19 @@ public class Cactus implements LifecycleEventListener {
 
       @Override
       protected void onPostExecute(WritableMap result) {
-        Log.d(NAME, "📤 BRIDGE: onPostExecute called");
+        Log.d(NAME, "BRIDGE: onPostExecute called");
         if (exception != null) {
-          Log.e(NAME, "❌ BRIDGE: Rejecting promise with exception: " + exception.getMessage());
+          Log.e(NAME, "BRIDGE: Rejecting promise with exception: " + exception.getMessage());
           promise.reject(exception);
           return;
         }
-        Log.d(NAME, "✅ BRIDGE: Resolving promise with result");
+        Log.d(NAME, "BRIDGE: Resolving promise with result");
         promise.resolve(result);
         tasks.remove(this);
-        Log.d(NAME, "🏁 BRIDGE: completion() finished successfully");
+        Log.d(NAME, "BRIDGE: completion() finished successfully");
       }
-    }.executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR);
-    Log.d(NAME, "📋 BRIDGE: AsyncTask queued for execution");
+    }.executeOnExecutor(singleThreadExecutor);
+    Log.d(NAME, "BRIDGE: AsyncTask queued for execution");
     tasks.put(task, "completion-" + contextId);
   }
 
@@ -332,7 +335,7 @@ public class Cactus implements LifecycleEventListener {
         promise.resolve(result);
         tasks.remove(this);
       }
-    }.executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR);
+    }.executeOnExecutor(singleThreadExecutor);
     tasks.put(task, "stopCompletion-" + contextId);
   }
 
@@ -364,7 +367,7 @@ public class Cactus implements LifecycleEventListener {
         promise.resolve(result);
         tasks.remove(this);
       }
-    }.executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR);
+    }.executeOnExecutor(singleThreadExecutor);
     tasks.put(task, "tokenize-" + contextId);
   }
 
@@ -396,7 +399,7 @@ public class Cactus implements LifecycleEventListener {
         promise.resolve(result);
         tasks.remove(this);
       }
-    }.executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR);
+    }.executeOnExecutor(singleThreadExecutor);
     tasks.put(task, "tokenize-" + contextId);
   }
 
@@ -428,7 +431,7 @@ public class Cactus implements LifecycleEventListener {
         promise.resolve(result);
         tasks.remove(this);
       }
-    }.executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR);
+    }.executeOnExecutor(singleThreadExecutor);
     tasks.put(task, "detokenize-" + contextId);
   }
 
@@ -460,7 +463,7 @@ public class Cactus implements LifecycleEventListener {
         promise.resolve(result);
         tasks.remove(this);
       }
-    }.executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR);
+    }.executeOnExecutor(singleThreadExecutor);
     tasks.put(task, "embedding-" + contextId);
   }
 
@@ -492,7 +495,7 @@ public class Cactus implements LifecycleEventListener {
         promise.resolve(result);
         tasks.remove(this);
       }
-    }.executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR);
+    }.executeOnExecutor(singleThreadExecutor);
     tasks.put(task, "bench-" + contextId);
   }
 
@@ -525,7 +528,7 @@ public class Cactus implements LifecycleEventListener {
           return;
         }
       }
-    }.executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR);
+    }.executeOnExecutor(singleThreadExecutor);
     tasks.put(task, "applyLoraAdapters-" + contextId);
   }
 
@@ -559,7 +562,7 @@ public class Cactus implements LifecycleEventListener {
         }
         promise.resolve(null);
       }
-    }.executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR);
+    }.executeOnExecutor(singleThreadExecutor);
     tasks.put(task, "removeLoraAdapters-" + contextId);
   }
 
@@ -590,7 +593,7 @@ public class Cactus implements LifecycleEventListener {
         }
         promise.resolve(result);
       }
-    }.executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR);
+    }.executeOnExecutor(singleThreadExecutor);
     tasks.put(task, "getLoadedLoraAdapters-" + contextId);
   }
 
@@ -632,7 +635,7 @@ public class Cactus implements LifecycleEventListener {
         promise.resolve(null);
         tasks.remove(this);
       }
-    }.executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR);
+    }.executeOnExecutor(singleThreadExecutor);
     tasks.put(task, "releaseContext-" + contextId);
   }
 
@@ -659,7 +662,7 @@ public class Cactus implements LifecycleEventListener {
         promise.resolve(null);
         tasks.remove(this);
       }
-    }.executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR);
+    }.executeOnExecutor(singleThreadExecutor);
     tasks.put(task, "releaseAllContexts");
   }
 
@@ -718,7 +721,7 @@ public class Cactus implements LifecycleEventListener {
         promise.resolve(result);
         tasks.remove(this);
       }
-    }.executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR);
+    }.executeOnExecutor(singleThreadExecutor);
     tasks.put(task, "initMultimodal-" + contextId);
   }
 
@@ -750,7 +753,7 @@ public class Cactus implements LifecycleEventListener {
         promise.resolve(result);
         tasks.remove(this);
       }
-    }.executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR);
+    }.executeOnExecutor(singleThreadExecutor);
     tasks.put(task, "isMultimodalEnabled-" + contextId);
   }
 
@@ -782,7 +785,7 @@ public class Cactus implements LifecycleEventListener {
         promise.resolve(result);
         tasks.remove(this);
       }
-    }.executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR);
+    }.executeOnExecutor(singleThreadExecutor);
     tasks.put(task, "isMultimodalSupportVision-" + contextId);
   }
 
@@ -814,7 +817,7 @@ public class Cactus implements LifecycleEventListener {
         promise.resolve(result);
         tasks.remove(this);
       }
-    }.executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR);
+    }.executeOnExecutor(singleThreadExecutor);
     tasks.put(task, "isMultimodalSupportAudio-" + contextId);
   }
 
@@ -846,7 +849,7 @@ public class Cactus implements LifecycleEventListener {
         promise.resolve(null);
         tasks.remove(this);
       }
-    }.executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR);
+    }.executeOnExecutor(singleThreadExecutor);
     tasks.put(task, "releaseMultimodal-" + contextId);
   }
 
@@ -881,7 +884,7 @@ public class Cactus implements LifecycleEventListener {
         promise.resolve(result);
         tasks.remove(this);
       }
-    }.executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR);
+    }.executeOnExecutor(singleThreadExecutor);
     tasks.put(task, "multimodalCompletion-" + contextId);
   }
 
@@ -913,7 +916,7 @@ public class Cactus implements LifecycleEventListener {
         promise.resolve(result);
         tasks.remove(this);
       }
-    }.executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR);
+    }.executeOnExecutor(singleThreadExecutor);
     tasks.put(task, "initVocoder-" + contextId);
   }
 
@@ -945,7 +948,7 @@ public class Cactus implements LifecycleEventListener {
         promise.resolve(result);
         tasks.remove(this);
       }
-    }.executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR);
+    }.executeOnExecutor(singleThreadExecutor);
     tasks.put(task, "isVocoderEnabled-" + contextId);
   }
 
@@ -977,7 +980,7 @@ public class Cactus implements LifecycleEventListener {
         promise.resolve(result);
         tasks.remove(this);
       }
-    }.executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR);
+    }.executeOnExecutor(singleThreadExecutor);
     tasks.put(task, "getTTSType-" + contextId);
   }
 
@@ -1009,7 +1012,7 @@ public class Cactus implements LifecycleEventListener {
         promise.resolve(result);
         tasks.remove(this);
       }
-    }.executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR);
+    }.executeOnExecutor(singleThreadExecutor);
     tasks.put(task, "getFormattedAudioCompletion-" + contextId);
   }
 
@@ -1041,7 +1044,7 @@ public class Cactus implements LifecycleEventListener {
         promise.resolve(result);
         tasks.remove(this);
       }
-    }.executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR);
+    }.executeOnExecutor(singleThreadExecutor);
     tasks.put(task, "getAudioCompletionGuideTokens-" + contextId);
   }
 
@@ -1073,7 +1076,7 @@ public class Cactus implements LifecycleEventListener {
         promise.resolve(result);
         tasks.remove(this);
       }
-    }.executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR);
+    }.executeOnExecutor(singleThreadExecutor);
     tasks.put(task, "decodeAudioTokens-" + contextId);
   }
 
@@ -1105,7 +1108,7 @@ public class Cactus implements LifecycleEventListener {
         promise.resolve(null);
         tasks.remove(this);
       }
-    }.executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR);
+    }.executeOnExecutor(singleThreadExecutor);
     tasks.put(task, "releaseVocoder-" + contextId);
   }
 }
