@@ -524,6 +524,22 @@ public class LlamaContext {
     releaseVocoder(this.context);
   }
 
+  public String generateResponse(String userMessage, int maxTokens) {
+    return generateResponse(this.context, userMessage, maxTokens);
+  }
+
+  public WritableMap continueConversation(String userMessage, int maxTokens) {
+    return continueConversation(this.context, userMessage, maxTokens);
+  }
+
+  public void clearConversation() {
+    clearConversation(this.context);
+  }
+
+  public boolean isConversationActive() {
+    return isConversationActive(this.context);
+  }
+
   static {
     Log.d(NAME, "Primary ABI: " + Build.SUPPORTED_ABIS[0]);
 
@@ -775,4 +791,10 @@ public class LlamaContext {
   protected static native WritableArray getAudioCompletionGuideTokens(long contextPtr, String textToSpeak);
   protected static native WritableArray decodeAudioTokens(long contextPtr, int[] tokens);
   protected static native void releaseVocoder(long contextPtr);
+
+  // New conversation management methods
+  protected static native String generateResponse(long contextPtr, String userMessage, int maxTokens);
+  protected static native WritableMap continueConversation(long contextPtr, String userMessage, int maxTokens);
+  protected static native void clearConversation(long contextPtr);
+  protected static native boolean isConversationActive(long contextPtr);
 }

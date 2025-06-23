@@ -172,6 +172,17 @@ final class CactusChatResultC extends Struct {
   external bool parallel_tool_calls;
 }
 
+// STRUCT: cactus_conversation_result_c_t (matches C++ exactly)
+final class CactusConversationResultC extends Struct {
+  external Pointer<Utf8> text;
+  @Int64()
+  external int time_to_first_token; // milliseconds
+  @Int64()
+  external int total_time; // milliseconds
+  @Int32()
+  external int tokens_generated;
+}
+
 // =============================================================================
 // FUNCTION TYPE DEFINITIONS (matches C++ exactly)
 // =============================================================================
@@ -372,6 +383,22 @@ typedef FreeLoraAdaptersDart = void Function(Pointer<CactusLoraAdaptersC> adapte
 
 typedef FreeChatResultMembersNative = Void Function(Pointer<CactusChatResultC> result);
 typedef FreeChatResultMembersDart = void Function(Pointer<CactusChatResultC> result);
+
+// Conversation management functions
+typedef GenerateResponseNative = Pointer<Utf8> Function(CactusContextHandle handle, Pointer<Utf8> user_message, Int32 max_tokens);
+typedef GenerateResponseDart = Pointer<Utf8> Function(CactusContextHandle handle, Pointer<Utf8> user_message, int max_tokens);
+
+typedef ContinueConversationNative = CactusConversationResultC Function(CactusContextHandle handle, Pointer<Utf8> user_message, Int32 max_tokens);
+typedef ContinueConversationDart = CactusConversationResultC Function(CactusContextHandle handle, Pointer<Utf8> user_message, int max_tokens);
+
+typedef ClearConversationNative = Void Function(CactusContextHandle handle);
+typedef ClearConversationDart = void Function(CactusContextHandle handle);
+
+typedef IsConversationActiveNative = Bool Function(CactusContextHandle handle);
+typedef IsConversationActiveDart = bool Function(CactusContextHandle handle);
+
+typedef FreeConversationResultMembersNative = Void Function(Pointer<CactusConversationResultC> result);
+typedef FreeConversationResultMembersDart = void Function(Pointer<CactusConversationResultC> result);
 
 // =============================================================================
 // DYNAMIC LIBRARY LOADING
@@ -606,3 +633,24 @@ final freeLoraAdapters = cactusLib
 final freeChatResultMembers = cactusLib
     .lookup<NativeFunction<FreeChatResultMembersNative>>('cactus_free_chat_result_members_c')
     .asFunction<FreeChatResultMembersDart>();
+
+// Conversation management functions
+final generateResponse = cactusLib
+    .lookup<NativeFunction<GenerateResponseNative>>('cactus_generate_response_c')
+    .asFunction<GenerateResponseDart>();
+
+final continueConversation = cactusLib
+    .lookup<NativeFunction<ContinueConversationNative>>('cactus_continue_conversation_c')
+    .asFunction<ContinueConversationDart>();
+
+final clearConversation = cactusLib
+    .lookup<NativeFunction<ClearConversationNative>>('cactus_clear_conversation_c')
+    .asFunction<ClearConversationDart>();
+
+final isConversationActive = cactusLib
+    .lookup<NativeFunction<IsConversationActiveNative>>('cactus_is_conversation_active_c')
+    .asFunction<IsConversationActiveDart>();
+
+final freeConversationResultMembers = cactusLib
+    .lookup<NativeFunction<FreeConversationResultMembersNative>>('cactus_free_conversation_result_members_c')
+    .asFunction<FreeConversationResultMembersDart>();

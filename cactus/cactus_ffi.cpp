@@ -1187,4 +1187,89 @@ void cactus_free_chat_result_members_c(cactus_chat_result_c_t* result) {
     }
 }
 
+char* cactus_generate_response_c(cactus_context_handle_t handle, const char* user_message, int32_t max_tokens) {
+    if (!handle || !user_message) {
+        return safe_strdup("");
+    }
+    
+    cactus::cactus_context* context = reinterpret_cast<cactus::cactus_context*>(handle);
+    try {
+        std::string result = context->generateResponse(user_message, max_tokens);
+        return safe_strdup(result);
+    } catch (const std::exception& e) {
+        std::cerr << "Error generating response: " << e.what() << std::endl;
+        return safe_strdup("");
+    } catch (...) {
+        std::cerr << "Unknown error generating response." << std::endl;
+        return safe_strdup("");
+    }
+}
+
+cactus_conversation_result_c_t cactus_continue_conversation_c(cactus_context_handle_t handle, const char* user_message, int32_t max_tokens) {
+    cactus_conversation_result_c_t result = {nullptr, 0, 0, 0};
+    if (!handle || !user_message) {
+        return result;
+    }
+    
+    cactus::cactus_context* context = reinterpret_cast<cactus::cactus_context*>(handle);
+    try {
+        cactus::conversation_result cpp_result = context->continueConversation(user_message, max_tokens);
+        
+        result.text = safe_strdup(cpp_result.text);
+        result.time_to_first_token = cpp_result.time_to_first_token.count();
+        result.total_time = cpp_result.total_time.count();
+        result.tokens_generated = cpp_result.tokens_generated;
+        
+        return result;
+    } catch (const std::exception& e) {
+        std::cerr << "Error continuing conversation: " << e.what() << std::endl;
+        return {nullptr, 0, 0, 0};
+    } catch (...) {
+        std::cerr << "Unknown error continuing conversation." << std::endl;
+        return {nullptr, 0, 0, 0};
+    }
+}
+
+void cactus_clear_conversation_c(cactus_context_handle_t handle) {
+    if (!handle) {
+        return;
+    }
+    
+    cactus::cactus_context* context = reinterpret_cast<cactus::cactus_context*>(handle);
+    try {
+        context->clearConversation();
+    } catch (const std::exception& e) {
+        std::cerr << "Error clearing conversation: " << e.what() << std::endl;
+    } catch (...) {
+        std::cerr << "Unknown error clearing conversation." << std::endl;
+    }
+}
+
+bool cactus_is_conversation_active_c(cactus_context_handle_t handle) {
+    if (!handle) {
+        return false;
+    }
+    
+    cactus::cactus_context* context = reinterpret_cast<cactus::cactus_context*>(handle);
+    try {
+        return context->isConversationActive();
+    } catch (const std::exception& e) {
+        std::cerr << "Error checking conversation status: " << e.what() << std::endl;
+        return false;
+    } catch (...) {
+        std::cerr << "Unknown error checking conversation status." << std::endl;
+        return false;
+    }
+}
+
+void cactus_free_conversation_result_members_c(cactus_conversation_result_c_t* result) {
+    if (result) {
+        cactus_free_string_c(result->text);
+        result->text = nullptr;
+        result->time_to_first_token = 0;
+        result->total_time = 0;
+        result->tokens_generated = 0;
+    }
+}
+
 } // extern "C"

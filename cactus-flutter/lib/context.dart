@@ -842,4 +842,65 @@ class CactusContext {
       recursionCount: recursionCount + 1,
     );
   }
+
+  Future<String> generateResponse(String userMessage, {int maxTokens = 200}) async {
+    Pointer<Utf8> userMessageC = nullptr;
+    Pointer<Utf8> resultC = nullptr;
+    
+    try {
+      userMessageC = userMessage.toNativeUtf8(allocator: calloc);
+      resultC = bindings.generateResponse(_handle, userMessageC, maxTokens);
+      
+      if (resultC == nullptr) {
+        throw CactusCompletionException("Native generateResponse call returned null");
+      }
+      
+      return resultC.toDartString();
+    } catch (e) {
+      if (e is CactusException) rethrow;
+      throw CactusCompletionException("Error during generateResponse: ${e.toString()}", e);
+    } finally {
+      if (userMessageC != nullptr) calloc.free(userMessageC);
+      if (resultC != nullptr) bindings.freeString(resultC);
+    }
+  }
+
+  Future<ConversationResult> continueConversation(String userMessage, {int maxTokens = 200}) async {
+    Pointer<Utf8> userMessageC = nullptr;
+    
+    try {
+      userMessageC = userMessage.toNativeUtf8(allocator: calloc);
+      final cResult = bindings.continueConversation(_handle, userMessageC, maxTokens);
+      final cResultPtr = calloc<bindings.CactusConversationResultC>()..ref = cResult;
+      
+      try {
+        if (cResult.text == nullptr) {
+          throw CactusCompletionException("Native continueConversation call returned null text");
+        }
+        
+        return ConversationResult(
+          text: cResult.text.toDartString(),
+          timeToFirstToken: cResult.time_to_first_token,
+          totalTime: cResult.total_time,
+          tokensGenerated: cResult.tokens_generated,
+        );
+      } finally {
+        bindings.freeConversationResultMembers(cResultPtr);
+        calloc.free(cResultPtr);
+      }
+    } catch (e) {
+      if (e is CactusException) rethrow;
+      throw CactusCompletionException("Error during continueConversation: ${e.toString()}", e);
+    } finally {
+      if (userMessageC != nullptr) calloc.free(userMessageC);
+    }
+  }
+
+  void clearConversation() {
+    bindings.clearConversation(_handle);
+  }
+
+  bool isConversationActive() {
+    return bindings.isConversationActive(_handle);
+  }
 }

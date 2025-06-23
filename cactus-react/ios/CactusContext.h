@@ -74,6 +74,12 @@
 - (NSArray *)decodeAudioTokens:(NSArray *)tokens;
 - (void)releaseVocoder;
 
+// New conversation management methods
+- (NSString *)generateResponse:(NSString *)userMessage maxTokens:(int)maxTokens;
+- (NSDictionary *)continueConversation:(NSString *)userMessage maxTokens:(int)maxTokens;
+- (void)clearConversation;
+- (BOOL)isConversationActive;
+
 - (void)invalidate;
 
 @end

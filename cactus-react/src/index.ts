@@ -18,6 +18,7 @@ import type {
   NativeAudioCompletionResult,
   NativeAudioTokensResult,
   NativeAudioDecodeResult,
+  NativeConversationResult,
 } from './NativeCactus'
 import type {
   SchemaGrammarConverterPropOrder,
@@ -349,6 +350,41 @@ export class LlamaContext {
 
   stopCompletion(): Promise<void> {
     return Cactus.stopCompletion(this.id)
+  }
+
+  // New conversation management methods
+  /**
+   * Generate a response to a user message (simple text return)
+   */
+  async generateResponse(
+    userMessage: string,
+    maxTokens: number = 200,
+  ): Promise<string> {
+    return Cactus.generateResponse(this.id, userMessage, maxTokens)
+  }
+
+  /**
+   * Continue conversation with detailed timing information
+   */
+  async continueConversation(
+    userMessage: string,
+    maxTokens: number = 200,
+  ): Promise<NativeConversationResult> {
+    return Cactus.continueConversation(this.id, userMessage, maxTokens)
+  }
+
+  /**
+   * Clear conversation history and reset KV cache
+   */
+  async clearConversation(): Promise<void> {
+    return Cactus.clearConversation(this.id)
+  }
+
+  /**
+   * Check if conversation is currently active
+   */
+  async isConversationActive(): Promise<boolean> {
+    return Cactus.isConversationActive(this.id)
   }
 
   tokenize(text: string): Promise<NativeTokenizeResult> {

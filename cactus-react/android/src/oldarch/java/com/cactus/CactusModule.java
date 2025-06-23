@@ -184,6 +184,26 @@ public class CactusModule extends ReactContextBaseJavaModule {
   }
 
   @ReactMethod
+  public void generateResponse(double id, final String userMessage, final Double maxTokens, final Promise promise) {
+    cactus.generateResponse(id, userMessage, maxTokens != null ? maxTokens.doubleValue() : 200.0, promise);
+  }
+
+  @ReactMethod
+  public void continueConversation(double id, final String userMessage, final Double maxTokens, final Promise promise) {
+    cactus.continueConversation(id, userMessage, maxTokens != null ? maxTokens.doubleValue() : 200.0, promise);
+  }
+
+  @ReactMethod
+  public void clearConversation(double id, final Promise promise) {
+    cactus.clearConversation(id, promise);
+  }
+
+  @ReactMethod
+  public void isConversationActive(double id, final Promise promise) {
+    cactus.isConversationActive(id, promise);
+  }
+
+  @ReactMethod
   public void releaseContext(double id, Promise promise) {
     cactus.releaseContext(id, promise);
   }

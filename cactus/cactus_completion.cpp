@@ -74,8 +74,13 @@ void cactus_context::loadPrompt() {
         n_past--;
     }
 
-    if (n_past > 0) {
-         llama_kv_self_seq_rm(ctx, 0, n_past, -1);
+    // Only clear KV cache beyond the common part
+    // This preserves cache for the common prefix
+    if (n_past < (int)embd.size()) {
+        llama_kv_self_seq_rm(ctx, 0, n_past, -1);
+        LOG_VERBOSE("Clearing KV cache from position %d onwards", n_past);
+    } else {
+        LOG_VERBOSE("No KV cache clearing needed, n_past=%d", n_past);
     }
 
     LOG_VERBOSE("prompt ingested, n_past: %d, cached_size: %zu, to_eval_size: %zu",

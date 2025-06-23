@@ -1,3 +1,25 @@
+## 0.1.2
+
+* **NEW: Conversation Management API** - Optimized stateful chat with KV cache performance
+  * Added `generateResponse()` method for simple text responses
+  * Added `continueConversation()` method with detailed performance metrics
+  * Added `clearConversation()` method to reset conversation state  
+  * Added `isConversationActive()` method to check conversation status
+  * Added `ConversationResult` class with timing data (TTFT, total time, tokens/sec)
+* **PERFORMANCE: KV Cache Optimization** - Consistent ~70ms TTFT across conversation turns
+  * Eliminates conversation length impact on response time
+  * 3-6x performance improvement for multi-turn conversations
+  * Automatic conversation state management with token appending
+* **ENHANCED: Dual-Mode Architecture** in Flutter service
+  * Automatic switching between optimized text and multimodal modes
+  * Real-time performance tracking with `ValueNotifier`s
+  * Enhanced state management and cleanup
+* **IMPROVED: FFI Interface** - Complete C FFI bindings for conversation management
+  * Added `cactus_generate_response_c`, `cactus_continue_conversation_c`
+  * Added `cactus_clear_conversation_c`, `cactus_is_conversation_active_c` 
+  * Added `cactus_conversation_result_c_t` struct with performance metrics
+  * Proper memory management with `cactus_free_conversation_result_members_c`
+
 ## 0.1.0
 
 * Major update with comprehensive API improvements

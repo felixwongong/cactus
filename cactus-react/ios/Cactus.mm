@@ -643,4 +643,84 @@ RCT_EXPORT_METHOD(releaseVocoder:(double)contextId
 }
 #endif
 
+// New conversation management methods
+RCT_EXPORT_METHOD(generateResponse:(double)contextId
+                 userMessage:(NSString *)userMessage
+                 maxTokens:(double)maxTokens
+                 withResolver:(RCTPromiseResolveBlock)resolve
+                 withRejecter:(RCTPromiseRejectBlock)reject)
+{
+    CactusContext *context = llamaContexts[[NSNumber numberWithDouble:contextId]];
+    if (context == nil) {
+        reject(@"llama_error", @"Context not found", nil);
+        return;
+    }
+    if ([context isPredicting]) {
+        reject(@"llama_error", @"Context is busy", nil);
+        return;
+    }
+    dispatch_async(llamaDQueue, ^{
+        @try {
+            @autoreleasepool {
+                NSString *result = [context generateResponse:userMessage maxTokens:(int)maxTokens];
+                resolve(result);
+            }
+        } @catch (NSException *exception) {
+            reject(@"llama_cpp_error", exception.reason, nil);
+        }
+    });
+}
+
+RCT_EXPORT_METHOD(continueConversation:(double)contextId
+                 userMessage:(NSString *)userMessage
+                 maxTokens:(double)maxTokens
+                 withResolver:(RCTPromiseResolveBlock)resolve
+                 withRejecter:(RCTPromiseRejectBlock)reject)
+{
+    CactusContext *context = llamaContexts[[NSNumber numberWithDouble:contextId]];
+    if (context == nil) {
+        reject(@"llama_error", @"Context not found", nil);
+        return;
+    }
+    if ([context isPredicting]) {
+        reject(@"llama_error", @"Context is busy", nil);
+        return;
+    }
+    dispatch_async(llamaDQueue, ^{
+        @try {
+            @autoreleasepool {
+                NSDictionary *result = [context continueConversation:userMessage maxTokens:(int)maxTokens];
+                resolve(result);
+            }
+        } @catch (NSException *exception) {
+            reject(@"llama_cpp_error", exception.reason, nil);
+        }
+    });
+}
+
+RCT_EXPORT_METHOD(clearConversation:(double)contextId
+                 withResolver:(RCTPromiseResolveBlock)resolve
+                 withRejecter:(RCTPromiseRejectBlock)reject)
+{
+    CactusContext *context = llamaContexts[[NSNumber numberWithDouble:contextId]];
+    if (context == nil) {
+        reject(@"llama_error", @"Context not found", nil);
+        return;
+    }
+    [context clearConversation];
+    resolve(nil);
+}
+
+RCT_EXPORT_METHOD(isConversationActive:(double)contextId
+                 withResolver:(RCTPromiseResolveBlock)resolve
+                 withRejecter:(RCTPromiseRejectBlock)reject)
+{
+    CactusContext *context = llamaContexts[[NSNumber numberWithDouble:contextId]];
+    if (context == nil) {
+        reject(@"llama_error", @"Context not found", nil);
+        return;
+    }
+    resolve(@([context isConversationActive]));
+}
+
 @end

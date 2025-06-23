@@ -307,3 +307,27 @@ class ModelMeta {
   @override
   String toString() => 'ModelMeta(description: $description, size: $size, nParams: $nParams)';
 }
+
+class ConversationResult {
+  final String text;
+  final int timeToFirstToken; // milliseconds
+  final int totalTime; // milliseconds
+  final int tokensGenerated;
+
+  ConversationResult({
+    required this.text,
+    required this.timeToFirstToken,
+    required this.totalTime,
+    required this.tokensGenerated,
+  });
+
+  double get tokensPerSecond {
+    if (totalTime <= 0) return 0.0;
+    return (tokensGenerated * 1000.0) / totalTime;
+  }
+
+  @override
+  String toString() => 'ConversationResult(text: ${text.length > 50 ? text.substring(0, 50) + "..." : text}, '
+      'timeToFirstToken: ${timeToFirstToken}ms, totalTime: ${totalTime}ms, '
+      'tokensGenerated: $tokensGenerated, speed: ${tokensPerSecond.toStringAsFixed(1)} tok/s)';
+}

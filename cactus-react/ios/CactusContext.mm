@@ -961,6 +961,33 @@
     llama->releaseVocoder();
 }
 
+// New conversation management methods
+- (NSString *)generateResponse:(NSString *)userMessage maxTokens:(int)maxTokens {
+    std::string result = llama->generateResponse([userMessage UTF8String], maxTokens);
+    llama->is_predicting = false;
+    return [NSString stringWithUTF8String:result.c_str()];
+}
+
+- (NSDictionary *)continueConversation:(NSString *)userMessage maxTokens:(int)maxTokens {
+    cactus::conversation_result result = llama->continueConversation([userMessage UTF8String], maxTokens);
+    llama->is_predicting = false;
+    
+    return @{
+        @"text": [NSString stringWithUTF8String:result.text.c_str()],
+        @"time_to_first_token": @(result.time_to_first_token.count()),
+        @"total_time": @(result.total_time.count()),
+        @"tokens_generated": @(result.tokens_generated)
+    };
+}
+
+- (void)clearConversation {
+    llama->clearConversation();
+}
+
+- (BOOL)isConversationActive {
+    return llama->isConversationActive();
+}
+
 - (void)invalidate {
     delete llama;
     // llama_backend_free();

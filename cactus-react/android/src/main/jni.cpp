@@ -1563,7 +1563,59 @@ JNIEXPORT void JNICALL
 Java_com_cactus_LlamaContext_unsetLog(JNIEnv *env, jobject thiz) {
     UNUSED(env);
     UNUSED(thiz);
-    llama_log_set(cactus_log_callback_default, NULL);
+    llama_log_set(cactus_log_callback_default, nullptr);
+}
+
+JNIEXPORT jstring JNICALL
+Java_com_cactus_LlamaContext_generateResponse(
+    JNIEnv *env, jobject thiz, jlong context_ptr, jstring user_message, jint max_tokens) {
+    UNUSED(thiz);
+    auto llama = context_map[(long) context_ptr];
+    const char *user_message_chars = env->GetStringUTFChars(user_message, nullptr);
+    
+    std::string result = llama->generateResponse(user_message_chars, max_tokens);
+    llama->is_predicting = false;
+    
+    env->ReleaseStringUTFChars(user_message, user_message_chars);
+    return env->NewStringUTF(result.c_str());
+}
+
+JNIEXPORT jobject JNICALL
+Java_com_cactus_LlamaContext_continueConversation(
+    JNIEnv *env, jobject thiz, jlong context_ptr, jstring user_message, jint max_tokens) {
+    UNUSED(thiz);
+    auto llama = context_map[(long) context_ptr];
+    const char *user_message_chars = env->GetStringUTFChars(user_message, nullptr);
+    
+    cactus::conversation_result result = llama->continueConversation(user_message_chars, max_tokens);
+    llama->is_predicting = false;
+    
+    auto result_map = createWriteableMap(env);
+    putString(env, result_map, "text", result.text.c_str());
+    putInt(env, result_map, "time_to_first_token", result.time_to_first_token.count());
+    putInt(env, result_map, "total_time", result.total_time.count());
+    putInt(env, result_map, "tokens_generated", result.tokens_generated);
+    
+    env->ReleaseStringUTFChars(user_message, user_message_chars);
+    return reinterpret_cast<jobject>(result_map);
+}
+
+JNIEXPORT void JNICALL
+Java_com_cactus_LlamaContext_clearConversation(
+    JNIEnv *env, jobject thiz, jlong context_ptr) {
+    UNUSED(thiz);
+    UNUSED(env);
+    auto llama = context_map[(long) context_ptr];
+    llama->clearConversation();
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_cactus_LlamaContext_isConversationActive(
+    JNIEnv *env, jobject thiz, jlong context_ptr) {
+    UNUSED(thiz);
+    UNUSED(env);
+    auto llama = context_map[(long) context_ptr];
+    return llama->isConversationActive();
 }
 
 } // extern "C"

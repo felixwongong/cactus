@@ -103,7 +103,6 @@ bool downloadModel(const std::string& url, const std::string& filename) {
 class ChatBot {
 private:
     cactus::cactus_context context;
-    std::vector<std::string> conversation_history;
     
 public:
     bool initialize(const std::string& model_path) {
@@ -124,47 +123,25 @@ public:
     }
     
     std::string chat(const std::string& user_input) {
-        // Build conversation context
-        std::string messages = "[";
-        for (const auto& msg : conversation_history) {
-            messages += msg + ",";
-        }
+        // Use optimized conversation API - handles chat formatting and KV cache automatically
+        auto result = context.continueConversation(user_input, 256);
         
-        // Add user message
-        std::string user_msg = R"({"role": "user", "content": ")" + user_input + R"("})";
-        messages += user_msg + "]";
+        // Log performance metrics
+        std::cout << "[PERFORMANCE] TTFT: " << result.time_to_first_token.count() << "ms, "
+                  << "Total: " << result.total_time.count() << "ms, "
+                  << "Tokens: " << result.tokens_generated << ", "
+                  << "Speed: " << std::fixed << std::setprecision(1) 
+                  << (result.tokens_generated * 1000.0f / result.total_time.count()) << " tok/s" << std::endl;
         
-        // Format with chat template
-        std::string formatted_prompt = context.getFormattedChat(messages, "");
-        
-        context.params.prompt = formatted_prompt;
-        context.params.n_predict = 256;
-        
-        if (!context.initSampling()) {
-            return "Error: Failed to initialize sampling";
-        }
-        
-        context.rewind();
-        context.beginCompletion();
-        context.loadPrompt();
-        
-        while (context.has_next_token && !context.is_interrupted) {
-            auto token_output = context.doCompletion();
-            if (token_output.tok == -1) break;
-        }
-        
-        std::string response = context.generated_text;
-        
-        // Update conversation history
-        conversation_history.push_back(user_msg);
-        std::string assistant_msg = R"({"role": "assistant", "content": ")" + response + R"("})";
-        conversation_history.push_back(assistant_msg);
-        
-        return response;
+        return result.text;
     }
     
     void clearHistory() {
-        conversation_history.clear();
+        context.clearConversation();
+    }
+    
+    bool isConversationActive() {
+        return context.isConversationActive();
     }
 };
 
@@ -198,7 +175,8 @@ int main() {
         }
         
         std::string response = bot.chat(input);
-        std::cout << "Bot: " << response << std::endl << std::endl;
+        std::cout << "Bot: " << response << std::endl;
+        std::cout << "Conversation active: " << (bot.isConversationActive() ? "Yes" : "No") << std::endl << std::endl;
     }
     
     return 0;
@@ -890,6 +868,13 @@ void listLoRAAdapters(cactus::cactus_context& context) {
 ### Performance Monitoring
 
 ```cpp
+struct conversation_result {
+    std::string text;
+    std::chrono::milliseconds time_to_first_token;
+    std::chrono::milliseconds total_time;
+    int tokens_generated;
+};
+
 struct PerformanceMetrics {
     size_t prompt_tokens = 0;
     size_t generated_tokens = 0;
@@ -991,6 +976,13 @@ public:
 - `void loadPrompt()` - Load prompt into context
 - `completion_token_output doCompletion()` - Generate next token
 - `void endCompletion()` - End generation process
+
+### Conversation Management Methods
+
+- `std::string generateResponse(const std::string& user_message, int max_tokens)` - Generate response with optimized KV cache
+- `conversation_result continueConversation(const std::string& user_message, int max_tokens)` - Continue conversation with detailed timing
+- `void clearConversation()` - Reset conversation state and clear KV cache
+- `bool isConversationActive()` - Check if conversation is active
 
 ### Multimodal Methods
 

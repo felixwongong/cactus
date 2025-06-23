@@ -3,6 +3,7 @@
 
 #include <sstream>
 #include <iostream>
+#include <chrono>
 #include "chat.h"
 #include "common.h"
 #include "ggml.h"
@@ -46,6 +47,13 @@ struct completion_token_output
 
     std::vector<token_prob> probs;
     llama_token tok;
+};
+
+struct conversation_result {
+    std::string text;
+    std::chrono::milliseconds time_to_first_token;
+    std::chrono::milliseconds total_time;
+    int tokens_generated;
 };
 
 struct cactus_tokenize_result {
@@ -111,6 +119,10 @@ struct cactus_context {
     cactus_context_vocoder *vocoder_wrapper = nullptr;
     bool has_vocoder = false;
     std::vector<llama_token> audio_tokens;
+
+    // Conversation management state
+    bool conversation_active = false;
+    std::string last_chat_template = "";
 
     ~cactus_context();
 
@@ -180,6 +192,12 @@ struct cactus_context {
     std::vector<llama_token> getAudioCompletionGuideTokens(const std::string &text_to_speak);
     std::vector<float> decodeAudioTokens(const std::vector<llama_token> &tokens);
     void releaseVocoder();
+
+    // High-level conversation management API
+    std::string generateResponse(const std::string &user_message, int max_tokens = 200);
+    conversation_result continueConversation(const std::string &user_message, int max_tokens = 200);
+    void clearConversation();
+    bool isConversationActive() const;
 };
 
 extern bool cactus_verbose;

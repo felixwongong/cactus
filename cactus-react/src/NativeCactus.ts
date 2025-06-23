@@ -306,6 +306,14 @@ export type NativeAudioDecodeResult = {
   audio_data: Array<number> // Float array of audio samples
 }
 
+// New conversation management types
+export type NativeConversationResult = {
+  text: string
+  time_to_first_token: number // milliseconds
+  total_time: number // milliseconds
+  tokens_generated: number
+}
+
 export type NativeLlamaContext = {
   contextId: number
   model: {
@@ -470,6 +478,20 @@ export interface Spec extends TurboModule {
     tokens: number[],
   ): Promise<NativeAudioDecodeResult>
   releaseVocoder(contextId: number): Promise<void>
+
+  // New conversation management methods
+  generateResponse(
+    contextId: number,
+    userMessage: string,
+    maxTokens?: number,
+  ): Promise<string>
+  continueConversation(
+    contextId: number,
+    userMessage: string,
+    maxTokens?: number,
+  ): Promise<NativeConversationResult>
+  clearConversation(contextId: number): Promise<void>
+  isConversationActive(contextId: number): Promise<boolean>
 
   releaseContext(contextId: number): Promise<void>
 
