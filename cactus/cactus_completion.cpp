@@ -64,13 +64,11 @@ void cactus_context::loadPrompt() {
         common_sampler_accept(ctx_sampling, token, false);
     }
 
-    if (n_past < (int)embd.size()) {
-        llama_kv_self_seq_rm(ctx, 0, n_past, -1);
-        LOG_VERBOSE("Clearing KV cache from position %d onwards", n_past);
-    }
-
     LOG_VERBOSE("prompt ingested, n_past: %d, cached_size: %zu, to_eval_size: %zu",
-        n_past, (size_t)n_past, embd.size() - n_past);
+        n_past,
+        (size_t)n_past,
+        embd.size() - n_past
+    );
 
     has_next_token = true;
 }
