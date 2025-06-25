@@ -192,12 +192,6 @@ struct cactus_context {
     std::vector<llama_token> getAudioCompletionGuideTokens(const std::string &text_to_speak);
     std::vector<float> decodeAudioTokens(const std::vector<llama_token> &tokens);
     void releaseVocoder();
-
-    // High-level conversation management API
-    std::string generateResponse(const std::string &user_message, int max_tokens = 200);
-    conversation_result continueConversation(const std::string &user_message, int max_tokens = 200);
-    void clearConversation();
-    bool isConversationActive() const;
 };
 
 extern bool cactus_verbose;

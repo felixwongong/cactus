@@ -263,12 +263,6 @@ CACTUS_FFI_EXPORT char* cactus_get_model_desc_c(cactus_context_handle_t handle);
 CACTUS_FFI_EXPORT int64_t cactus_get_model_size_c(cactus_context_handle_t handle);
 CACTUS_FFI_EXPORT int64_t cactus_get_model_params_c(cactus_context_handle_t handle);
 
-// **CONVERSATION MANAGEMENT**
-CACTUS_FFI_EXPORT char* cactus_generate_response_c(cactus_context_handle_t handle, const char* user_message, int32_t max_tokens);
-CACTUS_FFI_EXPORT cactus_conversation_result_c_t cactus_continue_conversation_c(cactus_context_handle_t handle, const char* user_message, int32_t max_tokens);
-CACTUS_FFI_EXPORT void cactus_clear_conversation_c(cactus_context_handle_t handle);
-CACTUS_FFI_EXPORT bool cactus_is_conversation_active_c(cactus_context_handle_t handle);
-
 // Memory management functions
 CACTUS_FFI_EXPORT void cactus_free_bench_result_members_c(cactus_bench_result_c_t* result);
 CACTUS_FFI_EXPORT void cactus_free_lora_adapters_c(cactus_lora_adapters_c_t* adapters);

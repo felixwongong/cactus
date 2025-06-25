@@ -35,59 +35,42 @@ void cactus_context::truncatePrompt(std::vector<llama_token> &prompt_tokens) {
 }
 
 void cactus_context::loadPrompt() {
-    std::vector<llama_token> prompt_tokens = ::common_tokenize(ctx, params.prompt, true, true);
-    num_prompt_tokens = prompt_tokens.size();
+    bool is_continuation = !embd.empty();
 
-    std::stringstream ss;
-    ss << "\n" << __func__ << ": prompt_tokens = ";
-    for (auto& token : prompt_tokens) {
-        ss << token << " ";
+    std::vector<llama_token> new_tokens = ::common_tokenize(ctx, params.prompt, !is_continuation, true);
+
+    if (is_continuation) {
+        embd.insert(embd.end(), new_tokens.begin(), new_tokens.end());
+    } else {
+        embd = new_tokens;
+        n_past = 0;
     }
-    LOG_INFO("%s\n", ss.str().c_str());
+    
+    num_prompt_tokens = embd.size();
 
-    if (params.n_keep < 0)
-    {
+    if (params.n_keep < 0) {
         params.n_keep = (int)num_prompt_tokens;
     }
     params.n_keep = std::min(n_ctx > 4 ? n_ctx - 4 : 0, params.n_keep);
     params.n_keep = std::max(0, params.n_keep);
 
-    if (num_prompt_tokens >= (size_t) n_ctx)
-    {
-        truncatePrompt(prompt_tokens);
-        num_prompt_tokens = prompt_tokens.size();
-
-        LM_GGML_ASSERT(num_prompt_tokens < (size_t) n_ctx || n_ctx == 0);
+    if (embd.size() >= (size_t) n_ctx) {
+        truncatePrompt(embd);
+        num_prompt_tokens = embd.size();
+        LM_GGML_ASSERT(embd.size() < (size_t) n_ctx || n_ctx == 0);
     }
-    for (auto & token : prompt_tokens)
-    {
+
+    for (auto & token : new_tokens) {
         common_sampler_accept(ctx_sampling, token, false);
     }
 
-    n_past = common_part(embd, prompt_tokens);
-
-    embd = prompt_tokens;
-    n_past = std::min(n_past, embd.size());
-
-    if (n_past == num_prompt_tokens && n_past > 0)
-    {
-        n_past--;
-    }
-
-    // Only clear KV cache beyond the common part
-    // This preserves cache for the common prefix
     if (n_past < (int)embd.size()) {
         llama_kv_self_seq_rm(ctx, 0, n_past, -1);
         LOG_VERBOSE("Clearing KV cache from position %d onwards", n_past);
-    } else {
-        LOG_VERBOSE("No KV cache clearing needed, n_past=%d", n_past);
     }
 
     LOG_VERBOSE("prompt ingested, n_past: %d, cached_size: %zu, to_eval_size: %zu",
-        n_past,
-        (size_t)n_past,
-        embd.size() - n_past
-    );
+        n_past, (size_t)n_past, embd.size() - n_past);
 
     has_next_token = true;
 }
