@@ -8,7 +8,7 @@ Add to your `pubspec.yaml`:
 
 ```yaml
 dependencies:
-  cactus: ^0.1.2
+  cactus: ^0.1.3
 ```
 
 Then run:
@@ -50,7 +50,7 @@ Future<String> basicCompletion() async {
 }
 ```
 
-### Complete Chat App Example (Optimized with Conversation Management)
+### Complete Chat App Example
 
 ```dart
 import 'package:flutter/material.dart';
@@ -82,10 +82,6 @@ class _ChatScreenState extends State<ChatScreen> {
   TextEditingController _controller = TextEditingController();
   bool _isLoading = true;
   bool _isGenerating = false;
-  
-  // Performance tracking
-  ConversationResult? _lastResult;
-  bool _isConversationActive = false;
 
   @override
   void initState() {
@@ -131,26 +127,28 @@ class _ChatScreenState extends State<ChatScreen> {
       _isGenerating = true;
     });
 
-    final userInput = _controller.text.trim();
     _controller.clear();
+    String currentResponse = '';
 
     try {
-      // Use the optimized conversation API for consistent performance
-      final result = await _context!.continueConversation(userInput, maxTokens: 256);
+      final result = await _context!.completion(CactusCompletionParams(
+        messages: List.from(_messages)..removeLast(), // Remove empty assistant message
+        maxPredictedTokens: 256,
+        temperature: 0.7,
+        stopSequences: ['<|end|>', '</s>'],
+        onNewToken: (token) {
+          currentResponse += token;
+          setState(() {
+            _messages.last = ChatMessage(role: 'assistant', content: currentResponse);
+          });
+          return true; // Continue generation
+        },
+      ));
 
-      // Update UI with response and performance metrics
+      // Update with final response
       setState(() {
         _messages.last = ChatMessage(role: 'assistant', content: result.text.trim());
-        _lastResult = result;
-        _isConversationActive = _context!.isConversationActive();
       });
-
-      // Log performance metrics
-      print('[PERFORMANCE] TTFT: ${result.timeToFirstToken}ms, '
-            'Total: ${result.totalTime}ms, '
-            'Tokens: ${result.tokensGenerated}, '
-            'Speed: ${result.tokensPerSecond.toStringAsFixed(1)} tok/s');
-
     } catch (e) {
       setState(() {
         _messages.last = ChatMessage(role: 'assistant', content: 'Error: $e');
@@ -158,15 +156,6 @@ class _ChatScreenState extends State<ChatScreen> {
     } finally {
       setState(() => _isGenerating = false);
     }
-  }
-
-  void _clearConversation() {
-    setState(() {
-      _messages.clear();
-      _lastResult = null;
-      _isConversationActive = false;
-    });
-    _context?.clearConversation();
   }
 
   @override
@@ -190,41 +179,14 @@ class _ChatScreenState extends State<ChatScreen> {
       appBar: AppBar(
         title: Text('Cactus Chat'),
         actions: [
-          // Performance indicator
-          if (_lastResult != null)
-            Padding(
-              padding: EdgeInsets.only(right: 8),
-              child: Center(
-                child: Text(
-                  '${_lastResult!.timeToFirstToken}ms',
-                  style: TextStyle(fontSize: 12, color: Colors.white70),
-                ),
-              ),
-            ),
           IconButton(
             icon: Icon(Icons.clear),
-            onPressed: _clearConversation,
+            onPressed: () => setState(() => _messages.clear()),
           ),
         ],
       ),
       body: Column(
         children: [
-          // Performance stats bar
-          if (_lastResult != null)
-            Container(
-              width: double.infinity,
-              padding: EdgeInsets.all(8),
-              color: Colors.grey[100],
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceAround,
-                children: [
-                  Text('TTFT: ${_lastResult!.timeToFirstToken}ms', style: TextStyle(fontSize: 12)),
-                  Text('Total: ${_lastResult!.totalTime}ms', style: TextStyle(fontSize: 12)),
-                  Text('Speed: ${_lastResult!.tokensPerSecond.toStringAsFixed(1)} tok/s', style: TextStyle(fontSize: 12)),
-                  Text('Active: ${_isConversationActive ? "Yes" : "No"}', style: TextStyle(fontSize: 12)),
-                ],
-              ),
-            ),
           Expanded(
             child: ListView.builder(
               padding: EdgeInsets.all(16),

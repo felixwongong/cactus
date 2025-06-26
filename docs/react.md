@@ -103,26 +103,20 @@ export default function ChatApp() {
     setInput('');
 
     try {
-      // Use optimized conversation API - handles chat formatting automatically
-      const result = await context.continueConversation(input, 256);
+      const result = await context.completion({
+        messages: newMessages,
+        n_predict: 256,
+        temperature: 0.7,
+        stop: ['</s>', '<|end|>'],
+      });
 
       const assistantMessage: Message = { 
         role: 'assistant', 
         content: result.text 
       };
       setMessages([...newMessages, assistantMessage]);
-      
-      // Log performance metrics
-      console.log(`TTFT: ${result.time_to_first_token}ms, Speed: ${(result.tokens_generated / (result.total_time / 1000)).toFixed(1)} tok/s`);
     } catch (error) {
       console.error('Completion failed:', error);
-    }
-  }
-
-  async function clearChat() {
-    if (context) {
-      await context.clearConversation();
-      setMessages([]);
     }
   }
 
@@ -164,12 +158,6 @@ export default function ChatApp() {
           style={{ backgroundColor: '#007AFF', padding: 8, borderRadius: 4, marginLeft: 8 }}
         >
           <Text style={{ color: 'white' }}>Send</Text>
-        </TouchableOpacity>
-        <TouchableOpacity 
-          onPress={clearChat}
-          style={{ backgroundColor: '#FF3B30', padding: 8, borderRadius: 4, marginLeft: 8 }}
-        >
-          <Text style={{ color: 'white' }}>Clear</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -283,13 +271,6 @@ Cactus uses OpenAI-compatible message format:
 interface CactusOAICompatibleMessage {
   role: 'system' | 'user' | 'assistant';
   content: string;
-}
-
-interface NativeConversationResult {
-  text: string;
-  time_to_first_token: number; // milliseconds
-  total_time: number; // milliseconds
-  tokens_generated: number;
 }
 
 const messages = [
@@ -995,13 +976,6 @@ AppState.addEventListener('change', (nextAppState) => {
 - `saveSession(filepath: string, options?: { tokenSize: number }): Promise<number>`
 - `loadSession(filepath: string): Promise<NativeSessionLoadResult>`
 - `release(): Promise<void>`
-
-### Conversation Management Methods
-
-- `generateResponse(userMessage: string, maxTokens?: number): Promise<string>` - Generate response with optimized KV cache
-- `continueConversation(userMessage: string, maxTokens?: number): Promise<NativeConversationResult>` - Continue conversation with detailed timing
-- `clearConversation(): Promise<void>` - Reset conversation state and clear KV cache
-- `isConversationActive(): Promise<boolean>` - Check if conversation is active
 
 ## Troubleshooting
 
