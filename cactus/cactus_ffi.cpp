@@ -124,7 +124,10 @@ int cactus_completion_c(
     memset(result, 0, sizeof(cactus_completion_result_c_t));
 
     try {
-        context->rewind();
+        if (context->embd.empty()) {
+            context->rewind(); 
+        }
+        context->generated_text.clear();
 
         context->params.prompt = params->prompt;
         if (params->n_threads > 0) {
@@ -151,8 +154,10 @@ int cactus_completion_c(
              context->params.sampling.grammar = params->grammar;
         }
 
-        if (!context->initSampling()) {
-            return -2;
+        if (context->ctx_sampling == nullptr) {
+            if (!context->initSampling()) {
+                return -2;
+            }
         }
         context->beginCompletion();
         context->loadPrompt();
@@ -214,10 +219,8 @@ int cactus_multimodal_completion_c(
     memset(result, 0, sizeof(cactus_completion_result_c_t));
 
     try {
-        // Rewind context for new generation
         context->rewind();
 
-        // Set up parameters
         context->params.prompt = params->prompt ? params->prompt : "";
         if (params->n_threads > 0) {
             context->params.cpuparams.n_threads = params->n_threads;
@@ -243,15 +246,12 @@ int cactus_multimodal_completion_c(
             context->params.sampling.grammar = params->grammar;
         }
 
-        // Initialize sampling
         if (!context->initSampling()) {
             return -2;
         }
 
-        // Begin completion
         context->beginCompletion();
 
-        // Load prompt with media if provided
         if (media_paths && media_count > 0) {
             std::vector<std::string> media_vec;
             for (int i = 0; i < media_count; ++i) {
@@ -264,7 +264,6 @@ int cactus_multimodal_completion_c(
             context->loadPrompt();
         }
 
-        // Generate tokens
         while (context->has_next_token && !context->is_interrupted) {
             const cactus::completion_token_output token_with_probs = context->doCompletion();
             
@@ -283,7 +282,6 @@ int cactus_multimodal_completion_c(
             }
         }
 
-        // Set results
         result->text = safe_strdup(context->generated_text);
         result->tokens_predicted = context->num_tokens_predicted;
         result->tokens_evaluated = context->num_prompt_tokens;
