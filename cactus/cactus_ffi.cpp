@@ -127,8 +127,7 @@ int cactus_completion_c(
         if (context->embd.empty()) {
             context->rewind(); 
         }
-        context->generated_text.clear();
-
+        
         context->params.prompt = params->prompt;
         if (params->n_threads > 0) {
              context->params.cpuparams.n_threads = params->n_threads;

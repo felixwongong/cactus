@@ -107,6 +107,14 @@ void cactus_context::beginCompletion() {
     n_remain = params.n_predict;
     llama_perf_context_reset(ctx);
     is_predicting = true;
+    num_tokens_predicted = 0;
+    num_prompt_tokens = 0;
+    generated_text.clear();
+    stopping_word.clear();
+    stopped_eos = false;
+    stopped_word = false;
+    stopped_limit = false;
+    truncated = false;
 }
 
 completion_token_output cactus_context::nextToken()
