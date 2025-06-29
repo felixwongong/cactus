@@ -229,6 +229,11 @@ typedef EmbeddingDart = CactusFloatArrayC Function(CactusContextHandle handle, P
 typedef SetGuideTokensNative = Void Function(CactusContextHandle handle, Pointer<Int32> tokens, Int32 count);
 typedef SetGuideTokensDart = void Function(CactusContextHandle handle, Pointer<Int32> tokens, int count);
 
+typedef GetAudioGuideTokensNative = CactusTokenArrayC Function(
+    CactusContextHandle handle, Pointer<Utf8> text_to_speak);
+typedef GetAudioGuideTokensDart = CactusTokenArrayC Function(
+    CactusContextHandle handle, Pointer<Utf8> text_to_speak);
+
 // Multimodal functions
 typedef InitMultimodalNative = Int32 Function(CactusContextHandle handle, Pointer<Utf8> mmproj_path, Bool use_gpu);
 typedef InitMultimodalDart = int Function(CactusContextHandle handle, Pointer<Utf8> mmproj_path, bool use_gpu);
@@ -259,11 +264,6 @@ typedef GetFormattedAudioCompletionNative = Pointer<Utf8> Function(
     CactusContextHandle handle, Pointer<Utf8> speaker_json_str, Pointer<Utf8> text_to_speak);
 typedef GetFormattedAudioCompletionDart = Pointer<Utf8> Function(
     CactusContextHandle handle, Pointer<Utf8> speaker_json_str, Pointer<Utf8> text_to_speak);
-
-typedef GetAudioCompletionGuideTokensNative = CactusTokenArrayC Function(
-    CactusContextHandle handle, Pointer<Utf8> text_to_speak);
-typedef GetAudioCompletionGuideTokensDart = CactusTokenArrayC Function(
-    CactusContextHandle handle, Pointer<Utf8> text_to_speak);
 
 typedef DecodeAudioTokensNative = CactusFloatArrayC Function(
     CactusContextHandle handle, Pointer<Int32> tokens, Int32 count);
@@ -477,9 +477,9 @@ final getFormattedAudioCompletion = cactusLib
     .lookup<NativeFunction<GetFormattedAudioCompletionNative>>('cactus_get_formatted_audio_completion_c')
     .asFunction<GetFormattedAudioCompletionDart>();
 
-final getAudioCompletionGuideTokens = cactusLib
-    .lookup<NativeFunction<GetAudioCompletionGuideTokensNative>>('cactus_get_audio_completion_guide_tokens_c')
-    .asFunction<GetAudioCompletionGuideTokensDart>();
+final getAudioGuideTokens = cactusLib
+    .lookup<NativeFunction<GetAudioGuideTokensNative>>('cactus_get_audio_guide_tokens_c')
+    .asFunction<GetAudioGuideTokensDart>();
 
 final decodeAudioTokens = cactusLib
     .lookup<NativeFunction<DecodeAudioTokensNative>>('cactus_decode_audio_tokens_c')

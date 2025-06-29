@@ -1,12 +1,86 @@
 import 'dart:convert';
 import 'dart:async';
-import 'context.dart';
-import 'structs.dart';
-import 'completion.dart';
 import 'chat.dart';
+import './types.dart';
 
-/// Tool function signature
 typedef ToolFunction = Future<dynamic> Function(Map<String, dynamic> args);
+
+class FunctionDefinition {
+  final String name;
+  final String description;
+  final Map<String, dynamic> parameters;
+
+  FunctionDefinition({
+    required this.name,
+    required this.description,
+    required this.parameters,
+  });
+
+  Map<String, dynamic> toJson() => {
+        'name': name,
+        'description': description,
+        'parameters': parameters,
+      };
+}
+
+class ToolDefinition {
+  final FunctionDefinition function;
+
+  ToolDefinition({required this.function});
+
+  Map<String, dynamic> toJson() => {
+        'type': 'function',
+        'function': function.toJson(),
+      };
+}
+
+class ToolCall {
+  final String id;
+  final String name;
+  final Map<String, dynamic> arguments;
+
+  ToolCall({required this.id, required this.name, required this.arguments});
+}
+
+class ToolExecutionResult {
+  final bool toolCalled;
+  final String? toolName;
+  final Map<String, dynamic>? toolInput;
+  final dynamic toolOutput;
+  final String? error;
+
+  ToolExecutionResult._({
+    required this.toolCalled,
+    this.toolName,
+    this.toolInput,
+    this.toolOutput,
+    this.error,
+  });
+
+  factory ToolExecutionResult.called({
+    required String name,
+    required Map<String, dynamic> input,
+    dynamic output,
+  }) => ToolExecutionResult._(
+        toolCalled: true,
+        toolName: name,
+        toolInput: input,
+        toolOutput: output,
+      );
+
+  factory ToolExecutionResult.error({
+    required String name,
+    required Map<String, dynamic> input,
+    required String error,
+  }) => ToolExecutionResult._(
+        toolCalled: true,
+        toolName: name,
+        toolInput: input,
+        error: error,
+      );
+
+  factory ToolExecutionResult.notCalled() => ToolExecutionResult._(toolCalled: false);
+}
 
 /// Tools collection for function calling
 class Tools {
@@ -229,130 +303,6 @@ $outputText
 Please continue with your response.''',
     ));
     
-    return result;
-  }
-}
-
-/// Enhanced completion with tool calling support
-class ToolCompletion {
-  /// Perform completion with automatic tool calling
-  static Future<CactusCompletionResult> completionWithTools(
-    CactusContext context,
-    CactusCompletionParams params, {
-    required Tools tools,
-    int recursionLimit = 3,
-    int recursionCount = 0,
-    Function(String)? onNewToken,
-  }) async {
-    // Check limits
-    if (recursionCount >= recursionLimit) {
-      return await context.completion(params);
-    }
-    
-    if (tools.getDefinitions().isEmpty) {
-      return await context.completion(params);
-    }
-
-    // Inject tools into messages on first call
-    List<ChatMessage> messages = [...params.messages];
-    if (recursionCount == 0) {
-      messages = ToolCalling.injectToolsIntoMessages(messages, tools);
-    }
-
-    // Execute completion
-    final enhancedParams = CactusCompletionParams(
-      messages: messages,
-      maxPredictedTokens: params.maxPredictedTokens,
-      threads: params.threads,
-      seed: params.seed,
-      temperature: params.temperature,
-      topK: params.topK,
-      topP: params.topP,
-      minP: params.minP,
-      typicalP: params.typicalP,
-      penaltyLastN: params.penaltyLastN,
-      penaltyRepeat: params.penaltyRepeat,
-      penaltyFreq: params.penaltyFreq,
-      penaltyPresent: params.penaltyPresent,
-      mirostat: params.mirostat,
-      mirostatTau: params.mirostatTau,
-      mirostatEta: params.mirostatEta,
-      dryMultiplier: params.dryMultiplier,
-      dryBase: params.dryBase,
-      dryAllowedLength: params.dryAllowedLength,
-      dryPenaltyLastN: params.dryPenaltyLastN,
-      drySequenceBreakers: params.drySequenceBreakers,
-      ignoreEos: params.ignoreEos,
-      nProbs: params.nProbs,
-      stopSequences: params.stopSequences,
-      grammar: params.grammar,
-      onNewToken: onNewToken,
-      // Tool-specific params
-      tools: tools.getDefinitionsJson(),
-      jinja: params.jinja,
-      responseFormat: params.responseFormat,
-      chatTemplate: params.chatTemplate,
-      parallelToolCalls: params.parallelToolCalls,
-      toolChoice: params.toolChoice,
-    );
-
-    final result = await context.completion(enhancedParams);
-
-    // Try to parse and execute tools
-    final toolExecution = await ToolCalling.parseAndExecuteTool(result, tools);
-
-    if (toolExecution.toolCalled && toolExecution.toolName != null) {
-      // Update messages with tool call and response
-      final updatedMessages = ToolCalling.updateMessagesWithToolCall(
-        messages,
-        toolExecution.toolName!,
-        toolExecution.toolInput!,
-        toolExecution.toolOutput,
-      );
-
-      // Recursive call with updated messages
-      return await completionWithTools(
-        context,
-        CactusCompletionParams(
-          messages: updatedMessages,
-          maxPredictedTokens: params.maxPredictedTokens,
-          threads: params.threads,
-          seed: params.seed,
-          temperature: params.temperature,
-          topK: params.topK,
-          topP: params.topP,
-          minP: params.minP,
-          typicalP: params.typicalP,
-          penaltyLastN: params.penaltyLastN,
-          penaltyRepeat: params.penaltyRepeat,
-          penaltyFreq: params.penaltyFreq,
-          penaltyPresent: params.penaltyPresent,
-          mirostat: params.mirostat,
-          mirostatTau: params.mirostatTau,
-          mirostatEta: params.mirostatEta,
-          dryMultiplier: params.dryMultiplier,
-          dryBase: params.dryBase,
-          dryAllowedLength: params.dryAllowedLength,
-          dryPenaltyLastN: params.dryPenaltyLastN,
-          drySequenceBreakers: params.drySequenceBreakers,
-          ignoreEos: params.ignoreEos,
-          nProbs: params.nProbs,
-          stopSequences: params.stopSequences,
-          grammar: params.grammar,
-          onNewToken: onNewToken,
-          jinja: params.jinja,
-          responseFormat: params.responseFormat,
-          chatTemplate: params.chatTemplate,
-          parallelToolCalls: params.parallelToolCalls,
-          toolChoice: params.toolChoice,
-        ),
-        tools: tools,
-        recursionLimit: recursionLimit,
-        recursionCount: recursionCount + 1,
-        onNewToken: onNewToken,
-      );
-    }
-
     return result;
   }
 } 
