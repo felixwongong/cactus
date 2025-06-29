@@ -1,6 +1,17 @@
-import './chat.dart';
-
 typedef CactusTokenCallback = bool Function(String token);
+
+class ChatMessage {
+  final String role;
+  final String content;
+  final double? tokensPerSecond;
+
+  ChatMessage({required this.role, required this.content, this.tokensPerSecond});
+
+  Map<String, String> toJson() => {
+        'role': role,
+        'content': content,
+      };
+}
 
 class CactusException implements Exception {
   final String message;

@@ -10,13 +10,10 @@ import 'package:path_provider/path_provider.dart';
 
 import './ffi_bindings.dart' as bindings;
 import './types.dart';
-import './chat.dart';
 import './tools.dart';
 
-export './chat.dart';
 export './types.dart';
 export './tools.dart';
-export './model_downloader.dart';
 
 
 
@@ -160,6 +157,7 @@ class CactusContext {
     Tools? tools,
     int recursionLimit = 3,
   }) async {
+    // Handle tool calling if tools are provided
     if (tools != null) {
       return _completionWithTools(params, tools: tools, recursionLimit: recursionLimit);
     }
@@ -167,11 +165,17 @@ class CactusContext {
     String promptString;
     String? grammar;
     
+    // Automatically determine the best completion strategy
     if (params.responseFormat != null || params.jinja == true) {
+      // Advanced formatting with JSON schema or Jinja templates
       final result = await _getFormattedChatAdvanced(params);
       promptString = result.prompt;
       grammar = result.grammar;
+    } else if (_shouldUseContinuationMode(params, mediaPaths)) {
+      // Use conversation continuation mode for stateful chat
+      promptString = await _buildConversationTurnPrompt(params.messages.last, params.chatTemplate);
     } else {
+      // Standard chat formatting - handles both single-shot and multi-turn
       promptString = await _getFormattedChat(params.messages, params.chatTemplate);
       grammar = params.grammar;
     }
@@ -179,34 +183,7 @@ class CactusContext {
     return _performCompletion(promptString, params.copyWith(grammar: grammar), mediaPaths);
   }
 
-  Future<String> generateResponse(String userMessage, {int maxTokens = 200}) async {
-    final params = CactusCompletionParams(
-      messages: [ChatMessage(role: 'user', content: userMessage)],
-      maxPredictedTokens: maxTokens,
-    );
-    final result = await completion(params);
-    return result.text;
-  }
 
-  Future<CactusCompletionResult> continueConversation(String userText, {
-    required bool firstTurn,
-    int maxPredictedTokens = 256,
-    double temperature = 0.7,
-    List<String> stopSequences = const ['<|im_end|>', '</s>'],
-    CactusTokenCallback? onNewToken,
-    String? chatTemplate,
-  }) async {
-    final prompt = await _buildPromptForTurn(userText, firstTurn: firstTurn, chatTemplate: chatTemplate);
-    
-    final params = CactusCompletionParams(
-      messages: [],
-      maxPredictedTokens: maxPredictedTokens,
-      temperature: temperature,
-      stopSequences: stopSequences,
-      onNewToken: onNewToken,
-    );
-    return _performCompletion(prompt, params, []);
-  }
 
   Future<CactusCompletionResult> _performCompletion(
     String promptString,
@@ -631,14 +608,40 @@ class CactusContext {
     }
   }
 
-  Future<String> _buildPromptForTurn(String userText,
-      {required bool firstTurn, String? chatTemplate}) async {
-    final escaped = userText.replaceAll('"', '\\"');
-    final jsonStr = '[{"role":"user","content":"$escaped"}]';
+  bool _shouldUseContinuationMode(CactusCompletionParams params, List<String> mediaPaths) {
+
+    // Don't use continuation mode if:
+    // 1. No messages provided
+    // 2. Has media (multimodal requires full context)
+    // 3. Only one message (first turn)
+    // 4. Multiple messages but want to reset context (e.g., system message changes)
+    
+    if (params.messages.isEmpty) return false;
+    if (mediaPaths.isNotEmpty) return false;
+    if (params.messages.length == 1) return false;
+    
+    // Check if this looks like a conversation continuation:
+    // - Has multiple messages
+    // - Last message is from user
+    // - Previous messages suggest ongoing conversation
+
+    final lastMessage = params.messages.last;
+    if (lastMessage.role != 'user') return false;
+    
+    // Look for conversation patterns
+    
+    final hasConversationHistory = params.messages.length >= 2 &&
+        params.messages.any((m) => m.role == 'assistant');
+    
+    return hasConversationHistory;
+  }
+
+  Future<String> _buildConversationTurnPrompt(ChatMessage message, String? chatTemplate) async {
+    final escaped = message.content.replaceAll('"', '\\"');
+    final jsonStr = '[{"role":"${message.role}","content":"$escaped"}]';
     final formatted = await _getFormattedChatFromJson(jsonStr, chatTemplate: chatTemplate);
 
-    if (firstTurn) return formatted;
-
+    // For conversation continuation, we only need the user part + assistant start
     final idx = formatted.indexOf('<|im_start|>assistant');
     if (idx != -1) {
       return formatted.substring(0, idx) + '<|im_start|>assistant\n';

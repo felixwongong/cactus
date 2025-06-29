@@ -1,6 +1,5 @@
 import 'dart:convert';
 import 'dart:async';
-import 'chat.dart';
 import './types.dart';
 
 typedef ToolFunction = Future<dynamic> Function(Map<String, dynamic> args);
