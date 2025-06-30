@@ -77,7 +77,7 @@ Cactus is a lightweight, high-performance framework for running AI models on mob
     return result.text;
     }
     ```
-  To learn more, see the [Flutter Docs](https://github.com/cactus-compute/cactus/blob/main/cactus-flutter). It covers chat design, embeddings, multimodal models, text-to-speech, and more.
+  To learn more, see the [Flutter Docs](https://github.com/cactus-compute/cactus/blob/main/flutter). It covers chat design, embeddings, multimodal models, text-to-speech, and more.
 
 ## ![React Native](https://img.shields.io/badge/React%20Native-grey.svg?style=for-the-badge&logo=react&logoColor=%2361DAFB)
 
@@ -118,7 +118,7 @@ Cactus is a lightweight, high-performance framework for running AI models on mob
 
     console.log(result.text);
     ```
- To learn more, see the [React Docs](https://github.com/cactus-compute/cactus/blob/main/cactus-react). It covers chat design, embeddings, multimodal models, text-to-speech, and more.
+ To learn more, see the [React Docs](https://github.com/cactus-compute/cactus/blob/main/react). It covers chat design, embeddings, multimodal models, text-to-speech, and more.
 
 ## ![C++](https://img.shields.io/badge/C%2B%2B-grey.svg?style=for-the-badge&logo=c%2B%2B&logoColor=white)
 
@@ -204,7 +204,7 @@ First, clone the repo with `git clone https://github.com/cactus-compute/cactus.g
 1. **Flutter**
     - Build the Android JNILibs with `scripts/build-flutter-android.sh`.
     - Build the Flutter Plugin with `scripts/build-flutter-android.sh`.
-    - Navigate to the example app with `cd examples/flutter`.
+    - Navigate to the example app with `cd flutter/example`.
     - Open your simulator via Xcode or Android Studio, [walkthrough](https://medium.com/@daspinola/setting-up-android-and-ios-emulators-22d82494deda) if you have not done this before.
     - Always start app with this combo `flutter clean && flutter pub get && flutter run`.
     - Play with the app, and make changes either to the example app or plugin as desired.
@@ -212,14 +212,14 @@ First, clone the repo with `git clone https://github.com/cactus-compute/cactus.g
 2. **React Native**
     - Build the Android JNILibs with `scripts/build-react-android.sh`.
     - Build the Flutter Plugin with `scripts/build-react-android.sh`.
-    - Navigate to the example app with `cd examples/react`.
+    - Navigate to the example app with `cd react/example`.
     - Setup your simulator via Xcode or Android Studio, [walkthrough](https://medium.com/@daspinola/setting-up-android-and-ios-emulators-22d82494deda) if you have not done this before.
     - Always start app with this combo `yarn && yarn ios` or `yarn && yarn android`.
     - Play with the app, and make changes either to the example app or package as desired.
     - For now, if changes are made in the package, you would manually copy the files/folders into the `examples/react/node_modules/cactus-react-native`.
 
 2. **C/C++**
-    - Navigate to the example app with `cd examples/cpp`.
+    - Navigate to the example app with `cd cactus/example`.
     - There are multiple main files `main_vlm, main_llm, main_embed, main_tts`.
     - Build both the libraries and executable using `build.sh`.
     - Run with one of the executables `./cactus_vlm`, `./cactus_llm`, `./cactus_embed`, `./cactus_tts`.
