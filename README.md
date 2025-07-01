@@ -52,32 +52,48 @@ Cactus is a lightweight, high-performance framework for running AI models on mob
     ```bash
     flutter pub get
     ```
-3. **Basic Flutter Text Completion**
+3. **Flutter Text Completion**
     ```dart
     import 'package:cactus/cactus.dart';
 
-    Future<String> basicCompletion() async {
-    // Initialize context
-    final context = await CactusContext.init(CactusInitParams(
-        modelPath: '/path/to/model.gguf',
-        contextSize: 2048,
-        threads: 4,
-    ));
+    // Initialize
+    final lm = await CactusLM.init(
+        modelUrl: 'huggingface/gguf/link',
+        nCtx: 2048,
+    );
 
-    // Generate response
-    final result = await context.completion(CactusCompletionParams(
-        messages: [
-        ChatMessage(role: 'user', content: 'Hello, how are you?')
-        ],
-        maxPredictedTokens: 100,
-        temperature: 0.7,
-    ));
+    // Completion 
+    final messages = [CactusMessage(role: CactusMessageRole.user, content: 'Hello!')];
+    final params = CactusCompletionParams(nPredict: 100, temperature: 0.7);
+    final response = await lm.completion(messages, params);
 
-    context.free();
-    return result.text;
-    }
+    // Embedding 
+    final text = 'Your text to embed';
+    final params = CactusEmbeddingParams(normalize: true);
+    final result = await lm.embedding(text, params);
     ```
-  To learn more, see the [Flutter Docs](https://github.com/cactus-compute/cactus/blob/main/flutter). It covers chat design, embeddings, multimodal models, text-to-speech, and more.
+4. **Flutter VLM Completion**
+    ```dart
+    import 'package:cactus/cactus.dart';
+
+    // Initialize (Flutter handles downloads automatically)
+    final vlm = await CactusVLM.init(
+        modelUrl: 'huggingface/gguf/link',
+        mmprojUrl: 'huggingface/gguf/mmproj/link',
+    );
+
+    // Multimodal Completion (can add multiple images)
+    final messages = [CactusMessage(role: CactusMessageRole.user, content: 'Describe this image')];
+
+    final params = CactusVLMParams(
+        images: ['/absolute/path/to/image.jpg'],
+        nPredict: 200,
+        temperature: 0.3,
+    );
+
+    final response = await vlm.completion(messages, params);
+    ```
+  N/B: See the [Flutter Docs](https://github.com/cactus-compute/cactus/blob/main/flutter). It covers chat design, embeddings, multimodal models, text-to-speech, and more.
 
 ## ![React Native](https://img.shields.io/badge/React%20Native-grey.svg?style=for-the-badge&logo=react&logoColor=%2361DAFB)
 
@@ -96,29 +112,45 @@ Cactus is a lightweight, high-performance framework for running AI models on mob
     npx pod-install
     ```
 
-3. **Basic React-Native Text Completion**
+3. **React-Native Text Completion**
     ```typescript
-    import { initLlama } from 'cactus-react-native';
-
-    // Initialize a context
-    const context = await initLlama({
-        model: '/path/to/your/model.gguf',
+    // Initialize
+    const lm = await CactusLM.init({
+        model: '/path/to/model.gguf',
         n_ctx: 2048,
-        n_threads: 4,
     });
 
-    // Generate text
-    const result = await context.completion({
-        messages: [
-            { role: 'user', content: 'Hello, how are you?' }
-        ],
-        n_predict: 100,
-        temperature: 0.7,
-    });
+    // Completion 
+    const messages = [{ role: 'user', content: 'Hello!' }];
+    const params = { n_predict: 100, temperature: 0.7 };
+    const response = await lm.completion(messages, params);
 
-    console.log(result.text);
+    // Embedding 
+    const text = 'Your text to embed';
+    const params = { normalize: true };
+    const result = await lm.embedding(text, params);
     ```
- To learn more, see the [React Docs](https://github.com/cactus-compute/cactus/blob/main/react). It covers chat design, embeddings, multimodal models, text-to-speech, and more.
+
+4. **React-Native VLM**
+    ```typescript
+    // Initialize
+    const vlm = await CactusVLM.init({
+        model: '/path/to/vision-model.gguf',
+        mmproj: '/path/to/mmproj.gguf',
+    });
+
+    // Multimodal Completion (can add multiple images)
+    const messages = [{ role: 'user', content: 'Describe this image' }];
+
+    const params = {
+        images: ['/absolute/path/to/image.jpg'],
+        n_predict: 200,
+        temperature: 0.3,
+    };
+
+    const response = await vlm.completion(messages, params);
+    ```
+N/B: See the [React Docs](https://github.com/cactus-compute/cactus/blob/main/react). It covers chat design, embeddings, multimodal models, text-to-speech, and various options.
 
 ## ![C++](https://img.shields.io/badge/C%2B%2B-grey.svg?style=for-the-badge&logo=c%2B%2B&logoColor=white)
 
