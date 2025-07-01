@@ -18,8 +18,8 @@ add_definitions(
     -DLM_GGML_METAL_USE_BF16
 )
 
-# Set the source directory to the cactus directory
-set(SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../cactus)
+# Set the source directory to the cpp directory
+set(SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../cpp)
 
 # Define public headers
 set(PUBLIC_HEADERS
@@ -101,12 +101,12 @@ add_library(cactus SHARED
     ${SOURCE_DIR}/json.hpp
 )
 
-# Setup include directories, use the cactus directory
+# Setup include directories, use the cpp directory
 target_include_directories(cactus
     PUBLIC
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../cactus>
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../cactus/ggml-cpu>
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../cactus/tools/mtmd>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../cpp>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../cpp/ggml-cpu>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../cpp/tools/mtmd>
         $<INSTALL_INTERFACE:include>
 )
 
