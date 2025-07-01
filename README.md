@@ -45,7 +45,7 @@ Cactus is a lightweight, high-performance framework for running AI models on mob
     dependencies:
       flutter:
         sdk: flutter
-      cactus: ^0.1.2
+      cactus: ^0.1.3
     ```
 2.  **Install dependencies:**
     Execute the following command in your project terminal:
