@@ -93,6 +93,8 @@ app.*.map.json
 pubspec.lock
 flutter/ios/cactus.xcframework
 flutter/android/src/main/jniLibs
+flutter/example/android 
+flutter/example/ios
 
 # === Metro/React Native cache ===
 .cache/
