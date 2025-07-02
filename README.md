@@ -11,7 +11,16 @@
 [docs-shield]: https://img.shields.io/badge/DeepWiki-009485?style=for-the-badge&logo=readthedocs&logoColor=white
 [docs-url]: https://deepwiki.com/cactus-compute/cactus
 
-Cactus is a lightweight, high-performance framework for running AI models on mobile devices, with simple and consistent APIs across C/C++, Dart/Flutter and Ts/React-Native. Cactus currently leverages GGML backends to support any GGUF model already compatible with Llama.cpp. 
+A cross-platform framework for deploying LLMs, VLMs, Embedding Models, TTS models and more locally on smartphones.
+
+## ![Why Cactus?](https://img.shields.io/badge/WHy_Cactus-grey.svg?style=for-the-badge)
+
+- Available in Flutter and React-Native for cross-platform developers.
+- Supports any GGUF model you can find on Huggingface; Qwen, Gemma, Llama, DeepSeek etc.
+- Accommodates from FP32 to as low as 2-bit quantized models, for efficiency and less device strain. 
+- MCP tool-calls to make AI performant and helpful (set reminder, gallery search, reply messages) etc.
+- iOS xcframework and JNILibs ifworking in native setup
+- Neat and tiny C++ build for custom hardware 
 
 ## ![Features](https://img.shields.io/badge/Features-grey.svg?style=for-the-badge)
 
@@ -25,17 +34,6 @@ Cactus is a lightweight, high-performance framework for running AI models on mob
 - Low memory footprint 
 - Battery-efficient inference 
 - Background processing 
-
-## ![Why Cactus?](https://img.shields.io/badge/WHy_Cactus-grey.svg?style=for-the-badge)
-
-- APIs are increasingly becoming expensive, especially at scale 
-- Private and local, data do not leave the device whatsoever 
-- Low-latency anf fault-tolerant, no need for users to have internet connections 
-- Small models excell at most tasks, big APIs are often only better at enterprise tasks like coding
-- Freedom to use any GGUF model, unlike Apple Foundations and Google AI Core 
-- React-Native and Flutter APIs, no need for separate Swift and Android setups 
-- iOS xcframework and JNILibs ifworking in native setup
-- Neat and tiny C++ build for custom hardware 
 
 ## ![Flutter](https://img.shields.io/badge/Flutter-grey.svg?style=for-the-badge&logo=Flutter&logoColor=white)
 
