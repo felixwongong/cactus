@@ -13,7 +13,7 @@
 
 A cross-platform framework for deploying LLMs, VLMs, Embedding Models, TTS models and more locally on smartphones.
 
-## ![Why Cactus?](https://img.shields.io/badge/WHy_Cactus-grey.svg?style=for-the-badge)
+## ![Features](https://img.shields.io/badge/WHy_Cactus-grey.svg?style=for-the-badge)
 
 - Available in Flutter and React-Native for cross-platform developers.
 - Supports any GGUF model you can find on Huggingface; Qwen, Gemma, Llama, DeepSeek etc.
