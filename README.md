@@ -19,21 +19,9 @@ A cross-platform framework for deploying LLMs, VLMs, Embedding Models, TTS model
 - Supports any GGUF model you can find on Huggingface; Qwen, Gemma, Llama, DeepSeek etc.
 - Accommodates from FP32 to as low as 2-bit quantized models, for efficiency and less device strain. 
 - MCP tool-calls to make AI performant and helpful (set reminder, gallery search, reply messages) etc.
-- iOS xcframework and JNILibs ifworking in native setup
-- Neat and tiny C++ build for custom hardware 
-
-## ![Features](https://img.shields.io/badge/Features-grey.svg?style=for-the-badge)
-
-- Text completion and chat completion
-- Vision Language Models 
-- Streaming token generation 
-- Embedding generation 
-- Text-to-speech model support (early stages) 
-- JSON mode with schema validation 
+- iOS xcframework and JNILibs for native setups 
+- Neat and tiny C++ build for custom hardware
 - Chat templates with Jinja2 support 
-- Low memory footprint 
-- Battery-efficient inference 
-- Background processing 
 
 ## ![Flutter](https://img.shields.io/badge/Flutter-grey.svg?style=for-the-badge&logo=Flutter&logoColor=white)
 
