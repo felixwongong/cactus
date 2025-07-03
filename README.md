@@ -1,44 +1,33 @@
 <img src="assets/banner.jpg" alt="Logo" style="border-radius: 30px; width: 100%;">
 
-[![Email][gmail-shield]][gmail-url]&nbsp;&nbsp;&nbsp;[![Discord][discord-shield]][discord-url]&nbsp;&nbsp;&nbsp;[![Design Docs][docs-shield]][docs-url]&nbsp;&nbsp;&nbsp;
+<span>
+  The fastest cross-platform framework for deploying AI locally on phones. Backed by
+  <img alt="Y Combinator" src="https://img.shields.io/badge/Combinator-F0652F?style=for-the-badge&logo=ycombinator&logoColor=white" height="18" style="vertical-align:middle;border-radius:4px;">
+  <img alt="Oxford Seed Fund" src="https://img.shields.io/badge/Oxford_Seed_Fund-002147?style=for-the-badge&logo=oxford&logoColor=white" height="18" style="vertical-align:middle;border-radius:4px;">
+  <img alt="Google for Startups" src="https://img.shields.io/badge/Google_For_Startups-4285F4?style=for-the-badge&logo=google&logoColor=white" height="18" style="vertical-align:middle;border-radius:4px;">
+</span>
 
-[gmail-shield]: https://img.shields.io/badge/Gmail-red?style=for-the-badge&logo=gmail&logoColor=white
-[gmail-url]: mailto:founders@cactuscompute.com
-
-[discord-shield]: https://img.shields.io/badge/Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white
-[discord-url]: https://discord.gg/SdZjmfWQ
-
-[docs-shield]: https://img.shields.io/badge/DeepWiki-009485?style=for-the-badge&logo=readthedocs&logoColor=white
-[docs-url]: https://deepwiki.com/cactus-compute/cactus
-
-A cross-platform framework for deploying LLMs, VLMs, Embedding Models, TTS models and more locally on smartphones.
-
-## ![Features](https://img.shields.io/badge/Features-grey.svg?style=for-the-badge)
+<br/>
 
 - Available in Flutter and React-Native for cross-platform developers.
 - Supports any GGUF model you can find on Huggingface; Qwen, Gemma, Llama, DeepSeek etc.
+- Run LLMs, VLMs, Embedding Models, TTS models and more.
 - Accommodates from FP32 to as low as 2-bit quantized models, for efficiency and less device strain. 
 - MCP tool-calls to make AI performant and helpful (set reminder, gallery search, reply messages) etc.
-- iOS xcframework and JNILibs for native setups 
-- Neat and tiny C++ build for custom hardware
-- Chat templates with Jinja2 support 
+- iOS xcframework and JNILibs for native setups.
+- Neat and tiny C++ build for custom hardware.
+- Chat templates with Jinja2 support and token streaming.
+
+[CLICK TO JOIN OUR DISCORD!](https://discord.gg/SdZjmfWQ)
 
 ## ![Flutter](https://img.shields.io/badge/Flutter-grey.svg?style=for-the-badge&logo=Flutter&logoColor=white)
 
-1.  **Update `pubspec.yaml`:**
-    Add `cactus` to your project's dependencies. Ensure you have `flutter: sdk: flutter` (usually present by default).
-    ```yaml
-    dependencies:
-      flutter:
-        sdk: flutter
-      cactus: ^0.1.3
-    ```
-2.  **Install dependencies:**
+1.  **Install:**
     Execute the following command in your project terminal:
     ```bash
-    flutter pub get
+    flutter pub add cactus
     ```
-3. **Flutter Text Completion**
+2. **Flutter Text Completion**
     ```dart
     import 'package:cactus/cactus.dart';
 
@@ -58,7 +47,7 @@ A cross-platform framework for deploying LLMs, VLMs, Embedding Models, TTS model
     final params = CactusEmbeddingParams(normalize: true);
     final result = await lm.embedding(text, params);
     ```
-4. **Flutter VLM Completion**
+3. **Flutter VLM Completion**
     ```dart
     import 'package:cactus/cactus.dart';
 
@@ -68,7 +57,7 @@ A cross-platform framework for deploying LLMs, VLMs, Embedding Models, TTS model
         mmprojUrl: 'huggingface/gguf/mmproj/link',
     );
 
-    // Multimodal Completion (can add multiple images)
+    // Multimodal Completion (can add multiple images or None)
     final messages = [CactusMessage(role: CactusMessageRole.user, content: 'Describe this image')];
 
     final params = CactusVLMParams(
@@ -84,21 +73,11 @@ A cross-platform framework for deploying LLMs, VLMs, Embedding Models, TTS model
 ## ![React Native](https://img.shields.io/badge/React%20Native-grey.svg?style=for-the-badge&logo=react&logoColor=%2361DAFB)
 
 1.  **Install the `cactus-react-native` package:**
-    Using npm:
     ```bash
-    npm install cactus-react-native
-    ```
-    Or using yarn:
-    ```bash
-    yarn add cactus-react-native
-    ```
-2.  **Install iOS Pods (if not using Expo):**
-    For native iOS projects, ensure you link the native dependencies. Navigate to your `ios` directory and run:
-    ```bash
-    npx pod-install
+    npm install cactus-react-native && npx pod-install
     ```
 
-3. **React-Native Text Completion**
+2. **React-Native Text Completion**
     ```typescript
     // Initialize
     const lm = await CactusLM.init({
@@ -117,7 +96,7 @@ A cross-platform framework for deploying LLMs, VLMs, Embedding Models, TTS model
     const result = await lm.embedding(text, params);
     ```
 
-4. **React-Native VLM**
+3. **React-Native VLM**
     ```typescript
     // Initialize
     const vlm = await CactusVLM.init({
@@ -125,7 +104,7 @@ A cross-platform framework for deploying LLMs, VLMs, Embedding Models, TTS model
         mmproj: '/path/to/mmproj.gguf',
     });
 
-    // Multimodal Completion (can add multiple images)
+    // Multimodal Completion (can add multiple images or None)
     const messages = [{ role: 'user', content: 'Describe this image' }];
 
     const params = {
@@ -140,79 +119,7 @@ N/B: See the [React Docs](https://github.com/cactus-compute/cactus/blob/main/rea
 
 ## ![C++](https://img.shields.io/badge/C%2B%2B-grey.svg?style=for-the-badge&logo=c%2B%2B&logoColor=white)
 
-Cactus backend is written in C/C++ and can run directly on any ARM/X86/Raspberry PI hardware like phones, smart tvs, watches, speakers, cameras, laptops etc. 
-
-1. **Setup**
-    You need `CMake 3.14+` installed, or install with `brew install cmake` (on macOS) or standard package managers on Linux.
-
-2. **Build from Source**
-    ```bash
-    git clone https://github.com/your-org/cactus.git
-    cd cactus
-    mkdir build && cd build
-    cmake .. -DCMAKE_BUILD_TYPE=Release
-    make -j$(nproc)
-    ```
-
-3. **CMake Integration**
-    Add to your `CMakeLists.txt`:
-
-    ```cmake
-    # Add Cactus as subdirectory
-    add_subdirectory(cactus)
-
-    # Link to your target
-    target_link_libraries(your_target cactus)
-    target_include_directories(your_target PRIVATE cactus)
-
-    # Requires C++17 or higher 
-    ```
-
-4. **Basic Text Completion**
-    ```cpp
-    #include "cactus/cactus.h"
-    #include <iostream>
-
-    int main() {
-        cactus::cactus_context context;
-        
-        // Configure parameters
-        common_params params;
-        params.model.path = "model.gguf";
-        params.n_ctx = 2048;
-        params.n_threads = 4;
-        params.n_gpu_layers = 99; // Use GPU acceleration
-        
-        // Load model
-        if (!context.loadModel(params)) {
-            std::cerr << "Failed to load model" << std::endl;
-            return 1;
-        }
-        
-        // Set prompt
-        context.params.prompt = "Hello, how are you?";
-        context.params.n_predict = 100;
-        
-        // Initialize sampling
-        if (!context.initSampling()) {
-            std::cerr << "Failed to initialize sampling" << std::endl;
-            return 1;
-        }
-        
-        // Generate response
-        context.beginCompletion();
-        context.loadPrompt();
-        
-        while (context.has_next_token && !context.is_interrupted) {
-            auto token_output = context.doCompletion();
-            if (token_output.tok == -1) break;
-        }
-        
-        std::cout << "Response: " << context.generated_text << std::endl;
-        return 0;
-    }
-    ```
- To learn more, see the [C++ Docs](https://github.com/cactus-compute/cactus/blob/main/cactus). It covers chat design, embeddings, multimodal models, text-to-speech, and more.
+Cactus backend is written in C/C++ and can run directly on any ARM/X86/Raspberry PI hardware like phones, smart tvs, watches, speakers, cameras, laptops etc. See the [C++ Docs](https://github.com/cactus-compute/cactus/blob/main/cactus). It covers chat design, embeddings, multimodal models, text-to-speech, and more.
 
 
 ## ![Using this Repo & Example Apps](https://img.shields.io/badge/Using_Repo_And_Examples-grey.svg?style=for-the-badge)
