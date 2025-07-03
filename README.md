@@ -1,7 +1,4 @@
 <img src="assets/banner.jpg" alt="Logo" style="border-radius: 30px; width: 100%;">
-
-The fastest cross-platform framework for deploying AI locally on phones. 
-
 <span>
   Backed by
   <img alt="Y Combinator" src="https://img.shields.io/badge/Combinator-F0652F?style=for-the-badge&logo=ycombinator&logoColor=white" height="18" style="vertical-align:middle;border-radius:4px;">
@@ -10,6 +7,8 @@ The fastest cross-platform framework for deploying AI locally on phones.
 </span>
 
 <br/>
+
+The fastest cross-platform framework for deploying AI locally on phones. 
 
 - Available in Flutter and React-Native for cross-platform developers.
 - Supports any GGUF model you can find on Huggingface; Qwen, Gemma, Llama, DeepSeek etc.
