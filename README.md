@@ -58,7 +58,6 @@ The fastest cross-platform framework for deploying AI locally on phones.
         mmprojUrl: 'huggingface/gguf/mmproj/link',
     );
 
-    // Multimodal Completion (can add multiple images or None)
     final messages = [CactusMessage(role: CactusMessageRole.user, content: 'Describe this image')];
 
     final params = CactusVLMParams(
@@ -80,12 +79,12 @@ The fastest cross-platform framework for deploying AI locally on phones.
 
 2. **React-Native Text Completion**
     ```typescript
-    // Initialize
+    import { CactusLM } from 'cactus-react-native';
+    
     const { lm, error } = await CactusLM.init({
         model: '/path/to/model.gguf',
         n_ctx: 2048,
     });
-    if (error) throw error; // handle error gracefully
 
     // Completion 
     const messages = [{ role: 'user', content: 'Hello!' }];
@@ -100,14 +99,13 @@ The fastest cross-platform framework for deploying AI locally on phones.
 
 3. **React-Native VLM**
     ```typescript
-    // Initialize
+    import { CactusVLM } from 'cactus-react-native';
+
     const { vlm, error } = await CactusVLM.init({
         model: '/path/to/vision-model.gguf',
         mmproj: '/path/to/mmproj.gguf',
     });
-    if (error) throw error; // handle error gracefully
 
-    // Multimodal Completion (can add multiple images or None)
     const messages = [{ role: 'user', content: 'Describe this image' }];
 
     const params = {
