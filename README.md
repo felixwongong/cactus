@@ -35,7 +35,7 @@ The fastest cross-platform framework for deploying AI locally on phones.
     // Initialize
     final lm = await CactusLM.init(
         modelUrl: 'huggingface/gguf/link',
-        nCtx: 2048,
+        contextSize: 2048,
     );
 
     // Completion 
