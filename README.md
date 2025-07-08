@@ -19,7 +19,7 @@ The fastest cross-platform framework for deploying AI locally on phones.
 - Neat and tiny C++ build for custom hardware.
 - Chat templates with Jinja2 support and token streaming.
 
-[CLICK TO JOIN OUR DISCORD!](https://discord.gg/G2G9psU7)
+[CLICK TO JOIN OUR DISCORD!](https://discord.gg/bNurx3AXTJ)
 
 ## ![Flutter](https://img.shields.io/badge/Flutter-grey.svg?style=for-the-badge&logo=Flutter&logoColor=white)
 
