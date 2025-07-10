@@ -181,7 +181,7 @@ First, clone the repo with `git clone https://github.com/cactus-compute/cactus.g
 
 1. **Flutter**
     - Build the Android JNILibs with `scripts/build-flutter-android.sh`.
-    - Build the Flutter Plugin with `scripts/build-flutter-android.sh`.
+    - Build the Flutter Plugin with `scripts/build-flutter.sh`. (MUST run before using example)
     - Navigate to the example app with `cd flutter/example`.
     - Open your simulator via Xcode or Android Studio, [walkthrough](https://medium.com/@daspinola/setting-up-android-and-ios-emulators-22d82494deda) if you have not done this before.
     - Always start app with this combo `flutter clean && flutter pub get && flutter run`.
@@ -189,7 +189,7 @@ First, clone the repo with `git clone https://github.com/cactus-compute/cactus.g
 
 2. **React Native**
     - Build the Android JNILibs with `scripts/build-react-android.sh`.
-    - Build the Flutter Plugin with `scripts/build-react-android.sh`.
+    - Build the Flutter Plugin with `scripts/build-react.sh`.
     - Navigate to the example app with `cd react/example`.
     - Setup your simulator via Xcode or Android Studio, [walkthrough](https://medium.com/@daspinola/setting-up-android-and-ios-emulators-22d82494deda) if you have not done this before.
     - Always start app with this combo `yarn && yarn ios` or `yarn && yarn android`.
