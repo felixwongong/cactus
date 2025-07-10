@@ -8,15 +8,14 @@
 
 <br/>
 
-The fastest cross-platform framework for deploying AI locally on phones. 
+Cross-platform framework for running LLM/VLM/TTS model locally on phones.
 
 - Available in Flutter and React-Native for cross-platform developers.
 - Supports any GGUF model you can find on Huggingface; Qwen, Gemma, Llama, DeepSeek etc.
 - Run LLMs, VLMs, Embedding Models, TTS models and more.
 - Accommodates from FP32 to as low as 2-bit quantized models, for efficiency and less device strain. 
 - MCP tool-calls to make AI performant and helpful (set reminder, gallery search, reply messages) etc.
-- iOS xcframework and JNILibs for native setups.
-- Neat and tiny C++ build for custom hardware.
+- Fallback to massive cloud models for complex tasks and upon device failures. 
 - Chat templates with Jinja2 support and token streaming.
 
 [CLICK TO JOIN OUR DISCORD!](https://discord.gg/bNurx3AXTJ)
@@ -35,43 +34,66 @@ The fastest cross-platform framework for deploying AI locally on phones.
     ```dart
     import 'package:cactus/cactus.dart';
 
-    // Initialize
     final lm = await CactusLM.init(
         modelUrl: 'huggingface/gguf/link',
         contextSize: 2048,
     );
 
-    // Completion 
-    final messages = [CactusMessage(role: CactusMessageRole.user, content: 'Hello!')];
-    final params = CactusCompletionParams(nPredict: 100, temperature: 0.7);
-    final response = await lm.completion(messages, params);
-
-    // Embedding 
-    final text = 'Your text to embed';
-    final params = CactusEmbeddingParams(normalize: true);
-    final result = await lm.embedding(text, params);
+    final messages = [ChatMessage(role: 'user', content: 'Hello!')];
+    final response = await lm.completion(messages, maxTokens: 100, temperature: 0.7);
     ```
-3. **Flutter VLM Completion**
+3. **Flutter Embedding**
     ```dart
     import 'package:cactus/cactus.dart';
 
-    // Initialize (Flutter handles downloads automatically)
+    final lm = await CactusLM.init(
+        modelUrl: 'huggingface/gguf/link',
+        contextSize: 2048,
+        generateEmbeddings: true,
+    );
+
+    final text = 'Your text to embed';
+    final result = await lm.embedding(text);
+    ```
+4. **Flutter VLM Completion**
+    ```dart
+    import 'package:cactus/cactus.dart';
+
     final vlm = await CactusVLM.init(
         modelUrl: 'huggingface/gguf/link',
         mmprojUrl: 'huggingface/gguf/mmproj/link',
     );
 
-    final messages = [CactusMessage(role: CactusMessageRole.user, content: 'Describe this image')];
+    final messages = [ChatMessage(role: 'user', content: 'Describe this image')];
 
-    final params = CactusVLMParams(
-        images: ['/absolute/path/to/image.jpg'],
-        nPredict: 200,
+    final response = await vlm.completion(
+        messages, 
+        imagePaths: ['/absolute/path/to/image.jpg'],
+        maxTokens: 200,
         temperature: 0.3,
     );
-
-    final response = await vlm.completion(messages, params);
     ```
-  N/B: See the [Flutter Docs](https://github.com/cactus-compute/cactus/blob/main/flutter). It covers chat design, embeddings, multimodal models, text-to-speech, and more.
+5. **Flutter Cloud Fallback**
+    ```dart
+    import 'package:cactus/cactus.dart';
+
+    final lm = await CactusLM.init(
+        modelUrl: 'huggingface/gguf/link',
+        contextSize: 2048,
+        cactusToken: 'enterprise_token_here', 
+    );
+
+    final messages = [ChatMessage(role: 'user', content: 'Hello!')];
+    final response = await lm.completion(messages, maxTokens: 100, temperature: 0.7);
+
+    // local (default): strictly only run on-device
+    // localfirst: fallback to cloud if device fails
+    // remotefirst: primarily remote, run local if API fails
+    // remote: strictly run on cloud 
+    final embedding = await lm.embedding('Your text', mode: 'localfirst');
+    ```
+
+  N/B: See the [Flutter Docs](https://github.com/cactus-compute/cactus/blob/main/flutter) for more.
 
 ## ![React Native](https://img.shields.io/badge/React%20Native-grey.svg?style=for-the-badge&logo=react&logoColor=%2361DAFB)
 
@@ -89,18 +111,26 @@ The fastest cross-platform framework for deploying AI locally on phones.
         n_ctx: 2048,
     });
 
-    // Completion 
     const messages = [{ role: 'user', content: 'Hello!' }];
     const params = { n_predict: 100, temperature: 0.7 };
     const response = await lm.completion(messages, params);
+    ```
+3. **React-Native Embedding**
+    ```typescript
+    import { CactusLM } from 'cactus-react-native';
+    
+    const { lm, error } = await CactusLM.init({
+        model: '/path/to/model.gguf',
+        n_ctx: 2048,
+        embedding: True,
+    });
 
-    // Embedding 
     const text = 'Your text to embed';
     const params = { normalize: true };
     const result = await lm.embedding(text, params);
     ```
 
-3. **React-Native VLM**
+4. **React-Native VLM**
     ```typescript
     import { CactusVLM } from 'cactus-react-native';
 
@@ -119,11 +149,30 @@ The fastest cross-platform framework for deploying AI locally on phones.
 
     const response = await vlm.completion(messages, params);
     ```
-N/B: See the [React Docs](https://github.com/cactus-compute/cactus/blob/main/react). It covers chat design, embeddings, multimodal models, text-to-speech, and various options.
+5. **React-Native Cloud Fallback**
+    ```typescript
+    import { CactusLM } from 'cactus-react-native';
+
+    const { lm, error } = await CactusLM.init({
+        model: '/path/to/model.gguf',
+        n_ctx: 2048,
+    }, undefined, 'enterprise_token_here');
+
+    const messages = [{ role: 'user', content: 'Hello!' }];
+    const params = { n_predict: 100, temperature: 0.7 };
+    const response = await lm.completion(messages, params);
+
+    // local (default): strictly only run on-device
+    // localfirst: fallback to cloud if device fails
+    // remotefirst: primarily remote, run local if API fails
+    // remote: strictly run on cloud 
+    const embedding = await lm.embedding('Your text', undefined, 'localfirst');
+    ```
+N/B: See the [React Docs](https://github.com/cactus-compute/cactus/blob/main/react) for more.
 
 ## ![C++](https://img.shields.io/badge/C%2B%2B-grey.svg?style=for-the-badge&logo=c%2B%2B&logoColor=white)
 
-Cactus backend is written in C/C++ and can run directly on any ARM/X86/Raspberry PI hardware like phones, smart tvs, watches, speakers, cameras, laptops etc. See the [C++ Docs](https://github.com/cactus-compute/cactus/blob/main/cpp). It covers chat design, embeddings, multimodal models, text-to-speech, and more.
+Cactus backend is written in C/C++ and can run directly on phones, smart tvs, watches, speakers, cameras, laptops etc. See the [C++ Docs](https://github.com/cactus-compute/cactus/blob/main/cpp) for more.
 
 
 ## ![Using this Repo & Example Apps](https://img.shields.io/badge/Using_Repo_And_Examples-grey.svg?style=for-the-badge)
