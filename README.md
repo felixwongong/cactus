@@ -66,15 +66,15 @@ Example response from Gemma3-270m-INT8
 
 ## INT8 CPU-ONLY Performance
 
-- <sub>**Models:** LFM2-VL-450m (text/vision) & Whisper-Small (speech)</sub>
-- <sub>**Decode** = tokens/sec, **P/D** = prefill/decode toks/sec, **VLM** = 256×256 image, **STT** = 30s audio transcription</sub>
-- <sub>**INT4 coming**: 2x speed, 2x smaller files</sub>
-- <sub>**NPU support coming**: 5-11x prefill speed, better energy efficiency</sub>
+- <sub>**Models:** LFM2-VL-450m & Whisper-Small</sub>
+- <sub>**Decode** = toks/sec, **P/D** = prefill/decode, **VLM** = 256×256 image, **STT** = 30s audio</sub>
+- <sub>**INT4 coming**: 1.8x speed, 1.9x smaller files</sub>
+- <sub>**NPU coming**: 5-11x prefill, energy efficiency</sub>
 
 | Device | Decode | 1k-P/D | 4k-P/D | 4k-RAM | VLM-TTFT | VLM-Dec | VLM-RAM | STT-TTFT | STT-Dec | STT-RAM |
 |--------|--------|--------|--------|--------|----------|---------|---------|----------|---------|---------|
 | Mac M4 Pro | 173 | 1574/115 | 1089/100 | 122MB | 0.38s | 168 | 112MB | 1.7s | 83 | 142MB |
-| Mac M3 Pro | - | - | - | - | - | - | - | - | - | - |
+| Mac M3 Pro | 150 | 1540/109 | 890/93 | 121MB | 0.47s | 149 | 113MB | 2.9s | 78 | 140MB |
 | iPad/Mac M4 | 129 | 793/82 | 507/64 | 80MB | 0.46s | 113 | 45MB | 2.4s | 60 | 31MB |
 | iPad/Mac M3 | 112 | 786/78 | 446/60 | 80MB | 0.58s | 111 | 54MB | 4.2s | 58 | 42MB |
 | iPhone 17 Pro | - | - | - | - | - | - | - | - | - | - |
@@ -107,23 +107,23 @@ cli/cactus download Qwen/Qwen3-0.6B # HF name, stored to weights/Qwen3-0.6B
 
 | Model | Compressed Size | Completion | Tool Call | Vision | Embed | Speech
 |-------|--------------------|-------------------|----------------|------|------|------|
-| google/gemma-3-270m-it | 172  | ✓ | ✗ | ✗ | ✗ | ✗ |
-| openai/whisper-small | 210  | ✗ | ✗ | ✗ | ✓ | ✓ |
-| LiquidAI/LFM2-350M | 233  | ✓ | ✓ | ✗ | ✓ | ✗ |
-| HuggingFaceTB/SmolLM2-360m-Instruct | 227  | ✓ | ✗ | ✗ | ✗ | ✗ |
-| LiquidAI/LFM2-VL-450M | 420  | ✓ | ✗ | ✓ | ✓ | ✗ |
-| Qwen/Qwen3-0.6B | 394  | ✓ | ✓ | ✗ | ✓ | ✗ |
-| Qwen/Qwen3-Embedding-0.6B | 394  | ✗ | ✗ | ✗ | ✓ | ✗ |
-| LiquidAI/LFM2-700M | 467  | ✓ | ✓ | ✗ | ✓ | ✗ |
-| nomic-ai/nomic-embed-text-v2-moe | 533  | ✗ | ✗ | ✗ | ✓ | ✗ |
-| google/gemma-3-1b-it | 642  | ✓ | ✗ | ✗ | ✗ | ✗ |
-| openai/whisper-medium | 646  | ✗ | ✗ | ✗ | ✓ | ✓ |
-| LiquidAI/LFM2-1.2B | 722  | ✓ | ✓ | ✗ | ✓ | ✗ |
-| LiquidAI/LFM2-1.2B-RAG | 722  | ✓ | ✓ | ✗ | ✓ | ✗ |
-| LiquidAI/LFM2-1.2B-Tools | 722  | ✓ | ✓ | ✗ | ✓ | ✗ |
-| LiquidAI/LFM2-VL-1.6B | 1440  | ✓ | ✗ | ✓ | ✓ | ✗ |
-| Qwen/Qwen3-1.7B | 1161  | ✓ | ✓ | ✗ | ✓ | ✗ |
-| HuggingFaceTB/SmolLM2-1.7B-Instruct | 1161  | ✓ | ✗ | ✗ | ✓ | ✗ |
+| google/gemma-3-270m-it | 172MB  | ✓ | ✗ | ✗ | ✗ | ✗ |
+| openai/whisper-small | 210MB  | ✗ | ✗ | ✗ | ✓ | ✓ |
+| LiquidAI/LFM2-350M | 233MB  | ✓ | ✓ | ✗ | ✓ | ✗ |
+| HuggingFaceTB/SmolLM2-360m-Instruct | 227MB  | ✓ | ✗ | ✗ | ✗ | ✗ |
+| LiquidAI/LFM2-VL-450M | 420MB  | ✓ | ✗ | ✓ | ✓ | ✗ |
+| Qwen/Qwen3-0.6B | 394MB  | ✓ | ✓ | ✗ | ✓ | ✗ |
+| Qwen/Qwen3-Embedding-0.6B | 394MB  | ✗ | ✗ | ✗ | ✓ | ✗ |
+| LiquidAI/LFM2-700M | 467MB  | ✓ | ✓ | ✗ | ✓ | ✗ |
+| nomic-ai/nomic-embed-text-v2-moe | 533MB  | ✗ | ✗ | ✗ | ✓ | ✗ |
+| google/gemma-3-1b-it | 642MB  | ✓ | ✗ | ✗ | ✗ | ✗ |
+| openai/whisper-medium | 646MB  | ✗ | ✗ | ✗ | ✓ | ✓ |
+| LiquidAI/LFM2-1.2B | 722MB  | ✓ | ✓ | ✗ | ✓ | ✗ |
+| LiquidAI/LFM2-1.2B-RAG | 722MB  | ✓ | ✓ | ✗ | ✓ | ✗ |
+| LiquidAI/LFM2-1.2B-Tools | 722MB  | ✓ | ✓ | ✗ | ✓ | ✗ |
+| LiquidAI/LFM2-VL-1.6B | 1440MB  | ✓ | ✗ | ✓ | ✓ | ✗ |
+| Qwen/Qwen3-1.7B | 1161MB  | ✓ | ✓ | ✗ | ✓ | ✗ |
+| HuggingFaceTB/SmolLM2-1.7B-Instruct | 1161MB  | ✓ | ✗ | ✗ | ✓ | ✗ |
 
 ## Resources 
 
