@@ -389,7 +389,7 @@ int cactus_complete(
                                                       tokens_to_process.end());
                     next_token = handle->model->generate(final_chunk, temperature, top_p, top_k);
                 } else {
-                    next_token = handle->model->generate(tokens_to_process, temperature, top_p, top_k);
+                    next_token = handle->model->generate(tokens_to_process, temperature, top_p, top_k, "profile.txt");
                 }
             }
         }

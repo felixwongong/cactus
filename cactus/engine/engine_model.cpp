@@ -1,7 +1,6 @@
 #include "engine.h"
 #include "../models/model.h"
 #include "../graph/graph.h"
-#include <iostream>
 #include <fstream>
 #include <iomanip>
 #include <cmath>
@@ -11,7 +10,6 @@
 #include <set>
 #include <sstream>
 #include <stdexcept>
-#include <iostream>
 
 namespace cactus {
 namespace engine {
@@ -195,7 +193,12 @@ uint32_t Model::generate(const std::vector<uint32_t>& tokens, float temperature,
             ? ComputeBackend::CPU
             : ComputeBackend::NPU;
 
-        auto logits_node_id = gb->matmul(final_hidden, output_weight_node_id_, true, backend);
+        auto last_hidden = gb->index(final_hidden, tokens.size() - 1, 0);
+        const auto& last_hidden_buf = gb->get_output_buffer(last_hidden);
+        size_t hidden_dim = last_hidden_buf.shape[0];
+        last_hidden = gb->reshape(last_hidden, {1, hidden_dim});
+
+        auto logits_node_id = gb->matmul(last_hidden, output_weight_node_id_, true, backend);
         sampled_token_id = gb->sample(logits_node_id, temperature, top_p, top_k);
     }
 
