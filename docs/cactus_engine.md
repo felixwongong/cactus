@@ -8,7 +8,7 @@ Before using the Cactus Engine, you need to download model weights:
 
 ```bash
 # Setup the environment
-source ./setup
+./setup
 
 # Download model weights (converts HuggingFace models to Cactus format)
 cactus download LiquidAI/LFM2-1.2B

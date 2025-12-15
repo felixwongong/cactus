@@ -88,9 +88,9 @@ Example response from Gemma3-270m-INT8
 
 ## Using up this repo on Mac
 
-Clone repo and simply run `./setup`.
-Everthing will be setup automatically and usage instructions outlined.
-Run `cactus --help` to see guides anytime
+- Clone repo and simply run `./setup`.
+- Setup is automatic and usage instructions printed after.
+- Run `cactus --help` to see guides anytime.
 
 ## Supported models (INT8)
 

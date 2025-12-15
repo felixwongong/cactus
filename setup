@@ -1,10 +1,11 @@
 #!/bin/bash
 
-set -e
-
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
-    exec bash -c "source '$0' && exec bash"
+    echo "Please run: source ./setup"
+    exit 1
 fi
+
+set -e
 
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VENV_DIR="$PROJECT_ROOT/venv"
@@ -98,3 +99,5 @@ echo -e "${GREEN}Setup complete!${NC}"
 echo -e "${GREEN}=============================================${NC}"
 echo ""
 cactus --help
+
+set +e

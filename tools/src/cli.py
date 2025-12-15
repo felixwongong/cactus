@@ -527,6 +527,20 @@ def create_parser():
   cactus --help                        shows these instructions
 
   -----------------------------------------------------------------
+
+  Python scripting:
+
+  Cactus python package is auto installed for researchers and testing
+  Please see tools/examples.y and run the following instructions.
+
+  1. cactus build
+  2. cactus download LiquidAI/LFM2-VL-450M
+  3. cd tools 
+  4. python example.py
+
+  Note: Use any supported model
+
+  ----------------------------------------------------------------- 
 """
     )
 

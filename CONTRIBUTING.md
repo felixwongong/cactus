@@ -86,7 +86,7 @@ git clone https://github.com/yourusername/cactus.git
 cd cactus
 
 # Setup the environment (installs dependencies and activates venv)
-source ./setup
+./setup
 ```
 
 You can run these codes directly on M-series Macbooks since they are ARM-based.
@@ -115,6 +115,67 @@ cactus build --android       # Build for Android
 cactus download <hf-name>    # Download and convert model weights
 cactus run <hf-name>         # Download, build, and run playground
 ```
+
+### Python FFI for Researchers
+
+Cactus provides Python bindings for quick scripting and research. After setup:
+
+```bash
+cactus build
+cactus download LiquidAI/LFM2-VL-450M
+cactus download openai/whisper-small
+cd tools && python example.py
+```
+
+**Available functions:**
+
+```python
+from cactus_ffi import (
+    cactus_init,          # Load a model
+    cactus_complete,      # Text/VLM completion
+    cactus_transcribe,    # Audio transcription (Whisper)
+    cactus_embed,         # Text embeddings
+    cactus_image_embed,   # Image embeddings
+    cactus_audio_embed,   # Audio embeddings
+    cactus_reset,         # Reset model state
+    cactus_destroy        # Free model memory
+)
+```
+
+**Quick example:**
+
+```python
+import json
+from cactus_ffi import cactus_init, cactus_complete, cactus_destroy
+
+# Load model
+model = cactus_init("../weights/lfm2-vl-450m", context_size=2048)
+
+# Text completion
+messages = json.dumps([{"role": "user", "content": "What is 2+2?"}])
+response = cactus_complete(model, messages)
+print(json.loads(response)["response"])
+
+# VLM - describe image
+messages = json.dumps([{"role": "user", "content": "Describe this image", "images": ["path/to/image.png"]}])
+response = cactus_complete(model, messages)
+
+cactus_destroy(model)
+```
+
+**Whisper transcription:**
+
+```python
+from cactus_ffi import cactus_init, cactus_transcribe, cactus_destroy
+
+whisper = cactus_init("../weights/whisper-small", context_size=448)
+prompt = "<|startoftranscript|><|en|><|transcribe|><|notimestamps|>"
+response = cactus_transcribe(whisper, "audio.wav", prompt=prompt)
+
+cactus_destroy(whisper)
+```
+
+See `tools/example.py` for a complete working example.
 
 ### Questions?
 

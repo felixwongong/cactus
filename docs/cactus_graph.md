@@ -17,7 +17,7 @@ Before using the Cactus Graph API, set up your development environment:
 
 ```bash
 # Setup the environment and install dependencies
-source ./setup
+./setup
 
 # Build the Cactus library
 cactus build
