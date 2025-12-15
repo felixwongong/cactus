@@ -1,74 +1,5 @@
 # Contributing to Cactus
 
-Thank you for your interest in contributing to Cactus! This document provides guidelines and instructions for contributing to this project.
-
-## Developer Certificate of Origin (DCO)
-
-This project uses the Developer Certificate of Origin (DCO) to ensure that all contributions are properly licensed and that contributors have the right to submit their work.
-
-### What is the DCO?
-
-The DCO is a lightweight way for contributors to certify that they wrote or otherwise have the right to submit the code they are contributing to the project. It is used by many open source projects including the Linux kernel.
-
-### DCO Sign-Off
-
-All commits must be signed off to indicate that you agree to the terms of the [DCO](https://developercertificate.org/):
-
-### How to Sign-Off Your Commits
-
-You have two options for signing off your commits:
-
-#### Option 1: Automatic Sign-off (Recommended)
-
-Set up automatic DCO sign-off by running our setup script once after cloning:
-
-```bash
-# Run once after cloning the repository
-./cli/setup-dco.sh
-
-# Then commit normally - sign-off is added automatically
-git commit -m "Your commit message"
-```
-
-#### Option 2: Manual Sign-off
-
-Manually sign-off each commit using the `-s` or `--signoff` flag:
-
-```bash
-git commit -s -m "Your commit message"
-```
-
-This will add a `Signed-off-by` line at the end of your commit message:
-
-```
-Your commit message
-
-Signed-off-by: Your Name <your.email@example.com>
-```
-
-The name and email must match your Git configuration. You can set these with:
-
-```bash
-git config --global user.name "Your Name"
-git config --global user.email "your.email@example.com"
-```
-
-### Fixing Unsigned Commits
-
-If you've already made commits without signing off, you can amend the last commit:
-
-```bash
-git commit --amend -s
-```
-
-For multiple commits, you can rebase and sign them:
-
-```bash
-git rebase HEAD~3 --signoff  # Sign-off last 3 commits
-```
-
-## Contribution Guidelines
-
 ### Code Style
 
 - **C++ Standard**: Use C++20 features where appropriate
@@ -153,22 +84,37 @@ We especially welcome contributions in these areas:
 # Clone the repository
 git clone https://github.com/yourusername/cactus.git
 cd cactus
+
+# Setup the environment (installs dependencies and activates venv)
+source ./setup
 ```
 
 You can run these codes directly on M-series Macbooks since they are ARM-based.
-Vanilla M3 CPU-only can run Qwen3-600m-INT8 at 60-70 toks/sec, just run the following: 
+Vanilla M3 CPU-only can run Qwen3-600m-INT8 at 60-70 toks/sec.
+
+### Running Tests
 
 ```bash
-./tests/run.sh # chmod +x first time
+cactus test                              # Run unit tests and benchmarks
+cactus test --model <hf-name>            # Use a specific model for tests
+cactus test --ios                        # Run tests on connected iPhone
+cactus test --android                    # Run tests on connected Android device
 ```
 
-## Generating weights from HuggingFace 
-Use any of the following (270m, 600m, 1B, 1.7B activated params):
+### Building
+
 ```bash
-cli/cactus download <huggingface-name>
+cactus build                 # Build for ARM chips (libcactus.a)
+cactus build --apple         # Build for Apple platforms (iOS/macOS)
+cactus build --android       # Build for Android
 ```
 
-Simply replace the weight path `tests/test_engine.cpp` with your choice.
+### Downloading Models
+
+```bash
+cactus download <hf-name>    # Download and convert model weights
+cactus run <hf-name>         # Download, build, and run playground
+```
 
 ### Questions?
 

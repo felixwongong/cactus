@@ -88,16 +88,9 @@ Example response from Gemma3-270m-INT8
 
 ## Using up this repo on Mac
 
-Dependencies will be setup on first run automatically.
-
-```bash
-cli/cactus --help # to see all commands
-cli/cactus run LiquidAI/LFM2-VL-450M # to interact with a model
-cli/cactus test # to run unit tests during dev + reproduce benchmarks
-cli/cactus test --android # run tests on Android device or emulator
-cli/cactus test --ios # run tests on iOS device or simulator
-cli/cactus download Qwen/Qwen3-0.6B # HF name, stored to weights/Qwen3-0.6B
-```
+Clone repo and simply run `./setup`.
+Everthing will be setup automatically and usage instructions outlined.
+Run `cactus --help` to see guides anytime
 
 ## Supported models (INT8)
 
@@ -130,13 +123,6 @@ cli/cactus download Qwen/Qwen3-0.6B # HF name, stored to weights/Qwen3-0.6B
 
 ## Using in your apps
 
-```bash
-android/build.sh # generate the `libcactus.so` and `libcactus.a` for android
-apple/build.sh # generate the `.xcframeworks` for Apple
-```
-
-Or simply use the provided SDKs
-
 - [Kotlin Multiplatform SDK](https://github.com/cactus-compute/cactus-kotlin)
 - [Flutter SDK](https://github.com/cactus-compute/cactus-flutter)
 - [React Native SDK](https://github.com/cactus-compute/cactus-react-native)
@@ -146,12 +132,3 @@ Or simply use the provided SDKs
 
 - [iOS Demo](https://apps.apple.com/gb/app/cactus-chat/id6744444212)
 - [Android Demo](https://play.google.com/store/apps/details?id=com.rshemetsubuser.myapp)
-
-## Windows ARM PC setup
-
-```bash
-# Needs C++, Python and MySys with Pacman, then install CMake and Python dependencies weight convertion dependencies 
-pacman -S mingw-w64-clang-aarch64-cmake mingw-w64-clang-aarch64-toolchain mingw-w64-clang-aarch64-mman-win32
-pip3 install -r tools/requirements.txt
-tests/run.bat for Windows ARM
-```
