@@ -24,7 +24,7 @@ Set up automatic DCO sign-off by running our setup script once after cloning:
 
 ```bash
 # Run once after cloning the repository
-./tools/setup-dco.sh
+./cli/setup-dco.sh
 
 # Then commit normally - sign-off is added automatically
 git commit -m "Your commit message"
@@ -165,10 +165,7 @@ Vanilla M3 CPU-only can run Qwen3-600m-INT8 at 60-70 toks/sec, just run the foll
 ## Generating weights from HuggingFace 
 Use any of the following (270m, 600m, 1B, 1.7B activated params):
 ```bash
-python3 tools/convert_hf.py google/gemma-3-270m-it weights/gemma3-270m-i8/ --precision INT8
-python3 tools/convert_hf.py Qwen/Qwen3-0.6B weights/qwen3-600m-i8/ --precision INT8
-python3 tools/convert_hf.py google/gemma-3-1b-it weights/gemma3-1b-i8/ --precision INT8
-python3 tools/convert_hf.py Qwen/Qwen3-1.7B weights/qwen3-1.7-i8/ --precision INT8
+cli/cactus download <huggingface-name>
 ```
 
 Simply replace the weight path `tests/test_engine.cpp` with your choice.
