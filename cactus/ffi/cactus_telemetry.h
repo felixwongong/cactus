@@ -46,9 +46,6 @@ struct TelemetryMetrics {
     std::chrono::system_clock::time_point timestamp;
 };
 
-// ============================================================================
-// HttpClient - Handles HTTP requests
-// ============================================================================
 
 class HttpClient {
 public:
@@ -76,9 +73,9 @@ inline size_t HttpClient::writeCallback(void* contents, size_t size, size_t nmem
 }
 
 inline HttpClient::Response HttpClient::postJson(
-    const std::string& url,
-    const std::map<std::string, std::string>& headers,
-    const std::string& json_body
+    [[maybe_unused]] const std::string& url,
+    [[maybe_unused]] const std::map<std::string, std::string>& headers,
+    [[maybe_unused]] const std::string& json_body
 ) {
 #ifdef CACTUS_TELEMETRY_ENABLED
     Response response;
@@ -143,7 +140,6 @@ inline HttpClient::Response HttpClient::postJson(
     return response;
 #endif
 }
-
 
 class DeviceManager {
 public:
@@ -546,7 +542,7 @@ inline bool CactusTelemetry::isEnabled() const {
     return enabled_ && !telemetry_token_.empty();
 }
 
-inline void CactusTelemetry::sendToSupabase(const TelemetryMetrics& metrics) {
+inline void CactusTelemetry::sendToSupabase([[maybe_unused]] const TelemetryMetrics& metrics) {
 #ifdef CACTUS_TELEMETRY_ENABLED
     std::string telemetry_token;
     std::string project_id;
