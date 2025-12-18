@@ -243,7 +243,7 @@ void Model::update_kv_cache(CactusGraph* gb, size_t seq_len) {
 }
 
 
-std::vector<float> Model::get_embeddings(const std::vector<uint32_t>& tokens, bool pooled, const std::string& profile_file) {
+std::vector<float> Model::get_embeddings(const std::vector<uint32_t>& tokens, bool pooled, bool normalize, const std::string& profile_file) {
     auto final_hidden = forward(tokens);
 
     auto* gb = static_cast<CactusGraph*>(graph_handle_);
@@ -302,6 +302,20 @@ std::vector<float> Model::get_embeddings(const std::vector<uint32_t>& tokens, bo
             float scale = output_buffer.quantization_scale;
             for (size_t i = 0; i < total_size; i++) {
                 embeddings[i] = hidden_states[i] * scale;
+            }
+        }
+    }
+
+    if (normalize && !embeddings.empty()) {
+        float norm_sq = 0.0f;
+        for (float v : embeddings) {
+            norm_sq += v * v;
+        }
+        float norm = std::sqrt(norm_sq);
+        if (norm > 1e-12f) {
+            float inv_norm = 1.0f / norm;
+            for (float& v : embeddings) {
+                v *= inv_norm;
             }
         }
     }

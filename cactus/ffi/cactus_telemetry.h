@@ -134,6 +134,9 @@ inline HttpClient::Response HttpClient::postJson(
 
     return response;
 #else
+    (void)url;
+    (void)headers;
+    (void)json_body;
     Response response;
     response.success = false;
     response.status_code = 0;
@@ -141,9 +144,6 @@ inline HttpClient::Response HttpClient::postJson(
 #endif
 }
 
-// ============================================================================
-// DeviceManager - Manages device registration and configuration
-// ============================================================================
 
 class DeviceManager {
 public:
@@ -571,6 +571,8 @@ inline void CactusTelemetry::sendToSupabase(const TelemetryMetrics& metrics) {
 
     std::string url = SUPABASE_URL + "/rest/v1/logs";
     HttpClient::postJson(url, headers, payload);
+#else
+    (void)metrics;
 #endif
 }
 

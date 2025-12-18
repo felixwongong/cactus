@@ -242,7 +242,9 @@ def cmd_build(args):
             str(lib_path),
             "-o", "chat",
             "-lcurl",
-            "-framework", "Accelerate"
+            "-framework", "Accelerate",
+            "-framework", "Foundation",
+            "-framework", "CoreML"
         ]
     else:
         compiler = "g++"

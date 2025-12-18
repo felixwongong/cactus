@@ -76,7 +76,8 @@ int cactus_embed(
     const char* text,
     float* embeddings_buffer,
     size_t buffer_size,
-    size_t* embedding_dim
+    size_t* embedding_dim,
+    bool normalize
 ) {
     if (!model || !text || !embeddings_buffer || buffer_size == 0) return -1;
 
@@ -87,7 +88,7 @@ int cactus_embed(
         std::vector<uint32_t> tokens = tokenizer->encode(text);
         if (tokens.empty()) return -1;
 
-        std::vector<float> embeddings = handle->model->get_embeddings(tokens, true);
+        std::vector<float> embeddings = handle->model->get_embeddings(tokens, true, normalize);
         if (embeddings.size() * sizeof(float) > buffer_size) return -2;
 
         std::memcpy(embeddings_buffer, embeddings.data(), embeddings.size() * sizeof(float));
