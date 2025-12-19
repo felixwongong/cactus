@@ -110,7 +110,7 @@ Example response from Gemma3-270m-INT8
 | Qwen/Qwen3-1.7B | 1161MB  | ✓ | ✓ | ✗ | ✓ | ✗ | Apple |
 | HuggingFaceTB/SmolLM2-1.7B-Instruct | 1161MB  | ✓ | ✗ | ✗ | ✓ | ✗ | ✗ |
 
-## Using up this repo on Mac
+## Using this repo on Mac
 
 - Clone repo and run `source ./setup`.
 - Setup is automatic and usage instructions printed after.
