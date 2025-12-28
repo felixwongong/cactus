@@ -108,6 +108,8 @@ void KVCache::update_from_graph(CactusGraph* gb, const std::vector<size_t>& k_no
         effective_seq_len = new_total_len;
     }
 
+    bool any_layer_updated = false;
+
     for (size_t layer_idx = 0; layer_idx < layers; layer_idx++) {
         auto& cache = layer_caches[layer_idx];
 
@@ -121,6 +123,7 @@ void KVCache::update_from_graph(CactusGraph* gb, const std::vector<size_t>& k_no
             size_t expected_elements = new_total_len * elements_per_token;
 
             if (k_buffer.total_size == expected_elements && v_buffer.total_size == expected_elements) {
+                any_layer_updated = true;
 
                 if (!use_sliding_window) {
                     size_t total_bytes = new_total_len * bytes_per_token;
@@ -154,6 +157,7 @@ void KVCache::update_from_graph(CactusGraph* gb, const std::vector<size_t>& k_no
                 }
             } else if (seq_len * elements_per_token == k_buffer.total_size &&
                       seq_len * elements_per_token == v_buffer.total_size) {
+                any_layer_updated = true;
 
                 if (!use_sliding_window) {
                     size_t old_bytes = old_seq_len * bytes_per_token;
@@ -197,7 +201,9 @@ void KVCache::update_from_graph(CactusGraph* gb, const std::vector<size_t>& k_no
         }
     }
 
-    current_seq_len = effective_seq_len;
+    if (any_layer_updated) {
+        current_seq_len = effective_seq_len;
+    }
 }
 
 void KVCache::update_from_npu(size_t layer_idx, const __fp16* k_data, const __fp16* v_data,

@@ -530,38 +530,12 @@ void WhisperModel::run_encoder(const std::vector<float>& mel_bins)
         ? ComputeBackend::CPU
         : ComputeBackend::NPU;
 
-    Precision act_precision;
-    switch (config_.precision) {
-        case Config::Precision::INT8:  act_precision = Precision::INT8;  break;
-        case Config::Precision::FP16:  act_precision = Precision::FP16;  break;
-        case Config::Precision::FP32:
-        default:                       act_precision = Precision::FP32;  break;
-    }
-
     size_t mel_input = 0;
+    std::vector<__fp16> mel_bins_f16(mel_bins.size());
+    cactus_fp32_to_fp16(mel_bins.data(), mel_bins_f16.data(), mel_bins.size());
 
-    if (act_precision == Precision::FP16) {
-        std::vector<__fp16> mel_bins_f16(mel_bins.size());
-        cactus_fp32_to_fp16(mel_bins.data(), mel_bins_f16.data(), mel_bins.size());
-
-        mel_input = gb->input({1, 80, T_mel}, Precision::FP16);
-        gb->set_input(mel_input, mel_bins_f16.data(), Precision::FP16);
-    }
-
-    else if (act_precision == Precision::INT8) {
-        std::vector<int8_t> mel_bins_i8(mel_bins.size());
-        for (size_t i = 0; i < mel_bins.size(); ++i) {
-            mel_bins_i8[i] = static_cast<int8_t>(mel_bins[i]);
-        }
-
-        mel_input = gb->input({1, 80, T_mel}, Precision::INT8);
-        gb->set_input(mel_input, mel_bins_i8.data(), Precision::INT8);
-    }
-
-    else {
-        mel_input = gb->input({1, 80, T_mel}, Precision::FP32);
-        gb->set_input(mel_input, mel_bins.data(), Precision::FP32);
-    }
+    mel_input = gb->input({1, 80, T_mel}, Precision::FP16);
+    gb->set_input(mel_input, mel_bins_f16.data(), Precision::FP16);
 
     size_t conv2_transposed = build_conv1d(gb, mel_input);
 

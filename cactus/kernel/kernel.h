@@ -101,6 +101,9 @@ void cactus_matmul_f16(const __fp16* a, const __fp16* b_transposed, __fp16* c,
 void cactus_matmul_f32(const float* a, const float* b_transposed, float* c,
                        size_t M, size_t K, size_t N);
 
+void cactus_matmul_int8_grouped(const __fp16* A, const int8_t* B, const __fp16* B_scales, 
+                       __fp16* C, size_t M, size_t K, size_t N, size_t group_size);
+
 
 void cactus_transpose_2d_int8(const int8_t* source, int8_t* destination,
                                size_t num_rows, size_t num_cols, size_t start_row, size_t end_row);
@@ -304,12 +307,10 @@ void cactus_concat_int8(const int8_t* input1, const int8_t* input2, int8_t* outp
 
 void cactus_int8_to_fp32(const int8_t* src, float* dst, size_t count, float scale = 1.0f);
 void cactus_fp32_to_int8(const float* src, int8_t* dst, size_t count, float scale = 1.0f);
-void cactus_dynamic_quantize_fp32_to_int8(const float* src, int8_t* dst, size_t count, float* computed_scale);
 void cactus_fp16_to_fp32(const __fp16* src, float* dst, size_t count);
 void cactus_fp32_to_fp16(const float* src, __fp16* dst, size_t count);
 void cactus_int8_to_fp16(const int8_t* src, __fp16* dst, size_t count, float scale = 1.0f);
 void cactus_fp16_to_int8(const __fp16* src, int8_t* dst, size_t count, float scale = 1.0f);
 float cactus_fp16_max_abs(const __fp16* src, size_t count);
-void cactus_int32_to_fp16_scaled(const int32_t* src, __fp16* dst, size_t count, float scale);
 
 #endif 

@@ -12,44 +12,52 @@ namespace GraphFile {
     void save_node(CactusGraph& graph, size_t node_id, const std::string& filename) {
         graph.execute();
         void* data = graph.get_output(node_id);
-        
+
         const auto& buffer = graph.get_output_buffer(node_id);
         const auto& shape = buffer.shape;
         Precision precision = buffer.precision;
-        
+
         std::ofstream file(filename, std::ios::binary);
         if (!file) {
             throw std::runtime_error("Cannot open file for writing: " + filename);
         }
-        
+
         uint32_t ndim = static_cast<uint32_t>(shape.size());
         file.write(reinterpret_cast<const char*>(&ndim), sizeof(ndim));
-        
+
         for (size_t dim : shape) {
             uint64_t dim_val = static_cast<uint64_t>(dim);
             file.write(reinterpret_cast<const char*>(&dim_val), sizeof(dim_val));
         }
-        
+
         uint32_t prec_val = static_cast<uint32_t>(precision);
         file.write(reinterpret_cast<const char*>(&prec_val), sizeof(prec_val));
-        
+
         size_t total_elements = 1;
         for (size_t dim : shape) {
             total_elements *= dim;
         }
-        
+
         size_t element_size = PrecisionTraits::size_of(precision);
         size_t byte_size = total_elements * element_size;
         uint64_t size_val = static_cast<uint64_t>(byte_size);
         file.write(reinterpret_cast<const char*>(&size_val), sizeof(size_val));
-        
+
         if (precision == Precision::INT8) {
-            float quantization_scale = buffer.quantization_scale;
-            file.write(reinterpret_cast<const char*>(&quantization_scale), sizeof(quantization_scale));
+            uint32_t group_size = buffer.is_grouped_int8() ? static_cast<uint32_t>(buffer.group_size) : 0;
+            uint64_t num_groups = buffer.is_grouped_int8() ? static_cast<uint64_t>(buffer.num_groups) : 0;
+            file.write(reinterpret_cast<const char*>(&group_size), sizeof(group_size));
+            file.write(reinterpret_cast<const char*>(&num_groups), sizeof(num_groups));
         }
-        
+
         file.write(static_cast<const char*>(data), byte_size);
-        
+
+        if (precision == Precision::INT8 && buffer.is_grouped_int8() && buffer.scales_data) {
+            size_t N = shape.size() >= 1 ? shape[0] : 1;
+            size_t scales_bytes = N * buffer.num_groups * sizeof(__fp16);
+            file.write(static_cast<const char*>(buffer.scales_data), scales_bytes);
+        }
+
         if (!file) {
             throw std::runtime_error("Error writing node data to file: " + filename);
         }
@@ -60,50 +68,66 @@ namespace GraphFile {
         if (!file) {
             throw std::runtime_error("Cannot open file for reading: " + filename);
         }
-        
+
         uint32_t ndim;
         file.read(reinterpret_cast<char*>(&ndim), sizeof(ndim));
-        
+
         std::vector<size_t> shape(ndim);
         for (uint32_t i = 0; i < ndim; i++) {
             uint64_t dim_val;
             file.read(reinterpret_cast<char*>(&dim_val), sizeof(dim_val));
             shape[i] = static_cast<size_t>(dim_val);
         }
-        
+
         uint32_t prec_val;
         file.read(reinterpret_cast<char*>(&prec_val), sizeof(prec_val));
         Precision precision = static_cast<Precision>(prec_val);
-        
+
         uint64_t size_val;
         file.read(reinterpret_cast<char*>(&size_val), sizeof(size_val));
         size_t byte_size = static_cast<size_t>(size_val);
-        
-        float quantization_scale = 1.0f;
+
+        size_t group_size = 0;
+        size_t num_groups = 0;
         if (precision == Precision::INT8) {
-            file.read(reinterpret_cast<char*>(&quantization_scale), sizeof(quantization_scale));
+            uint32_t gs;
+            uint64_t ng;
+            file.read(reinterpret_cast<char*>(&gs), sizeof(gs));
+            file.read(reinterpret_cast<char*>(&ng), sizeof(ng));
+            group_size = static_cast<size_t>(gs);
+            num_groups = static_cast<size_t>(ng);
         }
-        
+
         if (!file) {
             throw std::runtime_error("Error reading file header: " + filename);
         }
-        
+
+        // Read weights
         std::vector<char> buffer(byte_size);
         file.read(buffer.data(), byte_size);
-        
+
         if (!file || file.gcount() != static_cast<std::streamsize>(byte_size)) {
             throw std::runtime_error("Error reading node data: " + filename);
         }
-        
+
         size_t node_id = graph.input(shape, precision);
-        if (precision == Precision::INT8) {
-            graph.set_quantization_scale(node_id, quantization_scale);
-        }
         graph.set_input(node_id, buffer.data(), precision);
-        
+
+        if (precision == Precision::INT8 && group_size > 0 && num_groups > 0) {
+            size_t N = shape.size() >= 1 ? shape[0] : 1;
+            size_t scales_bytes = N * num_groups * sizeof(__fp16);
+            std::vector<char> scales_buffer(scales_bytes);
+            file.read(scales_buffer.data(), scales_bytes);
+
+            auto& node_buffer = graph.nodes_[graph.node_index_map_.at(node_id)]->output_buffer;
+            node_buffer.owned_scales = std::make_unique<char[]>(scales_bytes);
+            std::memcpy(node_buffer.owned_scales.get(), scales_buffer.data(), scales_bytes);
+            node_buffer.set_grouped_scales(group_size, num_groups, node_buffer.owned_scales.get());
+        }
+
         return {node_id, shape, precision, byte_size};
     }
-    
+
     MappedFile mmap_load(const std::string& filename);
 }
 
@@ -147,10 +171,12 @@ GraphFile::MappedFile::~MappedFile() {
     }
 }
 
-GraphFile::MappedFile::MappedFile(MappedFile&& other) noexcept 
+GraphFile::MappedFile::MappedFile(MappedFile&& other) noexcept
     : fd_(other.fd_), mapped_data_(other.mapped_data_), file_size_(other.file_size_),
       data_offset_(other.data_offset_), shape_(std::move(other.shape_)),
-      precision_(other.precision_), byte_size_(other.byte_size_), quantization_scale_(other.quantization_scale_) {
+      precision_(other.precision_), byte_size_(other.byte_size_),
+      group_size_(other.group_size_), num_groups_(other.num_groups_),
+      scales_offset_(other.scales_offset_) {
     other.fd_ = -1;
     other.mapped_data_ = nullptr;
     other.file_size_ = 0;
@@ -164,7 +190,7 @@ GraphFile::MappedFile& GraphFile::MappedFile::operator=(MappedFile&& other) noex
         if (fd_ != -1) {
             close(fd_);
         }
-        
+
         fd_ = other.fd_;
         mapped_data_ = other.mapped_data_;
         file_size_ = other.file_size_;
@@ -172,8 +198,10 @@ GraphFile::MappedFile& GraphFile::MappedFile::operator=(MappedFile&& other) noex
         shape_ = std::move(other.shape_);
         precision_ = other.precision_;
         byte_size_ = other.byte_size_;
-        quantization_scale_ = other.quantization_scale_;
-        
+        group_size_ = other.group_size_;
+        num_groups_ = other.num_groups_;
+        scales_offset_ = other.scales_offset_;
+
         other.fd_ = -1;
         other.mapped_data_ = nullptr;
         other.file_size_ = 0;
@@ -189,12 +217,12 @@ Precision GraphFile::MappedFile::precision() const {
     return precision_; 
 }
 
-size_t GraphFile::MappedFile::byte_size() const { 
-    return byte_size_; 
+size_t GraphFile::MappedFile::byte_size() const {
+    return byte_size_;
 }
 
-float GraphFile::MappedFile::quantization_scale() const {
-    return quantization_scale_;
+const void* GraphFile::MappedFile::scales_data() const {
+    return static_cast<const char*>(mapped_data_) + scales_offset_;
 }
 
 
@@ -214,8 +242,9 @@ const T* GraphFile::MappedFile::typed_data() const {
 GraphFile::LoadedNode GraphFile::MappedFile::load_into_graph(CactusGraph& graph) const {
     size_t node_id = graph.input(shape_, precision_);
     graph.set_external_input(node_id, const_cast<void*>(data()), precision_);
-    if (precision_ == Precision::INT8) {
-        graph.set_quantization_scale(node_id, quantization_scale_);
+    if (precision_ == Precision::INT8 && group_size_ > 0) {
+        graph.set_grouped_scales(node_id, group_size_, num_groups_,
+                                 const_cast<void*>(scales_data()));
     }
     return {node_id, shape_, precision_, byte_size_};
 }
@@ -253,17 +282,36 @@ void GraphFile::MappedFile::parse_header() {
     offset += sizeof(uint64_t);
     
     if (precision_ == Precision::INT8) {
-        if (offset + sizeof(float) > file_size_) {
-            throw std::runtime_error("File corrupted: missing quantization parameters for INT8 tensor");
+        if (offset + sizeof(uint32_t) + sizeof(uint64_t) > file_size_) {
+            throw std::runtime_error("File corrupted: missing group-wise quantization parameters for INT8 tensor");
         }
-        quantization_scale_ = *reinterpret_cast<const float*>(ptr + offset);
-        offset += sizeof(float);
+        group_size_ = *reinterpret_cast<const uint32_t*>(ptr + offset);
+        offset += sizeof(uint32_t);
+
+        num_groups_ = *reinterpret_cast<const uint64_t*>(ptr + offset);
+        offset += sizeof(uint64_t);
+
+        data_offset_ = offset;
+
+        // Only validate scales if this is a grouped INT8 tensor
+        if (group_size_ > 0 && num_groups_ > 0) {
+            scales_offset_ = data_offset_ + byte_size_;
+            size_t N = shape_.size() >= 1 ? shape_[0] : 1;
+            size_t scales_byte_size = N * num_groups_ * sizeof(__fp16);
+
+            if (scales_offset_ + scales_byte_size > file_size_) {
+                throw std::runtime_error("File corrupted: scales data extends beyond file size");
+            }
+        } else {
+            scales_offset_ = 0;
+        }
     } else {
-        quantization_scale_ = 1.0f;
+        group_size_ = 0;
+        num_groups_ = 0;
+        scales_offset_ = 0;
+        data_offset_ = offset;
     }
-    
-    data_offset_ = offset;
-    
+
     if (data_offset_ + byte_size_ > file_size_) {
         throw std::runtime_error("File corrupted: data extends beyond file size");
     }

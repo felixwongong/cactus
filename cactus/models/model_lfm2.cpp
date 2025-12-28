@@ -19,18 +19,7 @@ LFM2Model::LFM2Model(const Config& config) : Model(config) {
 }
 void LFM2Model::post_init() {
     if (config_.conv_L_cache > 0) {
-        Precision cache_precision;
-        switch (config_.precision) {
-            case Config::Precision::INT8:
-                cache_precision = Precision::INT8;
-                break;
-            case Config::Precision::FP16:
-                cache_precision = Precision::FP16;
-                break;
-            case Config::Precision::FP32:
-                cache_precision = Precision::FP32;
-                break;
-        }
+        Precision cache_precision = Precision::FP16;
         size_t conv_window = config_.conv_L_cache > 0 ? config_.conv_L_cache - 1 : 0;
         conv_cache_.init(config_.num_layers, config_.hidden_dim, conv_window, cache_precision);
         
@@ -166,12 +155,9 @@ size_t LFM2Model::build_conv1d(CactusGraph* gb, size_t input, uint32_t layer_idx
     size_t K = wbuf.shape.back(); 
     
     size_t conv_w = layer.conv_depthwise_weight;
-    if (wbuf.shape.size() == 2) { 
+    if (wbuf.shape.size() == 2) {
         K = wbuf.shape[1];
-        auto conv_w_quantization_scale = gb->get_output_buffer(conv_w).quantization_scale;
         conv_w = gb->reshape(conv_w, {wbuf.shape[0], static_cast<size_t>(1), K});
-        gb->set_quantization_scale(conv_w, conv_w_quantization_scale);
-        
     } else if (wbuf.shape.size() != 3){
         throw std::runtime_error("Unexpected depthwise weight rank");
     }

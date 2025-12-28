@@ -197,20 +197,20 @@ bool test_neon_attention_correctness() {
     const size_t batch_size = 1, seq_len = 2, num_heads = 1, head_dim = 4;
     const float scale = 1.0f / sqrtf(static_cast<float>(head_dim));
     const size_t total_elements = batch_size * seq_len * num_heads * head_dim;
-    
+
     std::vector<int8_t> queries(total_elements);
     std::vector<int8_t> keys(total_elements);
     std::vector<int8_t> values(total_elements);
     std::vector<int8_t> result(total_elements);
-    
+
     TestUtils::fill_random_int8(queries);
     TestUtils::fill_random_int8(keys);
     TestUtils::fill_random_int8(values);
-    
+
     cactus_attention_int8(queries.data(), keys.data(), values.data(), result.data(),
                          batch_size, seq_len, seq_len, num_heads, num_heads, head_dim, scale, nullptr,
                          1.0f, 1.0f, 1.0f, 1.0f);
-    
+
     bool has_non_zero = false;
     for (size_t i = 0; i < total_elements; ++i) {
         if (result[i] != 0) {
@@ -218,8 +218,87 @@ bool test_neon_attention_correctness() {
             break;
         }
     }
-    
+
     return has_non_zero;
+}
+
+bool test_matmul_int8_grouped_correctness() {
+    const size_t M = 2, K = 64, N = 4;  
+    const size_t group_size = 32;
+    const size_t num_groups = K / group_size;
+
+    std::vector<__fp16> A(M * K);
+    for (size_t i = 0; i < M * K; ++i) {
+        A[i] = static_cast<__fp16>((static_cast<float>(rand()) / RAND_MAX - 0.5f) * 0.5f);
+    }
+
+    std::vector<int8_t> B(N * K);
+    for (size_t i = 0; i < N * K; ++i) {
+        B[i] = static_cast<int8_t>((rand() % 128) - 64);
+    }
+
+    std::vector<__fp16> B_scales(N * num_groups);
+    for (size_t n = 0; n < N; ++n) {
+        for (size_t g = 0; g < num_groups; ++g) {
+            float max_abs = 0.0f;
+            for (size_t k = 0; k < group_size; ++k) {
+                float val = std::abs(static_cast<float>(B[n * K + g * group_size + k]));
+                if (val > max_abs) max_abs = val;
+            }
+            float scale = max_abs / 127.0f;
+            if (scale < 1e-6f) scale = 1e-6f;
+            B_scales[n * num_groups + g] = static_cast<__fp16>(scale);
+        }
+    }
+
+    std::vector<__fp16> C(M * N);
+
+    cactus_matmul_int8_grouped(A.data(), B.data(), B_scales.data(), C.data(),
+                               M, K, N, group_size);
+
+    std::vector<float> C_ref(M * N, 0.0f);
+    for (size_t m = 0; m < M; ++m) {
+        float a_max_abs = 0.0f;
+        for (size_t k = 0; k < K; ++k) {
+            float val = std::abs(static_cast<float>(A[m * K + k]));
+            if (val > a_max_abs) a_max_abs = val;
+        }
+        float a_scale = a_max_abs / 127.0f;
+        if (a_scale < 1e-10f) a_scale = 1e-10f;
+
+        std::vector<int8_t> A_quant(K);
+        for (size_t k = 0; k < K; ++k) {
+            float val = static_cast<float>(A[m * K + k]) / a_scale;
+            int32_t q = static_cast<int32_t>(std::round(val));
+            q = std::max(-128, std::min(127, q));
+            A_quant[k] = static_cast<int8_t>(q);
+        }
+
+        for (size_t n = 0; n < N; ++n) {
+            float acc = 0.0f;
+            for (size_t g = 0; g < num_groups; ++g) {
+                float b_scale = static_cast<float>(B_scales[n * num_groups + g]);
+                float combined_scale = a_scale * b_scale;
+
+                int32_t group_sum = 0;
+                for (size_t k = 0; k < group_size; ++k) {
+                    size_t k_idx = g * group_size + k;
+                    group_sum += static_cast<int32_t>(A_quant[k_idx]) *
+                                 static_cast<int32_t>(B[n * K + k_idx]);
+                }
+                acc += static_cast<float>(group_sum) * combined_scale;
+            }
+            C_ref[m * N + n] = acc;
+        }
+    }
+
+    float max_abs_error = 0.0f;
+    for (size_t i = 0; i < M * N; ++i) {
+        float error = std::abs(static_cast<float>(C[i]) - C_ref[i]);
+        if (error > max_abs_error) max_abs_error = error;
+    }
+
+    return max_abs_error < 0.1f;
 }
 
 
@@ -236,7 +315,8 @@ int main() {
     runner.run_test("Kernel Softmax Correctness", test_neon_softmax_correctness());
     runner.run_test("Kernel RoPE Correctness", test_neon_rope_correctness());
     runner.run_test("Kernel Attention Correctness", test_neon_attention_correctness());
-    
+    runner.run_test("Kernel Grouped INT8 MatMul Correctness", test_matmul_int8_grouped_correctness());
+
     runner.print_summary();
     return runner.all_passed() ? 0 : 1;
 }
