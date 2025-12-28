@@ -97,21 +97,6 @@ void cactus_silu_f16(const __fp16* input, __fp16* output, size_t num_elements) {
         });
 }
 
-
-void cactus_silu_int8(const int8_t* input, int8_t* output, size_t num_elements, 
-                      float input_scale, float output_scale) {
-    CactusThreading::parallel_for(num_elements, CactusThreading::Thresholds::SCALAR_EXPENSIVE,
-        [&](size_t start_idx, size_t end_idx) {
-            for (size_t i = start_idx; i < end_idx; ++i) {
-                float x = input[i] * input_scale;
-                float sigmoid = 1.0f / (1.0f + expf(-x));
-                float silu = x * sigmoid;
-                float scaled = silu / output_scale;
-                output[i] = static_cast<int8_t>(std::max(-128.0f, std::min(127.0f, roundf(scaled))));
-            }
-        });
-}
-
 void cactus_gelu_f32(const float* input, float* output, size_t num_elements) {
     const float sqrt_2_over_pi = 0.7978845608028654f;
     const float coeff = 0.044715f;
@@ -210,24 +195,6 @@ void cactus_gelu_f16(const __fp16* input, __fp16* output, size_t num_elements) {
             }
         });
 }
-
-void cactus_gelu_int8(const int8_t* input, int8_t* output, size_t num_elements,
-                      float input_scale, float output_scale) {
-    const float sqrt_2_over_pi = 0.7978845608028654f;
-    const float coeff = 0.044715f;
-
-    CactusThreading::parallel_for(num_elements, CactusThreading::Thresholds::SCALAR_EXPENSIVE,
-        [&](size_t start_idx, size_t end_idx) {
-            for (size_t i = start_idx; i < end_idx; ++i) {
-                float x = input[i] * input_scale;
-                float inner = sqrt_2_over_pi * (x + coeff * x * x * x);
-                float gelu = 0.5f * x * (1.0f + tanhf(inner));
-                float scaled = gelu / output_scale;
-                output[i] = static_cast<int8_t>(std::max(-128.0f, std::min(127.0f, roundf(scaled))));
-            }
-        });
-}
-
 
 void cactus_gelu_f32_erf(const float* input, float* output, size_t num_elements) {
     const float inv_sqrt2 = 0.70710678118654752440f; // 1/sqrt(2)
@@ -330,144 +297,6 @@ void cactus_gelu_f16_erf(const __fp16* input, __fp16* output, size_t num_element
         }
     );
 }
-
-void cactus_gelu_int8_erf(
-    const int8_t* input,
-    int8_t* output,
-    size_t num_elements,
-    float scale_in,
-    float scale_out)
-{
-    const float inv_sqrt2 = 0.70710678118654752440f; 
-    const float inv_scale_out = 1.0f / scale_out;
-
-    CactusThreading::parallel_for(
-        num_elements,
-        CactusThreading::Thresholds::SCALAR_EXPENSIVE,
-        [&](size_t start_idx, size_t end_idx) {
-
-            constexpr size_t SIMD = 16;
-            size_t vec_end = start_idx + ((end_idx - start_idx) / SIMD) * SIMD;
-
-
-            const float half_f = 0.5f;
-            const float one_f  = 1.0f;
-
-            for (size_t i = start_idx; i < vec_end; i += SIMD) {
-                int8x16_t x_i8 = vld1q_s8(&input[i]);
-
-                int16x8_t x_i16_lo = vmovl_s8(vget_low_s8(x_i8));
-                int16x8_t x_i16_hi = vmovl_s8(vget_high_s8(x_i8));
-
-                int32x4_t x_i32_0 = vmovl_s16(vget_low_s16(x_i16_lo));
-                int32x4_t x_i32_1 = vmovl_s16(vget_high_s16(x_i16_lo));
-                int32x4_t x_i32_2 = vmovl_s16(vget_low_s16(x_i16_hi));
-                int32x4_t x_i32_3 = vmovl_s16(vget_high_s16(x_i16_hi));
-
-                float32x4_t x0 = vcvtq_f32_s32(x_i32_0);
-                float32x4_t x1 = vcvtq_f32_s32(x_i32_1);
-                float32x4_t x2 = vcvtq_f32_s32(x_i32_2);
-                float32x4_t x3 = vcvtq_f32_s32(x_i32_3);
-
-                x0 = vmulq_n_f32(x0, scale_in);
-                x1 = vmulq_n_f32(x1, scale_in);
-                x2 = vmulq_n_f32(x2, scale_in);
-                x3 = vmulq_n_f32(x3, scale_in);
-
-                float x0_s[4], x1_s[4], x2_s[4], x3_s[4];
-                float y0_s[4], y1_s[4], y2_s[4], y3_s[4];
-
-                vst1q_f32(x0_s, x0);
-                vst1q_f32(x1_s, x1);
-                vst1q_f32(x2_s, x2);
-                vst1q_f32(x3_s, x3);
-
-                for (int j = 0; j < 4; ++j) {
-                    float x = x0_s[j];
-                    float arg = x * inv_sqrt2;
-                    float gelu = half_f * x * (one_f + erff(arg));
-                    float q = gelu * inv_scale_out;
-                    int qi = static_cast<int>(std::lrintf(q));
-                    if (qi < -128) qi = -128;
-                    if (qi > 127)  qi = 127;
-                    y0_s[j] = static_cast<float>(qi);
-                }
-
-                for (int j = 0; j < 4; ++j) {
-                    float x = x1_s[j];
-                    float arg = x * inv_sqrt2;
-                    float gelu = half_f * x * (one_f + erff(arg));
-                    float q = gelu * inv_scale_out;
-                    int qi = static_cast<int>(std::lrintf(q));
-                    if (qi < -128) qi = -128;
-                    if (qi > 127)  qi = 127;
-                    y1_s[j] = static_cast<float>(qi);
-                }
-
-                for (int j = 0; j < 4; ++j) {
-                    float x = x2_s[j];
-                    float arg = x * inv_sqrt2;
-                    float gelu = half_f * x * (one_f + erff(arg));
-                    float q = gelu * inv_scale_out;
-                    int qi = static_cast<int>(std::lrintf(q));
-                    if (qi < -128) qi = -128;
-                    if (qi > 127)  qi = 127;
-                    y2_s[j] = static_cast<float>(qi);
-                }
-
-                for (int j = 0; j < 4; ++j) {
-                    float x = x3_s[j];
-                    float arg = x * inv_sqrt2;
-                    float gelu = half_f * x * (one_f + erff(arg));
-                    float q = gelu * inv_scale_out;
-                    int qi = static_cast<int>(std::lrintf(q));
-                    if (qi < -128) qi = -128;
-                    if (qi > 127)  qi = 127;
-                    y3_s[j] = static_cast<float>(qi);
-                }
-
-                // Pack back to int8
-                float32x4_t y0_f = vld1q_f32(y0_s);
-                float32x4_t y1_f = vld1q_f32(y1_s);
-                float32x4_t y2_f = vld1q_f32(y2_s);
-                float32x4_t y3_f = vld1q_f32(y3_s);
-
-                int32x4_t y0_i32 = vcvtq_s32_f32(y0_f);
-                int32x4_t y1_i32 = vcvtq_s32_f32(y1_f);
-                int32x4_t y2_i32 = vcvtq_s32_f32(y2_f);
-                int32x4_t y3_i32 = vcvtq_s32_f32(y3_f);
-
-                int16x4_t y0_i16 = vqmovn_s32(y0_i32);
-                int16x4_t y1_i16 = vqmovn_s32(y1_i32);
-                int16x4_t y2_i16 = vqmovn_s32(y2_i32);
-                int16x4_t y3_i16 = vqmovn_s32(y3_i32);
-
-                int16x8_t y_i16_lo = vcombine_s16(y0_i16, y1_i16);
-                int16x8_t y_i16_hi = vcombine_s16(y2_i16, y3_i16);
-
-                int8x16_t y_i8 = vcombine_s8(
-                    vqmovn_s16(y_i16_lo),
-                    vqmovn_s16(y_i16_hi)
-                );
-
-                vst1q_s8(&output[i], y_i8);
-            }
-
-            for (size_t i = vec_end; i < end_idx; ++i) {
-                float x = static_cast<float>(input[i]) * scale_in;
-                float arg = x * inv_sqrt2;
-                float gelu = 0.5f * x * (1.0f + erff(arg));
-                float q = gelu * inv_scale_out;
-                int qi = static_cast<int>(std::lrintf(q));
-                if (qi < -128) qi = -128;
-                if (qi > 127)  qi = 127;
-                output[i] = static_cast<int8_t>(qi);
-            }
-        }
-    );
-}
-
-
 
 namespace CactusSoftmax {
 
@@ -753,7 +582,6 @@ void cactus_sample_f32(const float* logits, uint32_t* output, size_t vocab_size,
         filtered_logits[i] = logits[i];
     }
 
-    // Apply logit bias before temperature scaling
     if (bias_values && bias_indices && bias_count > 0) {
         for (size_t i = 0; i < bias_count; ++i) {
             uint32_t idx = bias_indices[i];

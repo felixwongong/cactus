@@ -13,15 +13,8 @@
 #include <assert.h>
 
 namespace {
-    thread_local std::vector<int8_t> transpose_buffer_int8;
     thread_local std::vector<__fp16> transpose_buffer_fp16;
     thread_local std::vector<float> transpose_buffer_fp32;
-
-    void ensure_transpose_buffer_int8(size_t required_size) {
-        if (transpose_buffer_int8.size() < required_size) {
-            transpose_buffer_int8.resize(required_size);
-        }
-    }
 
     void ensure_transpose_buffer_fp16(size_t required_size) {
         if (transpose_buffer_fp16.size() < required_size) {
@@ -37,7 +30,6 @@ namespace {
 }
 
 void shrink_thread_local_buffers() {
-    std::vector<int8_t>().swap(transpose_buffer_int8);
     std::vector<__fp16>().swap(transpose_buffer_fp16);
     std::vector<float>().swap(transpose_buffer_fp32);
 }
@@ -49,10 +41,7 @@ void compute_reduce_node(GraphNode& node, const std::vector<std::unique_ptr<Grap
     if (axis == -1) {
         switch (node.op_type) {
             case OpType::SUM:
-                if (input_buffer.precision == Precision::INT8) {
-                    int64_t result = cactus_sum_all_int8(input_buffer.data_as<int8_t>(), input_buffer.total_size);
-                    node.output_buffer.data_as<int8_t>()[0] = static_cast<int8_t>(std::max(static_cast<int64_t>(-128), std::min(static_cast<int64_t>(127), result)));
-                } else if (input_buffer.precision == Precision::FP16) {
+                if (input_buffer.precision == Precision::FP16) {
                     double result = cactus_sum_all_f16(input_buffer.data_as<__fp16>(), input_buffer.total_size);
                     node.output_buffer.data_as<__fp16>()[0] = static_cast<__fp16>(result);
                 } else {
@@ -61,10 +50,7 @@ void compute_reduce_node(GraphNode& node, const std::vector<std::unique_ptr<Grap
                 }
                 break;
             case OpType::MEAN:
-                if (input_buffer.precision == Precision::INT8) {
-                    double result = cactus_mean_all_int8(input_buffer.data_as<int8_t>(), input_buffer.total_size);
-                    node.output_buffer.data_as<int8_t>()[0] = static_cast<int8_t>(std::max(-128.0, std::min(127.0, result)));
-                } else if (input_buffer.precision == Precision::FP16) {
+                if (input_buffer.precision == Precision::FP16) {
                     double result = cactus_mean_all_f16(input_buffer.data_as<__fp16>(), input_buffer.total_size);
                     node.output_buffer.data_as<__fp16>()[0] = static_cast<__fp16>(result);
                 } else {
@@ -72,33 +58,21 @@ void compute_reduce_node(GraphNode& node, const std::vector<std::unique_ptr<Grap
                     node.output_buffer.data_as<float>()[0] = static_cast<float>(result);
                 }
                 break;
-            case OpType::VARIANCE:
-                if (input_buffer.precision == Precision::INT8) {
-                    double result = cactus_variance_all_int8(input_buffer.data_as<int8_t>(), input_buffer.total_size);
-                    node.output_buffer.data_as<int8_t>()[0] = static_cast<int8_t>(std::max(-128.0, std::min(127.0, result)));
-                } else {
-                    double result = cactus_variance_all_f32(input_buffer.data_as<float>(), input_buffer.total_size);
-                    node.output_buffer.data_as<float>()[0] = static_cast<float>(result);
-                }
+            case OpType::VARIANCE: {
+                double result = cactus_variance_all_f32(input_buffer.data_as<float>(), input_buffer.total_size);
+                node.output_buffer.data_as<float>()[0] = static_cast<float>(result);
                 break;
-            case OpType::MIN:
-                if (input_buffer.precision == Precision::INT8) {
-                    int64_t result = cactus_min_all_int8(input_buffer.data_as<int8_t>(), input_buffer.total_size);
-                    node.output_buffer.data_as<int8_t>()[0] = static_cast<int8_t>(result);
-                } else {
-                    float result = cactus_min_all_f32(input_buffer.data_as<float>(), input_buffer.total_size);
-                    node.output_buffer.data_as<float>()[0] = result;
-                }
+            }
+            case OpType::MIN: {
+                float result = cactus_min_all_f32(input_buffer.data_as<float>(), input_buffer.total_size);
+                node.output_buffer.data_as<float>()[0] = result;
                 break;
-            case OpType::MAX:
-                if (input_buffer.precision == Precision::INT8) {
-                    int64_t result = cactus_max_all_int8(input_buffer.data_as<int8_t>(), input_buffer.total_size);
-                    node.output_buffer.data_as<int8_t>()[0] = static_cast<int8_t>(result);
-                } else {
-                    float result = cactus_max_all_f32(input_buffer.data_as<float>(), input_buffer.total_size);
-                    node.output_buffer.data_as<float>()[0] = result;
-                }
+            }
+            case OpType::MAX: {
+                float result = cactus_max_all_f32(input_buffer.data_as<float>(), input_buffer.total_size);
+                node.output_buffer.data_as<float>()[0] = result;
                 break;
+            }
             default: break;
         }
     } else {
@@ -120,52 +94,29 @@ void compute_reduce_node(GraphNode& node, const std::vector<std::unique_ptr<Grap
         
         switch (node.op_type) {
             case OpType::SUM:
-                if (input_buffer.precision == Precision::INT8) {
-                    cactus_sum_axis_int8(input_buffer.data_as<int8_t>(), node.output_buffer.data_as<int8_t>(), 
-                                        outer_size, axis_size, inner_size);
-                } else {
-                    cactus_sum_axis_f32(input_buffer.data_as<float>(), node.output_buffer.data_as<float>(), 
-                                        outer_size, axis_size, inner_size);
-                }
+                cactus_sum_axis_f32(input_buffer.data_as<float>(), node.output_buffer.data_as<float>(),
+                                    outer_size, axis_size, inner_size);
                 break;
             case OpType::MEAN:
-                if (input_buffer.precision == Precision::INT8) {
-                    cactus_mean_axis_int8(input_buffer.data_as<int8_t>(), node.output_buffer.data_as<int8_t>(), 
-                                         outer_size, axis_size, inner_size);
-                } else if (input_buffer.precision == Precision::FP16) {
-                    cactus_mean_axis_f16(input_buffer.data_as<__fp16>(), node.output_buffer.data_as<__fp16>(), 
+                if (input_buffer.precision == Precision::FP16) {
+                    cactus_mean_axis_f16(input_buffer.data_as<__fp16>(), node.output_buffer.data_as<__fp16>(),
                                         outer_size, axis_size, inner_size);
                 } else {
-                    cactus_mean_axis_f32(input_buffer.data_as<float>(), node.output_buffer.data_as<float>(), 
+                    cactus_mean_axis_f32(input_buffer.data_as<float>(), node.output_buffer.data_as<float>(),
                                          outer_size, axis_size, inner_size);
                 }
                 break;
             case OpType::VARIANCE:
-                if (input_buffer.precision == Precision::INT8) {
-                    cactus_variance_axis_int8(input_buffer.data_as<int8_t>(), node.output_buffer.data_as<int8_t>(), 
-                                             outer_size, axis_size, inner_size);
-                } else {
-                    cactus_variance_axis_f32(input_buffer.data_as<float>(), node.output_buffer.data_as<float>(), 
-                                             outer_size, axis_size, inner_size);
-                }
+                cactus_variance_axis_f32(input_buffer.data_as<float>(), node.output_buffer.data_as<float>(),
+                                         outer_size, axis_size, inner_size);
                 break;
             case OpType::MIN:
-                if (input_buffer.precision == Precision::INT8) {
-                    cactus_min_axis_int8(input_buffer.data_as<int8_t>(), node.output_buffer.data_as<int8_t>(), 
-                                        outer_size, axis_size, inner_size);
-                } else {
-                    cactus_min_axis_f32(input_buffer.data_as<float>(), node.output_buffer.data_as<float>(), 
-                                        outer_size, axis_size, inner_size);
-                }
+                cactus_min_axis_f32(input_buffer.data_as<float>(), node.output_buffer.data_as<float>(),
+                                    outer_size, axis_size, inner_size);
                 break;
             case OpType::MAX:
-                if (input_buffer.precision == Precision::INT8) {
-                    cactus_max_axis_int8(input_buffer.data_as<int8_t>(), node.output_buffer.data_as<int8_t>(), 
-                                        outer_size, axis_size, inner_size);
-                } else {
-                    cactus_max_axis_f32(input_buffer.data_as<float>(), node.output_buffer.data_as<float>(), 
-                                        outer_size, axis_size, inner_size);
-                }
+                cactus_max_axis_f32(input_buffer.data_as<float>(), node.output_buffer.data_as<float>(),
+                                    outer_size, axis_size, inner_size);
                 break;
             default: break;
         }
@@ -547,40 +498,13 @@ void compute_fused_node(GraphNode& node, const std::vector<std::unique_ptr<Graph
             size_t dims = input_buffer.shape[1];
             
             if (input_buffer.precision == Precision::FP32) {
-                cactus_rms_norm_f32(input_buffer.data_as<float>(), weight_buffer.data_as<float>(), 
+                cactus_rms_norm_f32(input_buffer.data_as<float>(), weight_buffer.data_as<float>(),
                    node.output_buffer.data_as<float>(), batch_size, dims, node.params.epsilon);
             } else if (input_buffer.precision == Precision::FP16) {
-                cactus_rms_norm_f16(input_buffer.data_as<__fp16>(), weight_buffer.data_as<__fp16>(), 
+                cactus_rms_norm_f16(input_buffer.data_as<__fp16>(), weight_buffer.data_as<__fp16>(),
                    node.output_buffer.data_as<__fp16>(), batch_size, dims, node.params.epsilon);
-            } else if (input_buffer.precision == Precision::INT8) {
-                std::vector<float> fp32_temp(batch_size * dims);
-
-                if (weight_buffer.precision == Precision::FP16) {
-                    std::vector<float> fp32_weights(dims);
-                    const __fp16* fp16_weights = weight_buffer.data_as<__fp16>();
-                    for (size_t i = 0; i < dims; i++) {
-                        fp32_weights[i] = static_cast<float>(fp16_weights[i]);
-                    }
-                    cactus_rms_norm_i8_f32(input_buffer.data_as<int8_t>(), fp32_weights.data(),
-                                           fp32_temp.data(), batch_size, dims, node.params.epsilon,
-                                           1.0f);
-                } else if (weight_buffer.precision == Precision::FP32) {
-                    cactus_rms_norm_i8_f32(input_buffer.data_as<int8_t>(), weight_buffer.data_as<float>(),
-                                           fp32_temp.data(), batch_size, dims, node.params.epsilon,
-                                           1.0f);
-                } else {
-                    throw std::runtime_error("INT8 RMS normalization requires FP16 or FP32 weight precision");
-                }
-
-                float fast_scale = 2.0f / 127.0f;
-
-                for (size_t i = 0; i < batch_size * dims; ++i) {
-                    float quantized = fp32_temp[i] / fast_scale;
-                    node.output_buffer.data_as<int8_t>()[i] = static_cast<int8_t>(
-                        std::round(std::max(-128.0f, std::min(127.0f, quantized))));
-                }
             } else {
-                throw std::runtime_error("RMS normalization only supports FP32, FP16, and INT8 precision");
+                throw std::runtime_error("RMS normalization only supports FP32 and FP16 precision");
             }
             break;
         }
@@ -598,18 +522,14 @@ void compute_fused_node(GraphNode& node, const std::vector<std::unique_ptr<Graph
                 size_t num_heads = shape[2];
                 size_t head_dim = shape[3];
                 
-                if (input_buffer.precision == Precision::INT8 && node.output_buffer.precision == Precision::INT8) {
-                    cactus_rope_i8_f32_i8(input_buffer.data_as<int8_t>(), node.output_buffer.data_as<int8_t>(),
-                                         batch_size, seq_len, num_heads, head_dim, node.params.position_offset, node.params.theta,
-                                         1.0f, 1.0f);
-                } else if (input_buffer.precision == Precision::FP16 && node.output_buffer.precision == Precision::FP16) {
+                if (input_buffer.precision == Precision::FP16 && node.output_buffer.precision == Precision::FP16) {
                     cactus_rope_f16(input_buffer.data_as<__fp16>(), node.output_buffer.data_as<__fp16>(),
                                    batch_size, seq_len, num_heads, head_dim, node.params.position_offset, node.params.theta);
                 } else if (input_buffer.precision == Precision::FP32 && node.output_buffer.precision == Precision::FP32) {
                     cactus_rope_f32(input_buffer.data_as<float>(), node.output_buffer.data_as<float>(),
                                    batch_size, seq_len, num_heads, head_dim, node.params.position_offset, node.params.theta);
                 } else {
-                    throw std::runtime_error("RoPE operation only supports FP32->FP32, FP16->FP16, or INT8->INT8 precision");
+                    throw std::runtime_error("RoPE operation only supports FP32->FP32 or FP16->FP16 precision");
                 }
             } else {
                 throw std::runtime_error("RoPE operation requires 4D tensor with shape [batch, seq_len, num_heads, head_dim], got " + 
@@ -669,13 +589,7 @@ void compute_fused_node(GraphNode& node, const std::vector<std::unique_ptr<Graph
             size_t num_kv_heads = k_shape[2];  
             size_t kv_seq_len = key_buffer.shape[1]; 
             
-            if (query_buffer.precision == Precision::INT8) {
-                cactus_attention_int8(query_buffer.data_as<int8_t>(), key_buffer.data_as<int8_t>(),
-                                      value_buffer.data_as<int8_t>(), node.output_buffer.data_as<int8_t>(),
-                                      batch_size, seq_len, kv_seq_len, num_q_heads, num_kv_heads, head_dim, node.params.scale, nullptr,
-                                      1.0f, 1.0f, 1.0f, 1.0f, node.params.position_offset, node.params.window_size,
-                                      node.params.is_causal);
-            } else if (query_buffer.precision == Precision::FP16) {
+            if (query_buffer.precision == Precision::FP16) {
                 cactus_attention_f16(query_buffer.data_as<__fp16>(), key_buffer.data_as<__fp16>(),
                                      value_buffer.data_as<__fp16>(), node.output_buffer.data_as<__fp16>(),
                                      batch_size, seq_len, kv_seq_len, num_q_heads, num_kv_heads, head_dim, node.params.scale, nullptr,
@@ -686,7 +600,7 @@ void compute_fused_node(GraphNode& node, const std::vector<std::unique_ptr<Graph
                                      batch_size, seq_len, kv_seq_len, num_q_heads, num_kv_heads, head_dim, node.params.scale, nullptr,
                                      node.params.position_offset, node.params.window_size, node.params.is_causal);
             } else {
-                throw std::runtime_error("Attention operation only supports INT8, FP16, and FP32 precision, got " + 
+                throw std::runtime_error("Attention operation only supports FP16 and FP32 precision, got " +
                                        std::to_string(static_cast<int>(query_buffer.precision)));
             }
             break;
@@ -870,12 +784,7 @@ void compute_fused_node(GraphNode& node, const std::vector<std::unique_ptr<Graph
             std::vector<size_t> shape2 = input2_buffer.shape;
             std::vector<size_t> output_shape = node.output_buffer.shape;
             
-            if (input1_buffer.precision == Precision::INT8) {
-                cactus_concat_int8(input1_buffer.data_as<int8_t>(), input2_buffer.data_as<int8_t>(),
-                                  node.output_buffer.data_as<int8_t>(),
-                                  shape1.data(), shape2.data(), output_shape.data(),
-                                  shape1.size(), node.params.axis);
-            } else if (input1_buffer.precision == Precision::FP16) {
+            if (input1_buffer.precision == Precision::FP16) {
                 cactus_concat_f16(input1_buffer.data_as<__fp16>(), input2_buffer.data_as<__fp16>(),
                                  node.output_buffer.data_as<__fp16>(),
                                  shape1.data(), shape2.data(), output_shape.data(),
@@ -902,11 +811,6 @@ void compute_transpose_node(GraphNode& node, const std::vector<std::unique_ptr<G
     const auto& permutation = node.params.permutation;
     
     switch (input_buffer.precision) {
-        case Precision::INT8:
-            cactus_transpose_int8(input_buffer.data_as<int8_t>(), node.output_buffer.data_as<int8_t>(), 
-                                 input_buffer.shape.data(), permutation.data(), permutation.size(),
-                                 0, input_buffer.total_size);
-            break;
         case Precision::FP16: {
             const __fp16* input = input_buffer.data_as<__fp16>();
             __fp16* output = node.output_buffer.data_as<__fp16>();
@@ -919,6 +823,8 @@ void compute_transpose_node(GraphNode& node, const std::vector<std::unique_ptr<G
             cactus_transpose_f32(input, output, input_buffer.shape.data(), permutation.data(), permutation.size(), 0, input_buffer.total_size);
             break;
         }
+        default:
+            throw std::runtime_error("Transpose only supports FP16 and FP32 precision");
     }
 }
 
@@ -957,24 +863,6 @@ void compute_matmul_node(GraphNode& node, const std::vector<std::unique_ptr<Grap
 
     } else {
         switch (lhs_buffer.precision) {
-            case Precision::INT8: {
-                const int8_t* lhs = lhs_buffer.data_as<int8_t>();
-                const int8_t* rhs = rhs_buffer.data_as<int8_t>();
-                int8_t* output = node.output_buffer.data_as<int8_t>();
-
-                if (pretransposed_rhs) {
-                    cactus_matmul_int8(lhs, rhs, output, M, K, N, 1.0f, 1.0f, 1.0f);
-                } else {
-                    size_t transpose_size = rhs_shape[0] * rhs_shape[1];
-                    ensure_transpose_buffer_int8(transpose_size);
-
-                    size_t rhs_perm[] = {1, 0};
-                    cactus_transpose_int8(rhs, transpose_buffer_int8.data(), rhs_shape.data(), rhs_perm, 2, 0, rhs_shape[0]);
-                    cactus_matmul_int8(lhs, transpose_buffer_int8.data(), output, M, K, N, 1.0f, 1.0f, 1.0f);
-                }
-
-                break;
-            }
             case Precision::FP16: {
                 const __fp16* lhs = lhs_buffer.data_as<__fp16>();
                 const __fp16* rhs = rhs_buffer.data_as<__fp16>();
@@ -1010,6 +898,8 @@ void compute_matmul_node(GraphNode& node, const std::vector<std::unique_ptr<Grap
                 }
                 break;
             }
+            default:
+                throw std::runtime_error("Matmul only supports FP16 and FP32 precision for activations");
         }
     }
 }
@@ -1034,18 +924,7 @@ void compute_sample_node(GraphNode& node, const std::vector<std::unique_ptr<Grap
     size_t vocab_size = logits_buffer.shape[1];
     size_t last_token_offset = (seq_len - 1) * vocab_size;
 
-    if (logits_buffer.precision == Precision::INT8) {
-        const int8_t* logits_int8 = logits_buffer.data_as<int8_t>();
-
-        std::vector<float> probs(vocab_size);
-        for (size_t i = 0; i < vocab_size; ++i) {
-            probs[i] = static_cast<float>(logits_int8[last_token_offset + i]);
-        }
-
-        cactus_sample_f32(probs.data(), node.output_buffer.data_as<uint32_t>(),
-                         vocab_size, temperature, top_p, top_k, random_seed,
-                         bias_values, bias_indices, bias_count);
-    } else if (logits_buffer.precision == Precision::FP16) {
+    if (logits_buffer.precision == Precision::FP16) {
         const __fp16* logits_fp16 = logits_buffer.data_as<__fp16>();
         cactus_sample_f16(logits_fp16 + last_token_offset, node.output_buffer.data_as<uint32_t>(),
                          vocab_size, temperature, top_p, top_k, random_seed,

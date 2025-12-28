@@ -11,10 +11,10 @@
 
 struct BenchmarkConfig {
     std::vector<size_t> dimensions = {1024};
-    std::vector<Precision> precisions = {Precision::INT8, Precision::FP32};
+    std::vector<Precision> precisions = {Precision::FP16};
     std::vector<ComputeBackend> backends = {ComputeBackend::CPU};
     int iterations = 1;
-    
+
     BenchmarkConfig() {
     }
 };
@@ -34,13 +34,20 @@ template<typename T>
 void setup_random_data(std::vector<T>& data) {
     if constexpr (std::is_same_v<T, int8_t>) {
         TestUtils::fill_random_int8(data);
+    } else if constexpr (std::is_same_v<T, __fp16>) {
+        TestUtils::fill_random_fp16(data);
     } else {
         TestUtils::fill_random_float(data);
     }
 }
 
 std::string precision_to_string(Precision prec) {
-    return (prec == Precision::INT8) ? "INT8" : "FP32";
+    switch (prec) {
+        case Precision::INT8: return "INT8";
+        case Precision::FP16: return "FP16";
+        case Precision::FP32: return "FP32";
+        default: return "UNKNOWN";
+    }
 }
 
 std::string backend_to_string(ComputeBackend backend) {
@@ -59,8 +66,8 @@ void benchmark_binary_elementwise_ops(TestUtils::TestRunner& runner, const Bench
         {"Multiply", [](CactusGraph& b, size_t a, size_t c) { return b.multiply(a, c); }},
         {"Divide", [](CactusGraph& b, size_t a, size_t c) { return b.divide(a, c); }}
     };
-    
-    Precision precision = std::is_same_v<T, int8_t> ? Precision::INT8 : Precision::FP32;
+
+    Precision precision = TestUtils::default_precision<T>();
     std::string prec_str = precision_to_string(precision);
     
     for (const auto& [op_name, op_func] : ops) {
@@ -104,8 +111,8 @@ void benchmark_scalar_ops(TestUtils::TestRunner& runner, const BenchmarkConfig& 
         {"ScalarCos", [](CactusGraph& b, size_t a) { return b.scalar_cos(a); }},
         {"ScalarSin", [](CactusGraph& b, size_t a) { return b.scalar_sin(a); }}
     };
-    
-    Precision precision = std::is_same_v<T, int8_t> ? Precision::INT8 : Precision::FP32;
+
+    Precision precision = TestUtils::default_precision<T>();
     std::string prec_str = precision_to_string(precision);
     
     for (const auto& [op_name, op_func] : ops) {
@@ -135,7 +142,7 @@ void benchmark_scalar_ops(TestUtils::TestRunner& runner, const BenchmarkConfig& 
 
 template<typename T>
 void benchmark_matmul_ops(TestUtils::TestRunner& runner, const BenchmarkConfig& config) {
-    Precision precision = std::is_same_v<T, int8_t> ? Precision::INT8 : Precision::FP32;
+    Precision precision = TestUtils::default_precision<T>();
     std::string prec_str = precision_to_string(precision);
 
     for (ComputeBackend backend : config.backends) {
@@ -221,7 +228,7 @@ void benchmark_unary_ops(TestUtils::TestRunner& runner, const BenchmarkConfig& c
         {"Transpose", [](CactusGraph& b, size_t a) { return b.transpose(a); }}
     };
     
-    Precision precision = std::is_same_v<T, int8_t> ? Precision::INT8 : Precision::FP32;
+    Precision precision = TestUtils::default_precision<T>();
     std::string prec_str = precision_to_string(precision);
     
     for (const auto& [op_name, op_func] : ops) {
@@ -259,7 +266,7 @@ void benchmark_reduction_ops(TestUtils::TestRunner& runner, const BenchmarkConfi
         {"Max", [](CactusGraph& b, size_t a) { return b.max(a, -1); }}
     };
     
-    Precision precision = std::is_same_v<T, int8_t> ? Precision::INT8 : Precision::FP32;
+    Precision precision = TestUtils::default_precision<T>();
     std::string prec_str = precision_to_string(precision);
     
     for (const auto& [op_name, op_func] : ops) {
@@ -289,7 +296,7 @@ void benchmark_reduction_ops(TestUtils::TestRunner& runner, const BenchmarkConfi
 
 template<typename T>
 void benchmark_advanced_ops(TestUtils::TestRunner& runner, const BenchmarkConfig& config) {
-    Precision precision = std::is_same_v<T, int8_t> ? Precision::INT8 : Precision::FP32;
+    Precision precision = TestUtils::default_precision<T>();
     std::string prec_str = precision_to_string(precision);
     
     for (size_t dim : config.dimensions) {
@@ -317,7 +324,7 @@ void benchmark_advanced_ops(TestUtils::TestRunner& runner, const BenchmarkConfig
 
 template<typename T>
 void benchmark_rms_norm(TestUtils::TestRunner& runner, const BenchmarkConfig& config) {
-    Precision precision = std::is_same_v<T, int8_t> ? Precision::INT8 : Precision::FP32;
+    Precision precision = TestUtils::default_precision<T>();
     std::string prec_str = precision_to_string(precision);
     
     for (size_t dim : config.dimensions) {
@@ -385,7 +392,7 @@ void benchmark_rope(TestUtils::TestRunner& runner, const BenchmarkConfig& config
 
 template<typename T>
 void benchmark_attention(TestUtils::TestRunner& runner, const BenchmarkConfig& config) {
-    Precision precision = std::is_same_v<T, int8_t> ? Precision::INT8 : Precision::FP32;
+    Precision precision = TestUtils::default_precision<T>();
     std::string prec_str = precision_to_string(precision);
     
     for (size_t dim : config.dimensions) {
@@ -432,7 +439,7 @@ void benchmark_embedding_ops(TestUtils::TestRunner& runner, BenchmarkConfig& con
     std::vector<size_t> embedding_dims = {1024};
     std::vector<size_t> sequence_lengths = {1000};
     
-    std::string precision_str = precision_to_string(std::is_same_v<T, int8_t> ? Precision::INT8 : Precision::FP32);
+    std::string precision_str = precision_to_string(TestUtils::default_precision<T>());
     
     for (size_t vocab_size : vocab_sizes) {
         for (size_t embedding_dim : embedding_dims) {
@@ -452,7 +459,7 @@ void benchmark_embedding_ops(TestUtils::TestRunner& runner, BenchmarkConfig& con
                     idx = static_cast<int8_t>(std::min(val, 127));
                 }
                 
-                Precision precision = std::is_same_v<T, int8_t> ? Precision::INT8 : Precision::FP32;
+                Precision precision = TestUtils::default_precision<T>();
                 
                 size_t embeddings_id = graph.input({vocab_size, embedding_dim}, precision);
                 size_t indices_id = graph.input({seq_len}, Precision::INT8);
@@ -542,7 +549,7 @@ void benchmark_mmap_embedding(TestUtils::TestRunner& runner, BenchmarkConfig& co
 
 template<typename T>
 void benchmark_gather_ops(TestUtils::TestRunner& runner, BenchmarkConfig& config) {
-    std::string precision_str = precision_to_string(std::is_same_v<T, int8_t> ? Precision::INT8 : Precision::FP32);
+    std::string precision_str = precision_to_string(TestUtils::default_precision<T>());
     
     {
         std::vector<size_t> tensor_sizes = {127};
@@ -565,7 +572,7 @@ void benchmark_gather_ops(TestUtils::TestRunner& runner, BenchmarkConfig& config
                     idx = static_cast<int8_t>(std::min(val, 127));
                 }
                 
-                Precision precision = std::is_same_v<T, int8_t> ? Precision::INT8 : Precision::FP32;
+                Precision precision = TestUtils::default_precision<T>();
                 
                 size_t tensor_id = graph.input({tensor_size}, precision);
                 size_t indices_id = graph.input({index_count}, Precision::INT8);
@@ -610,7 +617,7 @@ void benchmark_gather_ops(TestUtils::TestRunner& runner, BenchmarkConfig& config
                     idx = static_cast<int8_t>(std::min(val, 127));
                 }
                 
-                Precision precision = std::is_same_v<T, int8_t> ? Precision::INT8 : Precision::FP32;
+                Precision precision = TestUtils::default_precision<T>();
                 
                 size_t tensor_id = graph.input(shape, precision);
                 size_t indices_id = graph.input({index_count}, Precision::INT8);
@@ -705,94 +712,70 @@ void benchmark_spectrogram(TestUtils::TestRunner& runner, const BenchmarkConfig&
 
 bool test_binary_elementwise_performance(TestUtils::TestRunner& runner) {
     BenchmarkConfig config;
-    
-    benchmark_binary_elementwise_ops<int8_t>(runner, config);
-    benchmark_binary_elementwise_ops<float>(runner, config);
-    
+    benchmark_binary_elementwise_ops<__fp16>(runner, config);
     return true;
 }
 
 bool test_scalar_operations_performance(TestUtils::TestRunner& runner) {
     BenchmarkConfig config;
-    
-    benchmark_scalar_ops<int8_t>(runner, config);
-    benchmark_scalar_ops<float>(runner, config);
-    
+    benchmark_scalar_ops<__fp16>(runner, config);
     return true;
 }
 
 bool test_matrix_multiplication_performance(TestUtils::TestRunner& runner) {
     BenchmarkConfig config;
-
-    benchmark_matmul_ops<int8_t>(runner, config);
-    benchmark_matmul_ops<float>(runner, config);
-
+    benchmark_matmul_ops<__fp16>(runner, config);
     return true;
 }
 
 bool test_grouped_int8_matmul_performance(TestUtils::TestRunner& runner) {
     BenchmarkConfig config;
-
     benchmark_matmul_int8_grouped(runner, config);
-
     return true;
 }
 
 bool test_unary_operations_performance(TestUtils::TestRunner& runner) {
     BenchmarkConfig config;
-    
-    benchmark_unary_ops<int8_t>(runner, config);
-    benchmark_unary_ops<float>(runner, config);
-    
+    benchmark_unary_ops<__fp16>(runner, config);
     return true;
 }
 
 bool test_reduction_operations_performance(TestUtils::TestRunner& runner) {
     BenchmarkConfig config;
-    
-    benchmark_reduction_ops<int8_t>(runner, config);
-    benchmark_reduction_ops<float>(runner, config);
-    
+    benchmark_reduction_ops<__fp16>(runner, config);
     return true;
 }
 
 bool test_advanced_operations_performance(TestUtils::TestRunner& runner) {
     BenchmarkConfig config;
-    benchmark_advanced_ops<float>(runner, config);
-    
+    benchmark_advanced_ops<__fp16>(runner, config);
     return true;
 }
 
 bool test_engine_operations_performance(TestUtils::TestRunner& runner) {
     BenchmarkConfig config;
-    
-    benchmark_rms_norm<float>(runner, config);
-    benchmark_rope<int8_t>(runner, config);
-    benchmark_rope<float>(runner, config);
-    benchmark_attention<int8_t>(runner, config);
-    benchmark_attention<float>(runner, config);
-    
+    benchmark_rms_norm<__fp16>(runner, config);
+    benchmark_rope<__fp16>(runner, config);
+    benchmark_attention<__fp16>(runner, config);
     return true;
 }
 
 bool test_gather_operations_performance(TestUtils::TestRunner& runner) {
     BenchmarkConfig config;
     config.iterations = 10;
-    
+    // INT8 for storage, FP16 for computation
     benchmark_gather_ops<int8_t>(runner, config);
-    benchmark_gather_ops<float>(runner, config);
-    
+    benchmark_gather_ops<__fp16>(runner, config);
     return true;
 }
 
 bool test_embedding_operations_performance(TestUtils::TestRunner& runner) {
     BenchmarkConfig config;
     config.iterations = 10;
-
+    // INT8 embeddings → FP16 output
     benchmark_embedding_ops<int8_t>(runner, config);
-    benchmark_embedding_ops<float>(runner, config);
+    benchmark_embedding_ops<__fp16>(runner, config);
     benchmark_mmap_embedding(runner, config);
-
     return true;
 }
 

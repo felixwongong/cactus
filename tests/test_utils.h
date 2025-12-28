@@ -55,9 +55,24 @@ private:
 };
 
 template<typename T>
-bool compare_arrays(const T* actual, const T* expected, size_t count, float tolerance = 1e-6f) {
+constexpr Precision default_precision() {
+    if constexpr (std::is_same_v<T, int8_t>) return Precision::INT8;
+    else if constexpr (std::is_same_v<T, __fp16>) return Precision::FP16;
+    else return Precision::FP32;
+}
+
+template<typename T>
+constexpr float default_tolerance() {
+    if constexpr (std::is_same_v<T, __fp16>) return 1e-2f;
+    else return 1e-6f;
+}
+
+template<typename T>
+bool compare_arrays(const T* actual, const T* expected, size_t count, float tolerance = default_tolerance<T>()) {
     for (size_t i = 0; i < count; ++i) {
-        if constexpr (std::is_floating_point_v<T>) {
+        if constexpr (std::is_same_v<T, __fp16>) {
+            if (std::abs(static_cast<float>(actual[i]) - static_cast<float>(expected[i])) > tolerance) return false;
+        } else if constexpr (std::is_floating_point_v<T>) {
             if (std::abs(actual[i] - expected[i]) > tolerance) return false;
         } else {
             if (actual[i] != expected[i]) return false;
@@ -74,11 +89,11 @@ public:
 
     CactusGraph& graph() { return graph_; }
 
-    size_t create_input(const std::vector<size_t>& shape, Precision precision = Precision::INT8) {
+    size_t create_input(const std::vector<size_t>& shape, Precision precision = default_precision<T>()) {
         return graph_.input(shape, precision);
     }
 
-    void set_input_data(size_t input_id, const std::vector<T>& data, Precision precision) {
+    void set_input_data(size_t input_id, const std::vector<T>& data, Precision precision = default_precision<T>()) {
         graph_.set_input(input_id, const_cast<void*>(static_cast<const void*>(data.data())), precision);
     }
 
@@ -88,7 +103,7 @@ public:
         return static_cast<T*>(graph_.get_output(node_id));
     }
 
-    bool verify_output(size_t node_id, const std::vector<T>& expected, float tolerance = 1e-6f) {
+    bool verify_output(size_t node_id, const std::vector<T>& expected, float tolerance = default_tolerance<T>()) {
         return compare_arrays(get_output(node_id), expected.data(), expected.size(), tolerance);
     }
 
@@ -97,20 +112,23 @@ private:
 };
 
 using Int8TestFixture = TestFixture<int8_t>;
+using FP16TestFixture = TestFixture<__fp16>;
 using FloatTestFixture = TestFixture<float>;
+
+void fill_random_fp16(std::vector<__fp16>& data);
 
 bool test_basic_operation(const std::string& op_name,
                           std::function<size_t(CactusGraph&, size_t, size_t)> op_func,
-                          const std::vector<int8_t>& data_a,
-                          const std::vector<int8_t>& data_b,
-                          const std::vector<int8_t>& expected,
+                          const std::vector<__fp16>& data_a,
+                          const std::vector<__fp16>& data_b,
+                          const std::vector<__fp16>& expected,
                           const std::vector<size_t>& shape = {4});
 
 bool test_scalar_operation(const std::string& op_name,
                            std::function<size_t(CactusGraph&, size_t, float)> op_func,
-                           const std::vector<int8_t>& data,
+                           const std::vector<__fp16>& data,
                            float scalar,
-                           const std::vector<int8_t>& expected,
+                           const std::vector<__fp16>& expected,
                            const std::vector<size_t>& shape = {4});
 
 }
