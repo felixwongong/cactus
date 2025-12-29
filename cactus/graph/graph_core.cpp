@@ -111,54 +111,29 @@ static std::vector<size_t> compute_strides(const std::vector<size_t>& shape, con
 }
 
 
-template<typename T>
-void dispatch_binary_op(OpType op, const T* lhs, const T* rhs, T* output, size_t count) {
+void dispatch_binary_op_f16(OpType op, const __fp16* lhs, const __fp16* rhs, __fp16* output, size_t count) {
     switch (op) {
         case OpType::ADD:
-            if constexpr (std::is_same_v<T, __fp16>) {
-                cactus_add_f16(lhs, rhs, output, count);
-            } else {
-                cactus_add_f32(lhs, rhs, output, count);
-            }
+            cactus_add_f16(lhs, rhs, output, count);
             break;
         case OpType::ADD_CLIPPED:
-            if constexpr (std::is_same_v<T, __fp16>) {
-                cactus_add_f16_clipped(lhs, rhs, output, count);
-            } else {
-                cactus_add_f32(lhs, rhs, output, count);
-            }
+            cactus_add_f16_clipped(lhs, rhs, output, count);
             break;
         case OpType::SUBTRACT:
-            if constexpr (std::is_same_v<T, __fp16>) {
-                cactus_subtract_f16(lhs, rhs, output, count);
-            } else {
-                cactus_subtract_f32(lhs, rhs, output, count);
-            }
+            cactus_subtract_f16(lhs, rhs, output, count);
             break;
         case OpType::MULTIPLY:
-            if constexpr (std::is_same_v<T, __fp16>) {
-                cactus_multiply_f16(lhs, rhs, output, count);
-            } else {
-                cactus_multiply_f32(lhs, rhs, output, count);
-            }
+            cactus_multiply_f16(lhs, rhs, output, count);
             break;
         case OpType::DIVIDE:
-            if constexpr (std::is_same_v<T, __fp16>) {
-                cactus_divide_f16(lhs, rhs, output, count);
-            } else {
-                cactus_divide_f32(lhs, rhs, output, count);
-            }
+            cactus_divide_f16(lhs, rhs, output, count);
             break;
         default:
             break;
     }
 }
 
-template void dispatch_binary_op<__fp16>(OpType, const __fp16*, const __fp16*, __fp16*, size_t);
-template void dispatch_binary_op<float>(OpType, const float*, const float*, float*, size_t);
-
-template<typename T>
-void dispatch_unary_op(OpType op, const T* input, T* output, size_t count, float param) {
+void dispatch_unary_op_f16(OpType op, const __fp16* input, __fp16* output, size_t count, float param) {
     ScalarOpType scalar_op;
     switch (op) {
         case OpType::SCALAR_ADD: scalar_op = ScalarOpType::ADD; break;
@@ -172,15 +147,8 @@ void dispatch_unary_op(OpType op, const T* input, T* output, size_t count, float
         default: return;
     }
 
-    if constexpr (std::is_same_v<T, __fp16>) {
-        cactus_scalar_op_f16(input, output, count, param, scalar_op);
-    } else {
-        cactus_scalar_op_f32(input, output, count, param, scalar_op);
-    }
+    cactus_scalar_op_f16(input, output, count, param, scalar_op);
 }
-
-template void dispatch_unary_op<__fp16>(OpType, const __fp16*, __fp16*, size_t, float);
-template void dispatch_unary_op<float>(OpType, const float*, float*, size_t, float);
 
 void compute_node_optimized(GraphNode& node, const std::vector<std::unique_ptr<GraphNode>>& nodes, const std::unordered_map<size_t, size_t>& node_index_map) {
     switch (node.op_type) {
@@ -194,87 +162,50 @@ void compute_node_optimized(GraphNode& node, const std::vector<std::unique_ptr<G
             const auto& lhs = nodes[node_index_map.at(node.input_ids[0])]->output_buffer;
             const auto& rhs = nodes[node_index_map.at(node.input_ids[1])]->output_buffer;
             
+            if (lhs.precision != Precision::FP16) {
+                throw std::runtime_error("Binary operations only support FP16 precision");
+            }
+
             if (node.params.broadcast_info.needs_broadcasting) {
                 std::vector<size_t> lhs_strides = compute_strides(lhs.shape, node.params.broadcast_info.output_shape);
                 std::vector<size_t> rhs_strides = compute_strides(rhs.shape, node.params.broadcast_info.output_shape);
 
-                if (lhs.precision == Precision::FP16) {
-                    switch (node.op_type) {
-                        case OpType::ADD:
-                        case OpType::ADD_CLIPPED:
-                            cactus_add_broadcast_f16(lhs.data_as<__fp16>(), rhs.data_as<__fp16>(),
-                                                     node.output_buffer.data_as<__fp16>(),
-                                                     lhs_strides.data(), rhs_strides.data(),
-                                                     node.params.broadcast_info.output_shape.data(),
-                                                     node.params.broadcast_info.output_shape.size());
-                            break;
-                        case OpType::SUBTRACT:
-                            cactus_subtract_broadcast_f16(lhs.data_as<__fp16>(), rhs.data_as<__fp16>(), 
-                                                          node.output_buffer.data_as<__fp16>(),
-                                                          lhs_strides.data(), rhs_strides.data(),
-                                                          node.params.broadcast_info.output_shape.data(),
-                                                          node.params.broadcast_info.output_shape.size());
-                            break;
-                        case OpType::MULTIPLY:
-                            cactus_multiply_broadcast_f16(lhs.data_as<__fp16>(), rhs.data_as<__fp16>(), 
-                                                          node.output_buffer.data_as<__fp16>(),
-                                                          lhs_strides.data(), rhs_strides.data(),
-                                                          node.params.broadcast_info.output_shape.data(),
-                                                          node.params.broadcast_info.output_shape.size());
-                            break;
-                        case OpType::DIVIDE:
-                            cactus_divide_broadcast_f16(lhs.data_as<__fp16>(), rhs.data_as<__fp16>(), 
-                                                        node.output_buffer.data_as<__fp16>(),
-                                                        lhs_strides.data(), rhs_strides.data(),
-                                                        node.params.broadcast_info.output_shape.data(),
-                                                        node.params.broadcast_info.output_shape.size());
-                            break;
-                        default: break;
-                    }
-                } else {
-                    switch (node.op_type) {
-                        case OpType::ADD:
-                        case OpType::ADD_CLIPPED: 
-                            cactus_add_broadcast_f32(lhs.data_as<float>(), rhs.data_as<float>(),
-                                                     node.output_buffer.data_as<float>(),
-                                                     lhs_strides.data(), rhs_strides.data(),
-                                                     node.params.broadcast_info.output_shape.data(),
-                                                     node.params.broadcast_info.output_shape.size());
-                            break;
-                        case OpType::SUBTRACT:
-                            cactus_subtract_broadcast_f32(lhs.data_as<float>(), rhs.data_as<float>(), 
-                                                          node.output_buffer.data_as<float>(),
-                                                          lhs_strides.data(), rhs_strides.data(),
-                                                          node.params.broadcast_info.output_shape.data(),
-                                                          node.params.broadcast_info.output_shape.size());
-                            break;
-                        case OpType::MULTIPLY:
-                            cactus_multiply_broadcast_f32(lhs.data_as<float>(), rhs.data_as<float>(), 
-                                                          node.output_buffer.data_as<float>(),
-                                                          lhs_strides.data(), rhs_strides.data(),
-                                                          node.params.broadcast_info.output_shape.data(),
-                                                          node.params.broadcast_info.output_shape.size());
-                            break;
-                        case OpType::DIVIDE:
-                            cactus_divide_broadcast_f32(lhs.data_as<float>(), rhs.data_as<float>(), 
-                                                        node.output_buffer.data_as<float>(),
-                                                        lhs_strides.data(), rhs_strides.data(),
-                                                        node.params.broadcast_info.output_shape.data(),
-                                                        node.params.broadcast_info.output_shape.size());
-                            break;
-                        default: break;
-                    }
+                switch (node.op_type) {
+                    case OpType::ADD:
+                    case OpType::ADD_CLIPPED:
+                        cactus_add_broadcast_f16(lhs.data_as<__fp16>(), rhs.data_as<__fp16>(),
+                                                 node.output_buffer.data_as<__fp16>(),
+                                                 lhs_strides.data(), rhs_strides.data(),
+                                                 node.params.broadcast_info.output_shape.data(),
+                                                 node.params.broadcast_info.output_shape.size());
+                        break;
+                    case OpType::SUBTRACT:
+                        cactus_subtract_broadcast_f16(lhs.data_as<__fp16>(), rhs.data_as<__fp16>(),
+                                                      node.output_buffer.data_as<__fp16>(),
+                                                      lhs_strides.data(), rhs_strides.data(),
+                                                      node.params.broadcast_info.output_shape.data(),
+                                                      node.params.broadcast_info.output_shape.size());
+                        break;
+                    case OpType::MULTIPLY:
+                        cactus_multiply_broadcast_f16(lhs.data_as<__fp16>(), rhs.data_as<__fp16>(),
+                                                      node.output_buffer.data_as<__fp16>(),
+                                                      lhs_strides.data(), rhs_strides.data(),
+                                                      node.params.broadcast_info.output_shape.data(),
+                                                      node.params.broadcast_info.output_shape.size());
+                        break;
+                    case OpType::DIVIDE:
+                        cactus_divide_broadcast_f16(lhs.data_as<__fp16>(), rhs.data_as<__fp16>(),
+                                                    node.output_buffer.data_as<__fp16>(),
+                                                    lhs_strides.data(), rhs_strides.data(),
+                                                    node.params.broadcast_info.output_shape.data(),
+                                                    node.params.broadcast_info.output_shape.size());
+                        break;
+                    default: break;
                 }
             } else {
-                if (lhs.precision == Precision::FP16) {
-                    dispatch_binary_op<__fp16>(node.op_type, lhs.data_as<__fp16>(),
-                                              rhs.data_as<__fp16>(), node.output_buffer.data_as<__fp16>(),
-                                              node.output_buffer.total_size);
-                } else {
-                    dispatch_binary_op<float>(node.op_type, lhs.data_as<float>(),
-                                             rhs.data_as<float>(), node.output_buffer.data_as<float>(),
-                                             node.output_buffer.total_size);
-                }
+                dispatch_binary_op_f16(node.op_type, lhs.data_as<__fp16>(),
+                                       rhs.data_as<__fp16>(), node.output_buffer.data_as<__fp16>(),
+                                       node.output_buffer.total_size);
             }
             break;
         }
@@ -288,57 +219,49 @@ void compute_node_optimized(GraphNode& node, const std::vector<std::unique_ptr<G
         case OpType::SCALAR_SIN: {
             const auto& input = nodes[node_index_map.at(node.input_ids[0])]->output_buffer;
 
-            if (input.precision == Precision::FP16) {
-                dispatch_unary_op<__fp16>(node.op_type, input.data_as<__fp16>(),
-                                        node.output_buffer.data_as<__fp16>(),
-                                        node.output_buffer.total_size, node.params.scalar);
-            } else {
-                dispatch_unary_op<float>(node.op_type, input.data_as<float>(),
-                                        node.output_buffer.data_as<float>(),
-                                        node.output_buffer.total_size, node.params.scalar);
+            if (input.precision != Precision::FP16) {
+                throw std::runtime_error("Scalar operations only support FP16 precision");
             }
+
+            dispatch_unary_op_f16(node.op_type, input.data_as<__fp16>(),
+                                  node.output_buffer.data_as<__fp16>(),
+                                  node.output_buffer.total_size, node.params.scalar);
             break;
         }
         case OpType::SILU: {
             const auto& input = nodes[node_index_map.at(node.input_ids[0])]->output_buffer;
 
-            if (input.precision == Precision::FP16) {
-                cactus_silu_f16(input.data_as<__fp16>(),
-                               node.output_buffer.data_as<__fp16>(),
-                               node.output_buffer.total_size);
-            } else {
-                cactus_silu_f32(input.data_as<float>(),
-                               node.output_buffer.data_as<float>(),
-                               node.output_buffer.total_size);
+            if (input.precision != Precision::FP16) {
+                throw std::runtime_error("SILU operation only supports FP16 precision");
             }
+
+            cactus_silu_f16(input.data_as<__fp16>(),
+                           node.output_buffer.data_as<__fp16>(),
+                           node.output_buffer.total_size);
             break;
         }
         case OpType::GELU: {
             const auto& input = nodes[node_index_map.at(node.input_ids[0])]->output_buffer;
 
-            if (input.precision == Precision::FP16) {
-                cactus_gelu_f16(input.data_as<__fp16>(),
-                               node.output_buffer.data_as<__fp16>(),
-                               node.output_buffer.total_size);
-            } else {
-                cactus_gelu_f32(input.data_as<float>(),
-                               node.output_buffer.data_as<float>(),
-                               node.output_buffer.total_size);
+            if (input.precision != Precision::FP16) {
+                throw std::runtime_error("GELU operation only supports FP16 precision");
             }
+
+            cactus_gelu_f16(input.data_as<__fp16>(),
+                           node.output_buffer.data_as<__fp16>(),
+                           node.output_buffer.total_size);
             break;
         }
         case OpType::GELU_ERF: {
             const auto& input = nodes[node_index_map.at(node.input_ids[0])]->output_buffer;
 
-            if (input.precision == Precision::FP16) {
-                cactus_gelu_f16_erf(input.data_as<__fp16>(),
-                                    node.output_buffer.data_as<__fp16>(),
-                                    node.output_buffer.total_size);
-            } else {
-                cactus_gelu_f32_erf(input.data_as<float>(),
-                                    node.output_buffer.data_as<float>(),
-                                    node.output_buffer.total_size);
+            if (input.precision != Precision::FP16) {
+                throw std::runtime_error("GELU_ERF operation only supports FP16 precision");
             }
+
+            cactus_gelu_f16_erf(input.data_as<__fp16>(),
+                                node.output_buffer.data_as<__fp16>(),
+                                node.output_buffer.total_size);
             break;
         }
         case OpType::MATMUL:

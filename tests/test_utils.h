@@ -113,7 +113,6 @@ private:
 
 using Int8TestFixture = TestFixture<int8_t>;
 using FP16TestFixture = TestFixture<__fp16>;
-using FloatTestFixture = TestFixture<float>;
 
 void fill_random_fp16(std::vector<__fp16>& data);
 

@@ -129,17 +129,20 @@ size_t Lfm2VlModel::pixel_unshuffle(CactusGraph* gb, size_t hidden_states,
 size_t Lfm2VlModel::build_multimodal_projector(CactusGraph* gb, size_t image_features,
                                                size_t tile_h, size_t tile_w, ComputeBackend backend) {
     const size_t vision_hidden = config_.vision_embed_dim;
-    
-    size_t image_features_fp32 = gb->precision_cast(image_features, Precision::FP32);
-    size_t unshuffled = pixel_unshuffle(gb, image_features_fp32, tile_h, tile_w, vision_hidden);
+
+    const auto& input_buf = gb->get_output_buffer(image_features);
+    size_t image_features_fp16 = (input_buf.precision == Precision::FP16)
+        ? image_features
+        : gb->precision_cast(image_features, Precision::FP16);
+
+    size_t unshuffled = pixel_unshuffle(gb, image_features_fp16, tile_h, tile_w, vision_hidden);
     const size_t factor = config_.downsample_factor;
     const size_t new_h = tile_h / factor;
     const size_t new_w = tile_w / factor;
     const size_t in_channels = vision_hidden * factor * factor;
     const size_t seq_len = new_h * new_w;
     size_t flattened = gb->reshape(unshuffled, {seq_len, in_channels});
-    size_t flattened_fp16 = gb->precision_cast(flattened, Precision::FP16);
-    size_t normalized = gb->layernorm(flattened_fp16, projector_weights_.layer_norm_weight,
+    size_t normalized = gb->layernorm(flattened, projector_weights_.layer_norm_weight,
                                       projector_weights_.layer_norm_bias, config_.layer_norm_eps);
     size_t hidden = gb->matmul(normalized, projector_weights_.linear_1_weight, true, backend);
     hidden = gb->add(hidden, projector_weights_.linear_1_bias);

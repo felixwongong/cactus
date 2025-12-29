@@ -324,31 +324,33 @@ void benchmark_advanced_ops(TestUtils::TestRunner& runner, const BenchmarkConfig
 
 template<typename T>
 void benchmark_rms_norm(TestUtils::TestRunner& runner, const BenchmarkConfig& config) {
-    Precision precision = TestUtils::default_precision<T>();
-    std::string prec_str = precision_to_string(precision);
-    
+    Precision precision = Precision::FP16;
+    std::string prec_str = "FP16";
+
     for (size_t dim : config.dimensions) {
         size_t total_elements = dim * dim;
-        
+
         CactusGraph graph;
         size_t input_a = graph.input({dim, dim}, precision);
-        size_t weight = graph.input({dim}, Precision::FP32);  
-        
-        std::vector<T> data_a(total_elements);
-        std::vector<float> weight_data(dim, 1.0f);
-        setup_random_data(data_a);
-        
+        size_t weight = graph.input({dim}, precision);
+
+        std::vector<__fp16> data_a(total_elements);
+        std::vector<__fp16> weight_data(dim, static_cast<__fp16>(1.0f));
+        for (size_t i = 0; i < total_elements; ++i) {
+            data_a[i] = static_cast<__fp16>(static_cast<float>(rand()) / RAND_MAX * 2.0f - 1.0f);
+        }
+
         graph.set_input(input_a, const_cast<void*>(static_cast<const void*>(data_a.data())), precision);
-        graph.set_input(weight, const_cast<void*>(static_cast<const void*>(weight_data.data())), Precision::FP32);
-        
+        graph.set_input(weight, const_cast<void*>(static_cast<const void*>(weight_data.data())), precision);
+
         graph.rms_norm(input_a, weight);
 
-        double time_ms = time_operation<T>([&]() {
+        double time_ms = time_operation<__fp16>([&]() {
             graph.execute();
         }, config.iterations);
-        
-        double gb_per_sec = (total_elements * PrecisionTraits::size_of(precision)) / (time_ms * 1e6);
-        
+
+        double gb_per_sec = (total_elements * 2) / (time_ms * 1e6);  // FP16 = 2 bytes
+
         runner.log_performance("RMSNorm " + std::to_string(dim) + "x" + std::to_string(dim) + " " + prec_str,
                              std::to_string(time_ms) + "ms, " + std::to_string(gb_per_sec) + " GB/s");
         
@@ -358,33 +360,33 @@ void benchmark_rms_norm(TestUtils::TestRunner& runner, const BenchmarkConfig& co
 
 template<typename T>
 void benchmark_rope(TestUtils::TestRunner& runner, const BenchmarkConfig& config) {
-    if constexpr (!std::is_same_v<T, float>) {
-    }
-    
-    std::string prec_str = "FP32";
-    
+    Precision precision = Precision::FP16;
+    std::string prec_str = "FP16";
+
     for (size_t dim : config.dimensions) {
         size_t batch_size = 1;
         size_t seq_len = dim / 4;
         size_t num_heads = 4;
         size_t head_dim = dim / 4;
         size_t total_elements = batch_size * seq_len * num_heads * head_dim;
-        
-        TestUtils::FloatTestFixture fixture("RoPE");
-        size_t input_a = fixture.create_input({batch_size, seq_len, num_heads, head_dim}, Precision::FP32);
-        
-        std::vector<float> data_a(total_elements);
-        setup_random_data(data_a);
-        fixture.set_input_data(input_a, data_a, Precision::FP32);
-        
+
+        TestUtils::FP16TestFixture fixture("RoPE");
+        size_t input_a = fixture.create_input({batch_size, seq_len, num_heads, head_dim}, precision);
+
+        std::vector<__fp16> data_a(total_elements);
+        for (size_t i = 0; i < total_elements; ++i) {
+            data_a[i] = static_cast<__fp16>(static_cast<float>(rand()) / RAND_MAX * 2.0f - 1.0f);
+        }
+        fixture.set_input_data(input_a, data_a, precision);
+
         fixture.graph().rope(input_a, 10000.0f);
 
-        double time_ms = time_operation<float>([&]() {
+        double time_ms = time_operation<__fp16>([&]() {
             fixture.execute();
         }, config.iterations);
-        
-        double gb_per_sec = (total_elements * 4 * 2) / (time_ms * 1e6); 
-        
+
+        double gb_per_sec = (total_elements * 2 * 2) / (time_ms * 1e6);
+
         runner.log_performance("RoPE " + std::to_string(seq_len) + "x" + std::to_string(num_heads) + "x" + std::to_string(head_dim) + " " + prec_str,
                              std::to_string(time_ms) + "ms, " + std::to_string(gb_per_sec) + " GB/s");
     }
@@ -493,12 +495,14 @@ void benchmark_mmap_embedding(TestUtils::TestRunner& runner, BenchmarkConfig& co
         for (size_t embedding_dim : embedding_dims) {
             for (size_t seq_len : sequence_lengths) {
                 CactusGraph graph;
-                
-                std::vector<float> embeddings_data(vocab_size * embedding_dim);
-                setup_random_data(embeddings_data);
-                
-                size_t temp_embeddings = graph.input({vocab_size, embedding_dim}, Precision::FP32);
-                graph.set_input(temp_embeddings, embeddings_data.data(), Precision::FP32);
+
+                std::vector<__fp16> embeddings_data(vocab_size * embedding_dim);
+                for (size_t i = 0; i < embeddings_data.size(); ++i) {
+                    embeddings_data[i] = static_cast<__fp16>(static_cast<float>(rand()) / RAND_MAX * 2.0f - 1.0f);
+                }
+
+                size_t temp_embeddings = graph.input({vocab_size, embedding_dim}, Precision::FP16);
+                graph.set_input(temp_embeddings, embeddings_data.data(), Precision::FP16);
                 
                 std::filesystem::path tmpdir;
                 try {
@@ -527,16 +531,16 @@ void benchmark_mmap_embedding(TestUtils::TestRunner& runner, BenchmarkConfig& co
                 graph.embedding(temp_file, indices_id);
 
                 graph.set_input(indices_id, indices_data.data(), Precision::INT8);
-                
-                double time_ms = time_operation<float>([&]() {
+
+                double time_ms = time_operation<__fp16>([&]() {
                     graph.execute();
                 }, config.iterations);
-                
-                double throughput = (seq_len * embedding_dim * sizeof(float)) / (time_ms * 1e3);
-                
+
+                double throughput = (seq_len * embedding_dim * sizeof(__fp16)) / (time_ms * 1e3);
+
                 runner.log_performance(
-                    "MMap Embedding " + std::to_string(vocab_size) + " vocab x" + 
-                    std::to_string(embedding_dim) + " dim, seq=" + std::to_string(seq_len) + " FP32",
+                    "MMap Embedding " + std::to_string(vocab_size) + " vocab x" +
+                    std::to_string(embedding_dim) + " dim, seq=" + std::to_string(seq_len) + " FP16",
                     std::to_string(time_ms) + "ms, " + std::to_string(throughput) + " GB/s"
                 );
                 

@@ -673,7 +673,7 @@ size_t CactusGraph::bilinear_interpolation(size_t pos_embeds, size_t dst_height,
     OpParams params;
     params.dst_height = dst_height;
     params.dst_width = dst_width;
-    params.output_precision = Precision::FP32;
+    params.output_precision = Precision::FP16;
     
     return add_node(OpType::BILINEAR_INTERPOLATION, {pos_embeds}, output_shape, params);
 }   

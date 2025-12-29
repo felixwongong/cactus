@@ -9,44 +9,6 @@
 #include <random>
 #include <iostream>
 
-void cactus_silu_f32(const float* input, float* output, size_t num_elements) {
-    CactusThreading::parallel_for(num_elements, CactusThreading::Thresholds::SCALAR_EXPENSIVE,
-        [&](size_t start_idx, size_t end_idx) {
-            constexpr size_t SIMD_WIDTH = 4;
-            const size_t vectorized_end = start_idx + ((end_idx - start_idx) / SIMD_WIDTH) * SIMD_WIDTH;
-            
-            const float32x4_t one = vdupq_n_f32(1.0f);
-            
-            for (size_t i = start_idx; i < vectorized_end; i += SIMD_WIDTH) {
-                float32x4_t x = vld1q_f32(&input[i]);
-                
-                float32x4_t neg_x = vnegq_f32(x);
-                
-                float32x4_t exp_vals[4];
-                float neg_vals[4], result_vals[4];
-                vst1q_f32(neg_vals, neg_x);
-                
-                for (int j = 0; j < 4; j++) {
-                    result_vals[j] = expf(neg_vals[j]);
-                }
-                exp_vals[0] = vld1q_f32(result_vals);
-                
-                float32x4_t one_plus_exp = vaddq_f32(one, exp_vals[0]);
-                
-                float32x4_t sigmoid = vdivq_f32(one, one_plus_exp);
-                
-                float32x4_t silu = vmulq_f32(x, sigmoid);
-                
-                vst1q_f32(&output[i], silu);
-            }
-            
-            for (size_t i = vectorized_end; i < end_idx; ++i) {
-                float sigmoid = 1.0f / (1.0f + expf(-input[i]));
-                output[i] = input[i] * sigmoid;
-            }
-        });
-}
-
 void cactus_silu_f16(const __fp16* input, __fp16* output, size_t num_elements) {
     CactusThreading::parallel_for(num_elements, CactusThreading::Thresholds::SCALAR_EXPENSIVE,
         [&](size_t start_idx, size_t end_idx) {
@@ -93,47 +55,6 @@ void cactus_silu_f16(const __fp16* input, __fp16* output, size_t num_elements) {
                 float x_f32 = static_cast<float>(input[i]);
                 float sigmoid = 1.0f / (1.0f + expf(-x_f32));
                 output[i] = static_cast<__fp16>(x_f32 * sigmoid);
-            }
-        });
-}
-
-void cactus_gelu_f32(const float* input, float* output, size_t num_elements) {
-    const float sqrt_2_over_pi = 0.7978845608028654f;
-    const float coeff = 0.044715f;
-    
-    CactusThreading::parallel_for(num_elements, CactusThreading::Thresholds::SCALAR_EXPENSIVE,
-        [&](size_t start_idx, size_t end_idx) {
-            constexpr size_t SIMD_WIDTH = 4;
-            const size_t vectorized_end = start_idx + ((end_idx - start_idx) / SIMD_WIDTH) * SIMD_WIDTH;
-            
-            const float32x4_t half = vdupq_n_f32(0.5f);
-            const float32x4_t one = vdupq_n_f32(1.0f);
-            const float32x4_t sqrt_2_pi_vec = vdupq_n_f32(sqrt_2_over_pi);
-            const float32x4_t coeff_vec = vdupq_n_f32(coeff);
-            
-            for (size_t i = start_idx; i < vectorized_end; i += SIMD_WIDTH) {
-                float32x4_t x = vld1q_f32(&input[i]);
-                
-                float32x4_t x_cubed = vmulq_f32(vmulq_f32(x, x), x);
-                float32x4_t inner = vmlaq_f32(x, coeff_vec, x_cubed);
-                float32x4_t tanh_arg = vmulq_f32(sqrt_2_pi_vec, inner);
-                
-                float tanh_vals[4], arg_vals[4];
-                vst1q_f32(arg_vals, tanh_arg);
-                for (int j = 0; j < 4; j++) {
-                    tanh_vals[j] = tanhf(arg_vals[j]);
-                }
-                float32x4_t tanh_result = vld1q_f32(tanh_vals);
-                
-                float32x4_t gelu = vmulq_f32(vmulq_f32(half, x), vaddq_f32(one, tanh_result));
-                
-                vst1q_f32(&output[i], gelu);
-            }
-            
-            for (size_t i = vectorized_end; i < end_idx; ++i) {
-                float x = input[i];
-                float inner = sqrt_2_over_pi * (x + coeff * x * x * x);
-                output[i] = 0.5f * x * (1.0f + tanhf(inner));
             }
         });
 }
@@ -194,49 +115,6 @@ void cactus_gelu_f16(const __fp16* input, __fp16* output, size_t num_elements) {
                 output[i] = static_cast<__fp16>(gelu);
             }
         });
-}
-
-void cactus_gelu_f32_erf(const float* input, float* output, size_t num_elements) {
-    const float inv_sqrt2 = 0.70710678118654752440f; // 1/sqrt(2)
-
-    CactusThreading::parallel_for(
-        num_elements,
-        CactusThreading::Thresholds::SCALAR_EXPENSIVE,
-        [&](size_t start_idx, size_t end_idx) {
-
-            constexpr size_t SIMD = 4;
-            const size_t vec_end = start_idx + ((end_idx - start_idx) / SIMD) * SIMD;
-
-            const float32x4_t half = vdupq_n_f32(0.5f);
-            const float32x4_t one  = vdupq_n_f32(1.0f);
-            const float32x4_t inv_sqrt2_vec = vdupq_n_f32(inv_sqrt2);
-
-            for (size_t i = start_idx; i < vec_end; i += SIMD) {
-                float32x4_t x = vld1q_f32(&input[i]);
-                float32x4_t arg = vmulq_f32(x, inv_sqrt2_vec);
-
-                float arg_s[SIMD], erf_s[SIMD];
-                vst1q_f32(arg_s, arg);
-
-                for (size_t j = 0; j < SIMD; j++) {
-                    erf_s[j] = erff(arg_s[j]);
-                }
-
-                float32x4_t erf_vec = vld1q_f32(erf_s);
-
-                float32x4_t t = vaddq_f32(one, erf_vec);
-                float32x4_t gelu = vmulq_f32(vmulq_f32(half, x), t);
-
-                vst1q_f32(&output[i], gelu);
-            }
-
-            for (size_t i = vec_end; i < end_idx; i++) {
-                float x = input[i];
-                float arg = x * inv_sqrt2;
-                output[i] = 0.5f * x * (1.0f + erff(arg));
-            }
-        }
-    );
 }
 
 void cactus_gelu_f16_erf(const __fp16* input, __fp16* output, size_t num_elements)
@@ -333,118 +211,6 @@ inline float32x4_t fast_exp_neon(float32x4_t x) {
     return vmulq_f32(p, scale);
 }
 
-inline float32x4_t fast_reciprocal_neon(float32x4_t x) {
-    float32x4_t recip = vrecpeq_f32(x);
-    recip = vmulq_f32(recip, vrecpsq_f32(x, recip));
-    recip = vmulq_f32(recip, vrecpsq_f32(x, recip));
-    return recip;
-}
-
-void kernel_softmax_neon_optimized_single(const float* input, float* output, size_t vocab_size) {
-    constexpr size_t SIMD_WIDTH = 4;
-    constexpr size_t UNROLL_FACTOR = 8;
-    constexpr size_t VECTORIZED_WIDTH = SIMD_WIDTH * UNROLL_FACTOR;
-    const size_t vocab_vectorized = (vocab_size / VECTORIZED_WIDTH) * VECTORIZED_WIDTH;
-    
-    float32x4_t max_vec[UNROLL_FACTOR];
-    for (size_t u = 0; u < UNROLL_FACTOR; u++) {
-        max_vec[u] = vdupq_n_f32(-std::numeric_limits<float>::infinity());
-    }
-    
-    for (size_t i = 0; i < vocab_vectorized; i += VECTORIZED_WIDTH) {
-        for (size_t u = 0; u < UNROLL_FACTOR; u++) {
-            float32x4_t x_vec = vld1q_f32(&input[i + u * SIMD_WIDTH]);
-            max_vec[u] = vmaxq_f32(max_vec[u], x_vec);
-        }
-    }
-    
-    float32x4_t final_max = max_vec[0];
-    for (size_t u = 1; u < UNROLL_FACTOR; u++) {
-        final_max = vmaxq_f32(final_max, max_vec[u]);
-    }
-    
-    float max_val = vmaxvq_f32(final_max);
-    for (size_t i = vocab_vectorized; i < vocab_size; ++i) {
-        max_val = std::max(max_val, input[i]);
-    }
-    
-    const float32x4_t max_broadcast = vdupq_n_f32(max_val);
-    
-    float32x4_t sum_vec[UNROLL_FACTOR];
-    for (size_t u = 0; u < UNROLL_FACTOR; u++) {
-        sum_vec[u] = vdupq_n_f32(0.0f);
-    }
-    
-    for (size_t i = 0; i < vocab_vectorized; i += VECTORIZED_WIDTH) {
-        float32x4_t x_vec[UNROLL_FACTOR];
-        float32x4_t exp_vec[UNROLL_FACTOR];
-        
-        for (size_t u = 0; u < UNROLL_FACTOR; u++) {
-            x_vec[u] = vld1q_f32(&input[i + u * SIMD_WIDTH]);
-        }
-        
-        for (size_t u = 0; u < UNROLL_FACTOR; u++) {
-            exp_vec[u] = fast_exp_neon(vsubq_f32(x_vec[u], max_broadcast));
-            sum_vec[u] = vaddq_f32(sum_vec[u], exp_vec[u]);
-        }
-        
-        for (size_t u = 0; u < UNROLL_FACTOR; u++) {
-            vst1q_f32(&output[i + u * SIMD_WIDTH], exp_vec[u]);
-        }
-    }
-    
-    float32x4_t final_sum = sum_vec[0];
-    for (size_t u = 1; u < UNROLL_FACTOR; u++) {
-        final_sum = vaddq_f32(final_sum, sum_vec[u]);
-    }
-    
-    float sum = vaddvq_f32(final_sum);
-    for (size_t i = vocab_vectorized; i < vocab_size; ++i) {
-        float exp_val = expf(input[i] - max_val);
-        output[i] = exp_val;
-        sum += exp_val;
-    }
-    
-    const float32x4_t inv_sum_vec = fast_reciprocal_neon(vdupq_n_f32(sum));
-    
-    for (size_t i = 0; i < vocab_vectorized; i += VECTORIZED_WIDTH) {
-        float32x4_t exp_vec[UNROLL_FACTOR];
-        
-        for (size_t u = 0; u < UNROLL_FACTOR; u++) {
-            exp_vec[u] = vld1q_f32(&output[i + u * SIMD_WIDTH]);
-        }
-        
-        for (size_t u = 0; u < UNROLL_FACTOR; u++) {
-            exp_vec[u] = vmulq_f32(exp_vec[u], inv_sum_vec);
-        }
-        
-        for (size_t u = 0; u < UNROLL_FACTOR; u++) {
-            vst1q_f32(&output[i + u * SIMD_WIDTH], exp_vec[u]);
-        }
-    }
-    
-    const float inv_sum = vgetq_lane_f32(inv_sum_vec, 0);
-    for (size_t i = vocab_vectorized; i < vocab_size; ++i) {
-        output[i] *= inv_sum;
-    }
-}
-
-}
-
-void cactus_softmax_f32(
-    const float* input,
-    float* output,
-    size_t batch_size,
-    size_t seq_len,
-    size_t vocab_size
-) {
-    CactusThreading::parallel_for(batch_size * seq_len, CactusThreading::Thresholds::SCALAR_EXPENSIVE,
-        [&](size_t start_idx, size_t end_idx) {
-            for (size_t idx = start_idx; idx < end_idx; ++idx) {
-                const size_t offset = idx * vocab_size;
-                CactusSoftmax::kernel_softmax_neon_optimized_single(input + offset, output + offset, vocab_size);
-            }
-        });
 }
 
 void kernel_softmax_f16_single(const __fp16* input, __fp16* output, size_t vocab_size) {

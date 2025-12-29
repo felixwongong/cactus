@@ -21,11 +21,6 @@ void cactus_subtract_f16(const __fp16* a, const __fp16* b, __fp16* output, size_
 void cactus_multiply_f16(const __fp16* a, const __fp16* b, __fp16* output, size_t num_elements);
 void cactus_divide_f16(const __fp16* a, const __fp16* b, __fp16* output, size_t num_elements);
 
-void cactus_add_f32(const float* a, const float* b, float* output, size_t num_elements);
-void cactus_subtract_f32(const float* a, const float* b, float* output, size_t num_elements);
-void cactus_multiply_f32(const float* a, const float* b, float* output, size_t num_elements);
-void cactus_divide_f32(const float* a, const float* b, float* output, size_t num_elements);
-
 void cactus_add_broadcast_f16(const __fp16* a, const __fp16* b, __fp16* output,
                                const size_t* a_strides, const size_t* b_strides,
                                const size_t* output_shape, size_t ndim);
@@ -39,21 +34,7 @@ void cactus_divide_broadcast_f16(const __fp16* a, const __fp16* b, __fp16* outpu
                                  const size_t* a_strides, const size_t* b_strides,
                                  const size_t* output_shape, size_t ndim);
 
-void cactus_add_broadcast_f32(const float* a, const float* b, float* output,
-                               const size_t* a_strides, const size_t* b_strides,
-                               const size_t* output_shape, size_t ndim);
-void cactus_subtract_broadcast_f32(const float* a, const float* b, float* output,
-                                   const size_t* a_strides, const size_t* b_strides,
-                                   const size_t* output_shape, size_t ndim);
-void cactus_multiply_broadcast_f32(const float* a, const float* b, float* output,
-                                   const size_t* a_strides, const size_t* b_strides,
-                                   const size_t* output_shape, size_t ndim);
-void cactus_divide_broadcast_f32(const float* a, const float* b, float* output,
-                                 const size_t* a_strides, const size_t* b_strides,
-                                 const size_t* output_shape, size_t ndim);
-
 void cactus_scalar_op_f16(const __fp16* input, __fp16* output, size_t num_elements, float scalar_value, ScalarOpType op_type);
-void cactus_scalar_op_f32(const float* input, float* output, size_t num_elements, float scalar_value, ScalarOpType op_type);
 
 void cactus_matmul_int8_grouped(const __fp16* A, const int8_t* B, const __fp16* B_scales,
                        __fp16* C, size_t M, size_t K, size_t N, size_t group_size);
@@ -61,79 +42,45 @@ void cactus_matmul_int8_grouped(const __fp16* A, const int8_t* B, const __fp16* 
 void cactus_matmul_f16(const __fp16* a, const __fp16* b_transposed, __fp16* c,
                        size_t M, size_t K, size_t N);
 
-void cactus_matmul_f32(const float* a, const float* b_transposed, float* c,
-                       size_t M, size_t K, size_t N);
-
 void cactus_transpose_2d_f16(const __fp16* source, __fp16* destination,
-                             size_t num_rows, size_t num_cols, size_t start_row, size_t end_row);
-void cactus_transpose_2d_f32(const float* source, float* destination,
                              size_t num_rows, size_t num_cols, size_t start_row, size_t end_row);
 void cactus_transpose_f16(const __fp16* source, __fp16* destination, const size_t* shape,
                           const size_t* permutation, size_t ndim, size_t start_idx, size_t end_idx);
-void cactus_transpose_f32(const float* source, float* destination, const size_t* shape,
-                          const size_t* permutation, size_t ndim, size_t start_idx, size_t end_idx);
 
 double cactus_sum_all_f16(const __fp16* data, size_t num_elements);
-double cactus_sum_all_f32(const float* data, size_t num_elements);
-void cactus_sum_axis_f32(const float* input, float* output, size_t outer_size, size_t axis_size, size_t inner_size);
+void cactus_sum_axis_f16(const __fp16* input, __fp16* output, size_t outer_size, size_t axis_size, size_t inner_size);
 
 double cactus_mean_all_f16(const __fp16* data, size_t num_elements);
 void cactus_mean_axis_f16(const __fp16* input, __fp16* output, size_t outer_size, size_t axis_size, size_t inner_size);
-double cactus_mean_all_f32(const float* data, size_t num_elements);
-void cactus_mean_axis_f32(const float* input, float* output, size_t outer_size, size_t axis_size, size_t inner_size);
 
-double cactus_variance_all_f32(const float* data, size_t num_elements);
-void cactus_variance_axis_f32(const float* input, float* output, size_t outer_size, size_t axis_size, size_t inner_size);
+double cactus_variance_all_f16(const __fp16* data, size_t num_elements);
+void cactus_variance_axis_f16(const __fp16* input, __fp16* output, size_t outer_size, size_t axis_size, size_t inner_size);
 
-float cactus_min_all_f32(const float* data, size_t num_elements);
-void cactus_min_axis_f32(const float* input, float* output, size_t outer_size, size_t axis_size, size_t inner_size);
+__fp16 cactus_min_all_f16(const __fp16* data, size_t num_elements);
+void cactus_min_axis_f16(const __fp16* input, __fp16* output, size_t outer_size, size_t axis_size, size_t inner_size);
 
-float cactus_max_all_f32(const float* data, size_t num_elements);
-void cactus_max_axis_f32(const float* input, float* output, size_t outer_size, size_t axis_size, size_t inner_size);
+__fp16 cactus_max_all_f16(const __fp16* data, size_t num_elements);
+void cactus_max_axis_f16(const __fp16* input, __fp16* output, size_t outer_size, size_t axis_size, size_t inner_size);
 
 void cactus_rms_norm_f16(const __fp16* input, const __fp16* weight, __fp16* output,
-                          size_t batch_size, size_t dims, float eps);
-void cactus_rms_norm_f32(const float* input, const float* weight, float* output,
                           size_t batch_size, size_t dims, float eps);
 
 void cactus_rope_f16(const __fp16* input, __fp16* output, size_t batch_size, size_t seq_len,
                       size_t num_heads, size_t head_dim, size_t start_pos, float theta);
-void cactus_rope_f32(const float* input, float* output, size_t batch_size, size_t seq_len,
-                      size_t num_heads, size_t head_dim, size_t start_pos, float theta);
 
 void cactus_softmax_f16(const __fp16* input, __fp16* output, size_t batch_size,
                          size_t seq_len, size_t vocab_size);
-void cactus_softmax_f32(const float* input, float* output, size_t batch_size,
-                         size_t seq_len, size_t vocab_size);
 
-void cactus_silu_f32(const float* input, float* output, size_t num_elements);
 void cactus_silu_f16(const __fp16* input, __fp16* output, size_t num_elements);
 
-void cactus_gelu_f32(const float* input, float* output, size_t num_elements);
 void cactus_gelu_f16(const __fp16* input, __fp16* output, size_t num_elements);
 
-void cactus_gelu_f32_erf(const float* input, float* output, size_t num_elements);
 void cactus_gelu_f16_erf(const __fp16* input, __fp16* output, size_t num_elements);
 
 void cactus_attention_f16(const __fp16* queries, const __fp16* keys, const __fp16* values, __fp16* output,
                           size_t batch_size, size_t seq_len, size_t kv_seq_len, size_t num_q_heads, size_t num_kv_heads,
                           size_t head_dim, float scale, const __fp16* mask, size_t position_offset = 0, size_t window_size = 0,
                           bool is_causal = true);
-
-void cactus_attention_f32(const float* queries, const float* keys, const float* values, float* output,
-                          size_t batch_size, size_t seq_len, size_t kv_seq_len, size_t num_q_heads, size_t num_kv_heads,
-                          size_t head_dim, float scale, const float* mask, size_t position_offset = 0, size_t window_size = 0,
-                          bool is_causal = true);
-
-void cactus_conv1d_causal_depthwise_f32(
-    const float* input,
-    const float* weight,
-    float* output,
-    size_t N,
-    size_t L,
-    size_t C,
-    size_t K,
-    size_t dilation);
 
 void cactus_conv1d_causal_depthwise_f16(
     const __fp16* input,
@@ -145,17 +92,6 @@ void cactus_conv1d_causal_depthwise_f16(
     size_t K,
     size_t dilation);
 
-void cactus_conv1d_f32_k3(
-    const float* input,
-    const float* weight,
-    float* output,
-    size_t N,
-    size_t L,
-    size_t C_in,
-    size_t C_out,
-    size_t stride
-);
-
 void cactus_conv1d_f16_k3(
     const __fp16* input,
     const __fp16* weight,
@@ -164,24 +100,6 @@ void cactus_conv1d_f16_k3(
     size_t L,
     size_t C_in,
     size_t C_out,
-    size_t stride
-);
-
-void cactus_conv1d_f32_k3(
-    const float* input,
-    const float* weight,
-    float* output,
-    size_t N, size_t L,
-    size_t C_in, size_t C_out,
-    size_t stride
-);
-
-void cactus_conv1d_f16_k3(
-    const __fp16* input,
-    const __fp16* weight,
-    __fp16* output,
-    size_t N, size_t L,
-    size_t C_in, size_t C_out,
     size_t stride
 );
 
@@ -197,9 +115,6 @@ void cactus_sample_f16(const __fp16* logits, uint32_t* output, size_t vocab_size
                        const float* bias_values = nullptr, const uint32_t* bias_indices = nullptr,
                        size_t bias_count = 0);
 
-void cactus_concat_f32(const float* input1, const float* input2, float* output,
-                       const size_t* shape1, const size_t* shape2, const size_t* output_shape,
-                       size_t ndims, int axis);
 void cactus_concat_f16(const __fp16* input1, const __fp16* input2, __fp16* output,
                        const size_t* shape1, const size_t* shape2, const size_t* output_shape,
                        size_t ndims, int axis);

@@ -41,9 +41,6 @@ void create_test_dir(const std::string& dir_path) {
     mkdir(dir_path.c_str(), 0755);
 }
 
-// ============================================================================
-// Constructor Tests
-// ============================================================================
 
 bool test_constructor_valid() {
     const std::string dir_path = std::string(g_index_path) + "/test_constructor_valid";
@@ -123,9 +120,6 @@ bool test_constructor_dimension_mismatch() {
     return success;
 }
 
-// ============================================================================
-// Add Document Tests
-// ============================================================================
 
 bool test_add_document() {
     const std::string dir_path = std::string(g_index_path) + "/test_add_document";
@@ -256,9 +250,6 @@ bool test_add_after_delete() {
     return success;
 }
 
-// ============================================================================
-// Get Document Tests
-// ============================================================================
 
 bool test_get_document() {
     const std::string dir_path = std::string(g_index_path) + "/test_get_document";
@@ -433,9 +424,6 @@ bool test_get_after_compact() {
     return success;
 }
 
-// ============================================================================
-// Delete Tests
-// ============================================================================
 
 bool test_delete_document() {
     const std::string dir_path = std::string(g_index_path) + "/test_delete_document";
@@ -551,9 +539,6 @@ bool test_delete_then_query() {
     return success;
 }
 
-// ============================================================================
-// Compact Tests
-// ============================================================================
 
 bool test_compact_reclaim_space() {
     const std::string dir_path = std::string(g_index_path) + "/test_compact_reclaim";
@@ -756,9 +741,6 @@ bool test_compact_large_gaps() {
     return success;
 }
 
-// ============================================================================
-// Query Tests
-// ============================================================================
 
 bool test_query_similarity() {
     const std::string dir_path = std::string(g_index_path) + "/test_query_similarity";
@@ -1193,9 +1175,6 @@ bool test_query_batch() {
     return success;
 }
 
-// ============================================================================
-// Persistence Tests
-// ============================================================================
 
 bool test_persist_after_add() {
     const std::string dir_path = std::string(g_index_path) + "/test_persist_add";
@@ -1375,9 +1354,6 @@ bool test_persist_reload_sequence() {
     return success;
 }
 
-// ============================================================================
-// Stress Tests
-// ============================================================================
 
 bool test_stress_1000_docs() {
     const std::string dir_path = std::string(g_index_path) + "/test_stress_1000";
@@ -1458,10 +1434,6 @@ bool test_stress_rapid_add_delete() {
     cleanup_test_dir(dir_path);
     return success;
 }
-
-// ============================================================================
-// Edge Case Tests
-// ============================================================================
 
 bool test_edge_add_empty() {
     const std::string dir_path = std::string(g_index_path) + "/test_edge_add_empty";
@@ -1794,9 +1766,6 @@ bool test_edge_unicode_content() {
     return success;
 }
 
-// ============================================================================
-// Benchmark Tests
-// ============================================================================
 
 void run_benchmarks(size_t embedding_dim, uint32_t num_docs) {
     std::cout << "\n╔══════════════════════════════════════════════════════════════════════════════════════╗\n"
@@ -1952,9 +1921,6 @@ void run_benchmarks(size_t embedding_dim, uint32_t num_docs) {
     cleanup_test_dir(dir_path);
 }
 
-// ============================================================================
-// Main
-// ============================================================================
 
 int main() {
     TestUtils::TestRunner runner("Index FFI Tests");

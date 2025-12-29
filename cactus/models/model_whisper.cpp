@@ -387,11 +387,10 @@ size_t WhisperModel::build_conv1d(CactusGraph* gb, size_t input)
 
     size_t conv2_transposed;
     if (buf.precision == Precision::FP16) {
-        size_t conv2_f32 = gb->precision_cast(conv2, Precision::FP32);
-        size_t conv2_T_f32 = gb->transpose(conv2_f32, ComputeBackend::CPU);
-        conv2_transposed = gb->precision_cast(conv2_T_f32, Precision::FP16);
-    } else {
         conv2_transposed = gb->transpose(conv2, ComputeBackend::CPU);
+    } else {
+        size_t conv2_f16 = gb->precision_cast(conv2, Precision::FP16);
+        conv2_transposed = gb->transpose(conv2_f16, ComputeBackend::CPU);
     }
 
     return conv2_transposed;
