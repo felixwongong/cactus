@@ -108,7 +108,7 @@ void TestRunner::run_test(const std::string& test_name, bool result) {
 }
 
 void TestRunner::log_performance(const std::string& test_name, const std::string& details) {
-    std::cout << "⚡PERF │ " << std::left << std::setw(25) << test_name << " │ " << details << "\n";
+    std::cout << "⚡PERF │ " << std::left << std::setw(38) << test_name << " │ " << details << "\n";
 }
 
 void TestRunner::log_skip(const std::string& test_name, const std::string& reason) {

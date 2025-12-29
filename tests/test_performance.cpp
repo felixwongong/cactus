@@ -2,6 +2,7 @@
 #include <chrono>
 #include <vector>
 #include <string>
+#include <sstream>
 #include <iomanip>
 #include <functional>
 #include <cstdio>
@@ -93,8 +94,11 @@ void benchmark_binary_elementwise_ops(TestUtils::TestRunner& runner, const Bench
             
             double gflops = calculate_gflops(total_elements, time_ms);
             
-            runner.log_performance(op_name + " " + std::to_string(dim) + "x" + std::to_string(dim) + " " + prec_str,
-                                 std::to_string(time_ms) + "ms, " + std::to_string(gflops) + " GFLOPS");
+            std::ostringstream details;
+            details << std::fixed << std::setprecision(3) << time_ms << "ms, "
+                    << std::setprecision(2) << gflops << " GFLOPS";
+            runner.log_performance(op_name + " " + std::to_string(dim) + "x" + std::to_string(dim),
+                                 details.str());
         }
     }
 }
@@ -102,40 +106,42 @@ void benchmark_binary_elementwise_ops(TestUtils::TestRunner& runner, const Bench
 template<typename T>
 void benchmark_scalar_ops(TestUtils::TestRunner& runner, const BenchmarkConfig& config) {
     const std::vector<std::pair<std::string, std::function<size_t(CactusGraph&, size_t)>>> ops = {
-        {"ScalarAdd", [](CactusGraph& b, size_t a) { return b.scalar_add(a, 2.5f); }},
-        {"ScalarSubtract", [](CactusGraph& b, size_t a) { return b.scalar_subtract(a, 2.5f); }},
-        {"ScalarMultiply", [](CactusGraph& b, size_t a) { return b.scalar_multiply(a, 2.5f); }},
-        {"ScalarDivide", [](CactusGraph& b, size_t a) { return b.scalar_divide(a, 2.5f); }},
-        {"ScalarExp", [](CactusGraph& b, size_t a) { return b.scalar_exp(a); }},
-        {"ScalarSqrt", [](CactusGraph& b, size_t a) { return b.scalar_sqrt(a); }},
-        {"ScalarCos", [](CactusGraph& b, size_t a) { return b.scalar_cos(a); }},
-        {"ScalarSin", [](CactusGraph& b, size_t a) { return b.scalar_sin(a); }}
+        {"Scalar Add", [](CactusGraph& b, size_t a) { return b.scalar_add(a, 2.5f); }},
+        {"Scalar Sub", [](CactusGraph& b, size_t a) { return b.scalar_subtract(a, 2.5f); }},
+        {"Scalar Mul", [](CactusGraph& b, size_t a) { return b.scalar_multiply(a, 2.5f); }},
+        {"Scalar Div", [](CactusGraph& b, size_t a) { return b.scalar_divide(a, 2.5f); }},
+        {"Scalar Exp", [](CactusGraph& b, size_t a) { return b.scalar_exp(a); }},
+        {"Scalar Sqrt", [](CactusGraph& b, size_t a) { return b.scalar_sqrt(a); }},
+        {"Scalar Cos", [](CactusGraph& b, size_t a) { return b.scalar_cos(a); }},
+        {"Scalar Sin", [](CactusGraph& b, size_t a) { return b.scalar_sin(a); }}
     };
 
     Precision precision = TestUtils::default_precision<T>();
-    std::string prec_str = precision_to_string(precision);
-    
+
     for (const auto& [op_name, op_func] : ops) {
         for (size_t dim : config.dimensions) {
             size_t total_elements = dim * dim;
-            
+
             TestUtils::TestFixture<T> fixture(op_name);
             size_t input_a = fixture.create_input({dim, dim}, precision);
-            
+
             std::vector<T> data_a(total_elements);
             setup_random_data(data_a);
             fixture.set_input_data(input_a, data_a, precision);
-            
+
             op_func(fixture.graph(), input_a);
 
             double time_ms = time_operation<T>([&]() {
                 fixture.execute();
             }, config.iterations);
-            
+
             double gflops = calculate_gflops(total_elements, time_ms);
-            
-            runner.log_performance(op_name + " " + std::to_string(dim) + "x" + std::to_string(dim) + " " + prec_str,
-                                 std::to_string(time_ms) + "ms, " + std::to_string(gflops) + " GFLOPS");
+
+            std::ostringstream details;
+            details << std::fixed << std::setprecision(3) << time_ms << "ms, "
+                    << std::setprecision(2) << gflops << " GFLOPS";
+            runner.log_performance(op_name + " " + std::to_string(dim) + "x" + std::to_string(dim),
+                                 details.str());
         }
     }
 }
@@ -143,7 +149,6 @@ void benchmark_scalar_ops(TestUtils::TestRunner& runner, const BenchmarkConfig& 
 template<typename T>
 void benchmark_matmul_ops(TestUtils::TestRunner& runner, const BenchmarkConfig& config) {
     Precision precision = TestUtils::default_precision<T>();
-    std::string prec_str = precision_to_string(precision);
 
     for (ComputeBackend backend : config.backends) {
         std::string backend_str = backend_to_string(backend);
@@ -169,10 +174,13 @@ void benchmark_matmul_ops(TestUtils::TestRunner& runner, const BenchmarkConfig& 
 
                 double gflops = calculate_gflops(2ULL * dim * dim * dim, time_ms);
 
-                runner.log_performance("MatMul " + std::to_string(dim) + "x" + std::to_string(dim) + "x" + std::to_string(dim) + " " + backend_str + " " + prec_str,
-                                     std::to_string(time_ms) + "ms, " + std::to_string(gflops) + " GFLOPS");
+                std::ostringstream details;
+                details << std::fixed << std::setprecision(3) << time_ms << "ms, "
+                        << std::setprecision(2) << gflops << " GFLOPS";
+                runner.log_performance("MatMul " + std::to_string(dim) + "³ " + backend_str,
+                                     details.str());
             } catch (const std::exception& e) {
-                runner.log_performance("MatMul " + std::to_string(dim) + "x" + std::to_string(dim) + "x" + std::to_string(dim) + " " + backend_str + " " + prec_str,
+                runner.log_performance("MatMul " + std::to_string(dim) + "³ " + backend_str,
                                      "SKIP: " + std::string(e.what()));
             }
         }
@@ -183,7 +191,7 @@ void benchmark_matmul_int8_grouped(TestUtils::TestRunner& runner, const Benchmar
     const size_t group_size = 32;
 
     std::vector<std::tuple<size_t, size_t, size_t>> shapes = {
-        {1, 1024, 1024}, 
+        {1, 1024, 1024},
         {1024, 1024, 1024},
     };
 
@@ -215,10 +223,12 @@ void benchmark_matmul_int8_grouped(TestUtils::TestRunner& runner, const Benchmar
 
         double gflops = calculate_gflops(2ULL * M * K_aligned * N, time_ms);
 
+        std::ostringstream details;
+        details << std::fixed << std::setprecision(3) << time_ms << "ms, "
+                << std::setprecision(2) << gflops << " GFLOPS";
         runner.log_performance(
-            "MatMul Grouped INT8 " + std::to_string(M) + "x" + std::to_string(K_aligned) + "x" + std::to_string(N),
-            std::to_string(time_ms) + "ms, " + std::to_string(gflops) + " GFLOPS"
-        );
+            "MatMul INT8 " + std::to_string(M) + "x" + std::to_string(K_aligned) + "x" + std::to_string(N),
+            details.str());
     }
 }
 
@@ -227,31 +237,33 @@ void benchmark_unary_ops(TestUtils::TestRunner& runner, const BenchmarkConfig& c
     const std::vector<std::pair<std::string, std::function<size_t(CactusGraph&, size_t)>>> ops = {
         {"Transpose", [](CactusGraph& b, size_t a) { return b.transpose(a); }}
     };
-    
+
     Precision precision = TestUtils::default_precision<T>();
-    std::string prec_str = precision_to_string(precision);
-    
+
     for (const auto& [op_name, op_func] : ops) {
         for (size_t dim : config.dimensions) {
             size_t total_elements = dim * dim;
-            
+
             TestUtils::TestFixture<T> fixture(op_name);
             size_t input_a = fixture.create_input({dim, dim}, precision);
-            
+
             std::vector<T> data_a(total_elements);
             setup_random_data(data_a);
             fixture.set_input_data(input_a, data_a, precision);
-            
+
             op_func(fixture.graph(), input_a);
 
             double time_ms = time_operation<T>([&]() {
                 fixture.execute();
             }, config.iterations);
-            
+
             double gb_per_sec = (total_elements * PrecisionTraits::size_of(precision) * 2) / (time_ms * 1e6);
-            
-            runner.log_performance(op_name + " " + std::to_string(dim) + "x" + std::to_string(dim) + " " + prec_str,
-                                 std::to_string(time_ms) + "ms, " + std::to_string(gb_per_sec) + " GB/s");
+
+            std::ostringstream details;
+            details << std::fixed << std::setprecision(3) << time_ms << "ms, "
+                    << std::setprecision(2) << gb_per_sec << " GB/s";
+            runner.log_performance(op_name + " " + std::to_string(dim) + "x" + std::to_string(dim),
+                                 details.str());
         }
     }
 }
@@ -265,31 +277,33 @@ void benchmark_reduction_ops(TestUtils::TestRunner& runner, const BenchmarkConfi
         {"Min", [](CactusGraph& b, size_t a) { return b.min(a, -1); }},
         {"Max", [](CactusGraph& b, size_t a) { return b.max(a, -1); }}
     };
-    
+
     Precision precision = TestUtils::default_precision<T>();
-    std::string prec_str = precision_to_string(precision);
-    
+
     for (const auto& [op_name, op_func] : ops) {
         for (size_t dim : config.dimensions) {
             size_t total_elements = dim * dim;
-            
+
             TestUtils::TestFixture<T> fixture(op_name);
             size_t input_a = fixture.create_input({dim, dim}, precision);
-            
+
             std::vector<T> data_a(total_elements);
             setup_random_data(data_a);
             fixture.set_input_data(input_a, data_a, precision);
-            
+
             op_func(fixture.graph(), input_a);
 
             double time_ms = time_operation<T>([&]() {
                 fixture.execute();
             }, config.iterations);
-            
+
             double gb_per_sec = (total_elements * PrecisionTraits::size_of(precision)) / (time_ms * 1e6);
-            
-            runner.log_performance(op_name + " " + std::to_string(dim) + "x" + std::to_string(dim) + " " + prec_str,
-                                 std::to_string(time_ms) + "ms, " + std::to_string(gb_per_sec) + " GB/s");
+
+            std::ostringstream details;
+            details << std::fixed << std::setprecision(3) << time_ms << "ms, "
+                    << std::setprecision(2) << gb_per_sec << " GB/s";
+            runner.log_performance(op_name + " " + std::to_string(dim) + "x" + std::to_string(dim),
+                                 details.str());
         }
     }
 }
@@ -297,35 +311,36 @@ void benchmark_reduction_ops(TestUtils::TestRunner& runner, const BenchmarkConfi
 template<typename T>
 void benchmark_advanced_ops(TestUtils::TestRunner& runner, const BenchmarkConfig& config) {
     Precision precision = TestUtils::default_precision<T>();
-    std::string prec_str = precision_to_string(precision);
-    
+
     for (size_t dim : config.dimensions) {
         size_t total_elements = dim * dim;
-        
+
         TestUtils::TestFixture<T> fixture("Softmax");
         size_t input_a = fixture.create_input({dim, dim}, precision);
-        
+
         std::vector<T> data_a(total_elements);
         setup_random_data(data_a);
         fixture.set_input_data(input_a, data_a, precision);
-        
+
         fixture.graph().softmax(input_a, -1);
 
         double time_ms = time_operation<T>([&]() {
             fixture.execute();
         }, config.iterations);
-        
+
         double gb_per_sec = (total_elements * PrecisionTraits::size_of(precision)) / (time_ms * 1e6);
-        
-        runner.log_performance("Softmax " + std::to_string(dim) + "x" + std::to_string(dim) + " " + prec_str,
-                             std::to_string(time_ms) + "ms, " + std::to_string(gb_per_sec) + " GB/s");
+
+        std::ostringstream details;
+        details << std::fixed << std::setprecision(3) << time_ms << "ms, "
+                << std::setprecision(2) << gb_per_sec << " GB/s";
+        runner.log_performance("Softmax " + std::to_string(dim) + "x" + std::to_string(dim),
+                             details.str());
     }
 }
 
 template<typename T>
 void benchmark_rms_norm(TestUtils::TestRunner& runner, const BenchmarkConfig& config) {
     Precision precision = Precision::FP16;
-    std::string prec_str = "FP16";
 
     for (size_t dim : config.dimensions) {
         size_t total_elements = dim * dim;
@@ -349,10 +364,13 @@ void benchmark_rms_norm(TestUtils::TestRunner& runner, const BenchmarkConfig& co
             graph.execute();
         }, config.iterations);
 
-        double gb_per_sec = (total_elements * 2) / (time_ms * 1e6);  // FP16 = 2 bytes
+        double gb_per_sec = (total_elements * 2) / (time_ms * 1e6);
 
-        runner.log_performance("RMSNorm " + std::to_string(dim) + "x" + std::to_string(dim) + " " + prec_str,
-                             std::to_string(time_ms) + "ms, " + std::to_string(gb_per_sec) + " GB/s");
+        std::ostringstream details;
+        details << std::fixed << std::setprecision(3) << time_ms << "ms, "
+                << std::setprecision(2) << gb_per_sec << " GB/s";
+        runner.log_performance("RMSNorm " + std::to_string(dim) + "x" + std::to_string(dim),
+                             details.str());
         
         graph.hard_reset();
     }
@@ -361,7 +379,6 @@ void benchmark_rms_norm(TestUtils::TestRunner& runner, const BenchmarkConfig& co
 template<typename T>
 void benchmark_rope(TestUtils::TestRunner& runner, const BenchmarkConfig& config) {
     Precision precision = Precision::FP16;
-    std::string prec_str = "FP16";
 
     for (size_t dim : config.dimensions) {
         size_t batch_size = 1;
@@ -387,49 +404,54 @@ void benchmark_rope(TestUtils::TestRunner& runner, const BenchmarkConfig& config
 
         double gb_per_sec = (total_elements * 2 * 2) / (time_ms * 1e6);
 
-        runner.log_performance("RoPE " + std::to_string(seq_len) + "x" + std::to_string(num_heads) + "x" + std::to_string(head_dim) + " " + prec_str,
-                             std::to_string(time_ms) + "ms, " + std::to_string(gb_per_sec) + " GB/s");
+        std::ostringstream details;
+        details << std::fixed << std::setprecision(3) << time_ms << "ms, "
+                << std::setprecision(2) << gb_per_sec << " GB/s";
+        runner.log_performance("RoPE " + std::to_string(seq_len) + "x" + std::to_string(num_heads) + "x" + std::to_string(head_dim),
+                             details.str());
     }
 }
 
 template<typename T>
 void benchmark_attention(TestUtils::TestRunner& runner, const BenchmarkConfig& config) {
     Precision precision = TestUtils::default_precision<T>();
-    std::string prec_str = precision_to_string(precision);
-    
+
     for (size_t dim : config.dimensions) {
         size_t batch_size = 1;
-        size_t seq_len = 1024; 
+        size_t seq_len = 1024;
         size_t num_heads = 16;
         size_t head_dim = dim / 16;
         size_t total_elements = batch_size * seq_len * num_heads * head_dim;
-        
+
         CactusGraph graph;
         size_t query = graph.input({batch_size, seq_len, num_heads, head_dim}, precision);
         size_t key = graph.input({batch_size, seq_len, num_heads, head_dim}, precision);
         size_t value = graph.input({batch_size, seq_len, num_heads, head_dim}, precision);
-        
+
         std::vector<T> q_data(total_elements), k_data(total_elements), v_data(total_elements);
         setup_random_data(q_data);
         setup_random_data(k_data);
         setup_random_data(v_data);
-        
+
         graph.set_input(query, const_cast<void*>(static_cast<const void*>(q_data.data())), precision);
         graph.set_input(key, const_cast<void*>(static_cast<const void*>(k_data.data())), precision);
         graph.set_input(value, const_cast<void*>(static_cast<const void*>(v_data.data())), precision);
-        
+
         float scale = 1.0f / sqrtf(static_cast<float>(head_dim));
         graph.attention(query, key, value, scale);
-        
+
         double time_ms = time_operation<T>([&]() {
             graph.execute();
         }, config.iterations);
-        
+
         double gflops = calculate_gflops(2ULL * batch_size * num_heads * seq_len * seq_len * head_dim, time_ms);
-        
-        runner.log_performance("Attention " + std::to_string(seq_len) + "x" + std::to_string(num_heads) + "x" + std::to_string(head_dim) + " " + prec_str,
-                             std::to_string(time_ms) + "ms, " + std::to_string(gflops) + " GFLOPS");
-        
+
+        std::ostringstream details;
+        details << std::fixed << std::setprecision(3) << time_ms << "ms, "
+                << std::setprecision(2) << gflops << " GFLOPS";
+        runner.log_performance("Attention " + std::to_string(seq_len) + "x" + std::to_string(num_heads) + "x" + std::to_string(head_dim),
+                             details.str());
+
         graph.hard_reset();
     }
 }
@@ -440,47 +462,49 @@ void benchmark_embedding_ops(TestUtils::TestRunner& runner, BenchmarkConfig& con
     std::vector<size_t> vocab_sizes = {65000};
     std::vector<size_t> embedding_dims = {1024};
     std::vector<size_t> sequence_lengths = {1000};
-    
+
     std::string precision_str = precision_to_string(TestUtils::default_precision<T>());
-    
+
     for (size_t vocab_size : vocab_sizes) {
         for (size_t embedding_dim : embedding_dims) {
             for (size_t seq_len : sequence_lengths) {
                 CactusGraph graph;
-                
+
                 std::vector<T> embeddings_data(vocab_size * embedding_dim);
                 setup_random_data(embeddings_data);
-                
+
                 std::random_device rd;
                 std::mt19937 gen(rd());
                 std::uniform_int_distribution<int> dis(0, vocab_size - 1);
-                
+
                 std::vector<int8_t> indices_data(seq_len);
                 for (auto& idx : indices_data) {
                     int val = dis(gen);
                     idx = static_cast<int8_t>(std::min(val, 127));
                 }
-                
+
                 Precision precision = TestUtils::default_precision<T>();
-                
+
                 size_t embeddings_id = graph.input({vocab_size, embedding_dim}, precision);
                 size_t indices_id = graph.input({seq_len}, Precision::INT8);
                 graph.embedding(embeddings_id, indices_id);
 
                 graph.set_input(embeddings_id, embeddings_data.data(), precision);
                 graph.set_input(indices_id, indices_data.data(), Precision::INT8);
-                
+
                 double time_ms = time_operation<T>([&]() {
                     graph.execute();
                 }, config.iterations);
-                
+
                 double throughput = (seq_len * embedding_dim * sizeof(T)) / (time_ms * 1e3);
-                
+
+                std::ostringstream details;
+                details << std::fixed << std::setprecision(3) << time_ms << "ms, "
+                        << std::setprecision(2) << throughput << " GB/s";
                 runner.log_performance(
-                    "Embedding " + std::to_string(vocab_size) + " vocab x" + 
-                    std::to_string(embedding_dim) + " dim, seq=" + std::to_string(seq_len) + " " + precision_str,
-                    std::to_string(time_ms) + "ms, " + std::to_string(throughput) + " GB/s"
-                );
+                    "Embedding " + std::to_string(vocab_size/1000) + "k vocab x" +
+                    std::to_string(embedding_dim) + " dim " + precision_str,
+                    details.str());
             }
         }
     }
@@ -490,7 +514,7 @@ void benchmark_mmap_embedding(TestUtils::TestRunner& runner, BenchmarkConfig& co
     std::vector<size_t> vocab_sizes = {100};
     std::vector<size_t> embedding_dims = {64};
     std::vector<size_t> sequence_lengths = {32};
-    
+
     for (size_t vocab_size : vocab_sizes) {
         for (size_t embedding_dim : embedding_dims) {
             for (size_t seq_len : sequence_lengths) {
@@ -503,7 +527,7 @@ void benchmark_mmap_embedding(TestUtils::TestRunner& runner, BenchmarkConfig& co
 
                 size_t temp_embeddings = graph.input({vocab_size, embedding_dim}, Precision::FP16);
                 graph.set_input(temp_embeddings, embeddings_data.data(), Precision::FP16);
-                
+
                 std::filesystem::path tmpdir;
                 try {
                     tmpdir = std::filesystem::temp_directory_path();
@@ -513,20 +537,20 @@ void benchmark_mmap_embedding(TestUtils::TestRunner& runner, BenchmarkConfig& co
                 std::filesystem::path tmpfile = tmpdir / (std::string("perf_embeddings_") +
                     std::to_string(vocab_size) + "_" + std::to_string(embedding_dim) + ".bin");
                 const std::string temp_file = tmpfile.string();
-                
+
                 GraphFile::save_node(graph, temp_embeddings, temp_file);
                 graph.hard_reset();
-                
+
                 std::random_device rd;
                 std::mt19937 gen(rd());
                 std::uniform_int_distribution<int> dis(0, vocab_size - 1);
-                
+
                 std::vector<int8_t> indices_data(seq_len);
                 for (auto& idx : indices_data) {
                     int val = dis(gen);
                     idx = static_cast<int8_t>(std::min(val, 127));
                 }
-                
+
                 size_t indices_id = graph.input({seq_len}, Precision::INT8);
                 graph.embedding(temp_file, indices_id);
 
@@ -538,12 +562,14 @@ void benchmark_mmap_embedding(TestUtils::TestRunner& runner, BenchmarkConfig& co
 
                 double throughput = (seq_len * embedding_dim * sizeof(__fp16)) / (time_ms * 1e3);
 
+                std::ostringstream details;
+                details << std::fixed << std::setprecision(3) << time_ms << "ms, "
+                        << std::setprecision(2) << throughput << " GB/s";
                 runner.log_performance(
                     "MMap Embedding " + std::to_string(vocab_size) + " vocab x" +
-                    std::to_string(embedding_dim) + " dim, seq=" + std::to_string(seq_len) + " FP16",
-                    std::to_string(time_ms) + "ms, " + std::to_string(throughput) + " GB/s"
-                );
-                
+                    std::to_string(embedding_dim) + " dim",
+                    details.str());
+
                 std::error_code ec;
                 std::filesystem::remove(tmpfile, ec);
             }
@@ -554,93 +580,97 @@ void benchmark_mmap_embedding(TestUtils::TestRunner& runner, BenchmarkConfig& co
 template<typename T>
 void benchmark_gather_ops(TestUtils::TestRunner& runner, BenchmarkConfig& config) {
     std::string precision_str = precision_to_string(TestUtils::default_precision<T>());
-    
+
     {
         std::vector<size_t> tensor_sizes = {127};
         std::vector<size_t> index_counts = {132};
-        
+
         for (size_t tensor_size : tensor_sizes) {
             for (size_t index_count : index_counts) {
                 CactusGraph graph;
-                
+
                 std::vector<T> tensor_data(tensor_size);
                 setup_random_data(tensor_data);
-                
+
                 std::random_device rd;
                 std::mt19937 gen(rd());
                 std::uniform_int_distribution<int> dis(0, tensor_size - 1);
-                
+
                 std::vector<int8_t> indices_data(index_count);
                 for (auto& idx : indices_data) {
                     int val = dis(gen);
                     idx = static_cast<int8_t>(std::min(val, 127));
                 }
-                
+
                 Precision precision = TestUtils::default_precision<T>();
-                
+
                 size_t tensor_id = graph.input({tensor_size}, precision);
                 size_t indices_id = graph.input({index_count}, Precision::INT8);
                 graph.gather(tensor_id, indices_id);
 
                 graph.set_input(tensor_id, tensor_data.data(), precision);
                 graph.set_input(indices_id, indices_data.data(), Precision::INT8);
-                
+
                 double time_ms = time_operation<T>([&]() {
                     graph.execute();
                 }, config.iterations);
-                
+
                 double throughput = (index_count * sizeof(T)) / (time_ms * 1e3);
-                
+
+                std::ostringstream details;
+                details << std::fixed << std::setprecision(3) << time_ms << "ms, "
+                        << std::setprecision(2) << throughput << " GB/s";
                 runner.log_performance(
-                    "Gather 1D " + std::to_string(tensor_size) + " → " + std::to_string(index_count) + " " + precision_str,
-                    std::to_string(time_ms) + "ms, " + std::to_string(throughput) + " GB/s"
-                );
+                    "Gather 1D " + std::to_string(tensor_size) + "→" + std::to_string(index_count) + " " + precision_str,
+                    details.str());
             }
         }
     }
-    
+
     {
         std::vector<std::vector<size_t>> tensor_shapes = {{64, 16, 8}};
         std::vector<size_t> index_counts = {12};
-        
+
         for (const auto& shape : tensor_shapes) {
             for (size_t index_count : index_counts) {
                 CactusGraph graph;
-                
+
                 size_t total_elements = shape[0] * shape[1] * shape[2];
                 std::vector<T> tensor_data(total_elements);
                 setup_random_data(tensor_data);
-                
+
                 std::random_device rd;
                 std::mt19937 gen(rd());
                 std::uniform_int_distribution<int> dis(0, shape[0] - 1);
-                
+
                 std::vector<int8_t> indices_data(index_count);
                 for (auto& idx : indices_data) {
                     int val = dis(gen);
                     idx = static_cast<int8_t>(std::min(val, 127));
                 }
-                
+
                 Precision precision = TestUtils::default_precision<T>();
-                
+
                 size_t tensor_id = graph.input(shape, precision);
                 size_t indices_id = graph.input({index_count}, Precision::INT8);
                 graph.gather(tensor_id, indices_id);
 
                 graph.set_input(tensor_id, tensor_data.data(), precision);
                 graph.set_input(indices_id, indices_data.data(), Precision::INT8);
-                
+
                 double time_ms = time_operation<T>([&]() {
                     graph.execute();
                 }, config.iterations);
-                
+
                 double throughput = (index_count * shape[1] * shape[2] * sizeof(T)) / (time_ms * 1e3);
-                
+
+                std::ostringstream details;
+                details << std::fixed << std::setprecision(3) << time_ms << "ms, "
+                        << std::setprecision(2) << throughput << " GB/s";
                 runner.log_performance(
-                    "Gather 3D " + std::to_string(shape[0]) + "x" + std::to_string(shape[1]) + "x" + std::to_string(shape[2]) + 
-                    " → " + std::to_string(index_count) + " " + precision_str,
-                    std::to_string(time_ms) + "ms, " + std::to_string(throughput) + " GB/s"
-                );
+                    "Gather 3D " + std::to_string(shape[0]) + "x" + std::to_string(shape[1]) + "x" + std::to_string(shape[2]) +
+                    "→" + std::to_string(index_count) + " " + precision_str,
+                    details.str());
             }
         }
     }
@@ -659,10 +689,11 @@ void benchmark_mel_filter_bank(TestUtils::TestRunner& runner, const BenchmarkCon
         audio_proc.init_mel_filters(num_frequency_bins, feature_size, 0.0f, 8000.0f, sampling_rate);
     }, config.iterations);
 
+    std::ostringstream details;
+    details << std::fixed << std::setprecision(3) << time_ms << "ms";
     runner.log_performance(
-        "Mel Filter Bank " + std::to_string(feature_size) + " x " + std::to_string(num_frequency_bins),
-        std::to_string(time_ms) + "ms"
-    );
+        "Mel Filter Bank " + std::to_string(feature_size) + "x" + std::to_string(num_frequency_bins),
+        details.str());
 }
 
 void benchmark_spectrogram(TestUtils::TestRunner& runner, const BenchmarkConfig& config) {
@@ -706,12 +737,13 @@ void benchmark_spectrogram(TestUtils::TestRunner& runner, const BenchmarkConfig&
     size_t bytes_processed = (n_samples * sizeof(float)) + (feature_size * num_frames * sizeof(float));
     double gb_per_sec = bytes_processed / (time_ms * 1e6);
 
+    std::ostringstream details;
+    details << std::fixed << std::setprecision(3) << time_ms << "ms, "
+            << std::setprecision(1) << real_time_factor << "x RT, "
+            << std::setprecision(2) << gb_per_sec << " GB/s";
     runner.log_performance(
-        "Spectrogram " + std::to_string(chunk_length) + "s audio (" +
-        std::to_string(num_frames) + " frames, " + std::to_string(feature_size) + " mel bins)",
-        std::to_string(time_ms) + "ms, " + std::to_string(real_time_factor) + "x real-time, " +
-        std::to_string(gb_per_sec) + " GB/s"
-    );
+        "Spectrogram " + std::to_string(chunk_length) + "s (" + std::to_string(num_frames) + " frames)",
+        details.str());
 }
 
 bool test_binary_elementwise_performance(TestUtils::TestRunner& runner) {

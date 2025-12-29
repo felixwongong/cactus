@@ -407,41 +407,32 @@ void compute_fused_node(GraphNode& node, const std::vector<std::unique_ptr<Graph
         case OpType::BILINEAR_INTERPOLATION: {
             const auto& pos_embeds_buffer = nodes[node_index_map.at(node.input_ids[0])]->output_buffer;
 
-            int total_pos_embeds = static_cast<int>(pos_embeds_buffer.shape[0]);
-            int embed_dim = static_cast<int>(pos_embeds_buffer.shape[1]);
+            size_t total_pos_embeds = pos_embeds_buffer.shape[0];
+            size_t embed_dim = pos_embeds_buffer.shape[1];
 
-            int src_height = static_cast<int>(std::sqrt(total_pos_embeds));
-            int src_width = src_height;
+            size_t src_height = static_cast<size_t>(std::sqrt(total_pos_embeds));
+            size_t src_width = src_height;
 
-            int dst_height = static_cast<int>(node.params.dst_height);
-            int dst_width = static_cast<int>(node.params.dst_width);
+            size_t dst_height = node.params.dst_height;
+            size_t dst_width = node.params.dst_width;
 
-            std::vector<float> pos_embed_fp32(total_pos_embeds * embed_dim);
+            __fp16* output = node.output_buffer.data_as<__fp16>();
 
-            if (pos_embeds_buffer.precision == Precision::INT8) {
-                const int8_t* pos_embeds_data = pos_embeds_buffer.data_as<int8_t>();
-                for (int i = 0; i < total_pos_embeds * embed_dim; ++i) {
-                    pos_embed_fp32[i] = static_cast<float>(pos_embeds_data[i]);
-                }
+            if (pos_embeds_buffer.precision == Precision::FP16) {
+                const __fp16* input = pos_embeds_buffer.data_as<__fp16>();
+                cactus_bilinear_interpolation_f16(input, output, src_height, src_width, embed_dim,
+                                                  dst_height, dst_width);
             }
-            else if (pos_embeds_buffer.precision == Precision::FP16) {
-                const __fp16* pos_embed_fp16 = pos_embeds_buffer.data_as<__fp16>();
-                for (int i = 0; i < total_pos_embeds * embed_dim; ++i) {
-                    pos_embed_fp32[i] = static_cast<float>(pos_embed_fp16[i]);
-                }
+            else if (pos_embeds_buffer.precision == Precision::INT8) {
+                std::vector<__fp16> input_fp16(total_pos_embeds * embed_dim);
+                cactus_int8_to_fp16(pos_embeds_buffer.data_as<int8_t>(), input_fp16.data(),
+                                    total_pos_embeds * embed_dim);
+                cactus_bilinear_interpolation_f16(input_fp16.data(), output, src_height, src_width, embed_dim,
+                                                  dst_height, dst_width);
             }
             else {
                 throw std::runtime_error("BILINEAR_INTERPOLATION only supports INT8 and FP16 input precision");
             }
-
-            size_t output_size = dst_height * dst_width * embed_dim;
-            std::vector<float> output_fp32(output_size);
-            cactus_bilinear_interpolation_fp32(pos_embed_fp32.data(), output_fp32.data(),
-                                              src_height, src_width, embed_dim,
-                                              dst_height, dst_width);
-
-            __fp16* output = node.output_buffer.data_as<__fp16>();
-            cactus_fp32_to_fp16(output_fp32.data(), output, output_size);
             break;
         }
         case OpType::RMS_NORM: {

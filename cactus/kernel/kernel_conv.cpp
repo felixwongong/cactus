@@ -242,22 +242,21 @@ void cactus_conv1d_f16_k3(
     }
 }
 
-void cactus_bilinear_interpolation_fp32(const float* input, float* output, size_t src_height, size_t src_width, size_t embed_dim,
-                                        size_t dst_height, size_t dst_width)
+void cactus_bilinear_interpolation_f16(const __fp16* input, __fp16* output, size_t src_height, size_t src_width, size_t embed_dim,
+                                       size_t dst_height, size_t dst_width)
 {
-            
-    float scale_h = (src_height > 1 && dst_height > 1) 
+    float scale_h = (src_height > 1 && dst_height > 1)
                     ? static_cast<float>(src_height - 1) / static_cast<float>(dst_height - 1)
                     : 0.0f;
     float scale_w = (src_width > 1 && dst_width > 1)
                     ? static_cast<float>(src_width - 1) / static_cast<float>(dst_width - 1)
-                            : 0.0f;
-            
+                    : 0.0f;
+
     for (size_t dst_y = 0; dst_y < dst_height; ++dst_y) {
         for (size_t dst_x = 0; dst_x < dst_width; ++dst_x) {
             float src_y_float = dst_y * scale_h;
             float src_x_float = dst_x * scale_w;
-            
+
             int y0 = static_cast<int>(std::floor(src_y_float));
             int x0 = static_cast<int>(std::floor(src_x_float));
 
@@ -266,25 +265,26 @@ void cactus_bilinear_interpolation_fp32(const float* input, float* output, size_
 
             float dy = src_y_float - y0;
             float dx = src_x_float - x0;
-            
+
             float w00 = (1.0f - dx) * (1.0f - dy);
             float w01 = dx * (1.0f - dy);
             float w10 = (1.0f - dx) * dy;
             float w11 = dx * dy;
-            
+
             size_t idx00 = (y0 * static_cast<int>(src_width) + x0) * static_cast<int>(embed_dim);
             size_t idx01 = (y0 * static_cast<int>(src_width) + x1) * static_cast<int>(embed_dim);
             size_t idx10 = (y1 * static_cast<int>(src_width) + x0) * static_cast<int>(embed_dim);
             size_t idx11 = (y1 * static_cast<int>(src_width) + x1) * static_cast<int>(embed_dim);
 
             size_t out_idx = (dst_y * dst_width + dst_x) * embed_dim;
-            
+
             for (size_t d = 0; d < embed_dim; ++d) {
-                output[out_idx + d] = 
-                    input[idx00 + d] * w00 +
-                    input[idx01 + d] * w01 +
-                    input[idx10 + d] * w10 +
-                    input[idx11 + d] * w11;
+                float result =
+                    static_cast<float>(input[idx00 + d]) * w00 +
+                    static_cast<float>(input[idx01 + d]) * w01 +
+                    static_cast<float>(input[idx10 + d]) * w10 +
+                    static_cast<float>(input[idx11 + d]) * w11;
+                output[out_idx + d] = static_cast<__fp16>(result);
             }
         }
     }

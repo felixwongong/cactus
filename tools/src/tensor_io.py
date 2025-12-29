@@ -12,7 +12,7 @@ except ImportError:
 GROUP_SIZE = 32 
 
 
-def save_tensor_with_header(tensor, output_path, precision='FP32', transpose=False, stats_tracker=None, args=None, model_type=None):
+def save_tensor_with_header(tensor, output_path, precision='FP16', transpose=False, stats_tracker=None, args=None, model_type=None):
     """Save a tensor to binary format with header metadata and group-wise INT8 quantization."""
     if torch is not None and isinstance(tensor, torch.Tensor):
         data = tensor.detach().cpu().numpy()
@@ -134,10 +134,7 @@ def save_tensor_with_header(tensor, output_path, precision='FP32', transpose=Fal
 
         return
 
-    if precision == 'FP16':
-        data = data.astype(np.float16)
-    else:
-        data = data.astype(np.float32)
+    data = data.astype(np.float16)
 
     if stats_tracker:
         stats_tracker['total_tensors'] += 1
@@ -151,11 +148,9 @@ def save_tensor_with_header(tensor, output_path, precision='FP32', transpose=Fal
         for dim in shape:
             f.write(struct.pack('<Q', dim))
 
-        prec_val = 1 if precision == 'FP16' else 2
-        f.write(struct.pack('<I', prec_val))
+        f.write(struct.pack('<I', 1))  # FP16 precision
 
-        element_size = 2 if precision == 'FP16' else 4
-        byte_size = data_flat.size * element_size
+        byte_size = data_flat.size * 2  # FP16 = 2 bytes
         f.write(struct.pack('<Q', byte_size))
 
         f.write(data_flat.tobytes())
