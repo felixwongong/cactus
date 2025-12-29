@@ -205,11 +205,10 @@ bool test_persistence() {
     f.del(5);
     f.compact();
 
-    // Reopen and verify data survives
     if (!f.reopen()) return false;
 
     if (f.get(0).second != "doc0") return false;
-    if (f.get(5).first == 0) return false;  // Was deleted
+    if (f.get(5).first == 0) return false; 
     if (f.get(9).second != "doc9") return false;
 
     return true;
@@ -235,7 +234,6 @@ bool test_errors() {
     return true;
 }
 
-// Test unicode content
 bool test_unicode() {
     IndexFixture f("test_unicode");
     if (!f.init()) return false;
@@ -245,13 +243,11 @@ bool test_unicode() {
 }
 
 bool test_constructor() {
-    // Valid construction
     {
         IndexFixture f("test_ctor_valid");
         if (!f.init()) return false;
     }
 
-    // Dimension mismatch on reopen
     {
         IndexFixture f("test_ctor_dim");
         if (!f.init()) return false;
@@ -259,8 +255,13 @@ bool test_constructor() {
         f.keep_files();
     }
     {
-        IndexFixture f("test_ctor_dim", 256, false);  // Wrong dim, don't clear existing files
-        if (f.init() != nullptr) return false;  // Should fail
+        IndexFixture f("test_ctor_dim", 256, false);  
+        bool failed = (f.init() == nullptr);  
+        std::string dir = f.path();
+        unlink((dir + "/index.bin").c_str());
+        unlink((dir + "/data.bin").c_str());
+        rmdir(dir.c_str());
+        if (!failed) return false;
     }
 
     return true;
