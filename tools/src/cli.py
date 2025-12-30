@@ -318,11 +318,16 @@ def cmd_run(args):
         if build_result != 0:
             return build_result
 
-    download_result = cmd_download(args)
-    if download_result != 0:
-        return download_result
+    local_path = Path(model_id)
+    if local_path.exists() and (local_path / "config.txt").exists():
+        weights_dir = local_path
+        print_color(GREEN, f"Using local model: {weights_dir}")
+    else:
+        download_result = cmd_download(args)
+        if download_result != 0:
+            return download_result
+        weights_dir = get_weights_dir(model_id)
 
-    weights_dir = get_weights_dir(model_id)
     chat_binary = PROJECT_ROOT / "tests" / "build" / "chat"
 
     if not chat_binary.exists():
@@ -526,15 +531,75 @@ def cmd_clean(args):
     return 0
 
 
+def merge_lora_adapter(base_model_id, lora_path, cache_dir=None, token=None):
+    """Merge a LoRA adapter into a base model and return the merged model."""
+    try:
+        from peft import PeftModel
+    except ImportError:
+        print_color(RED, "Error: peft package required for LoRA merging")
+        print("Install with: pip install peft")
+        return None, None
+
+    from transformers import AutoModelForCausalLM, AutoTokenizer
+
+    print_color(YELLOW, f"Loading base model: {base_model_id}")
+    base_model = AutoModelForCausalLM.from_pretrained(
+        base_model_id,
+        cache_dir=cache_dir,
+        trust_remote_code=True,
+        token=token
+    )
+    tokenizer = AutoTokenizer.from_pretrained(
+        base_model_id,
+        cache_dir=cache_dir,
+        trust_remote_code=True,
+        token=token
+    )
+
+    print_color(YELLOW, f"Loading LoRA adapter: {lora_path}")
+    model = PeftModel.from_pretrained(base_model, lora_path, token=token)
+
+    print_color(YELLOW, "Merging LoRA weights into base model...")
+    merged_model = model.merge_and_unload()
+
+    print_color(GREEN, "LoRA merge complete")
+    return merged_model, tokenizer
+
+
 def cmd_convert(args):
     """Convert a HuggingFace model to a custom output directory."""
+    import tempfile
+
     model_id = args.model_name
     output_dir = args.output_dir
+    lora_path = getattr(args, 'lora', None)
 
     if output_dir is None:
         output_dir = get_weights_dir(model_id)
     else:
         output_dir = Path(output_dir)
+
+    cache_dir = getattr(args, 'cache_dir', None)
+    token = getattr(args, 'token', None)
+
+    temp_merged_dir = None
+
+    if lora_path:
+        merged_model, tokenizer = merge_lora_adapter(model_id, lora_path, cache_dir, token)
+        if merged_model is None:
+            return 1
+
+        temp_merged_dir = tempfile.mkdtemp(prefix="cactus_lora_merged_")
+        print_color(YELLOW, f"Saving merged model to temp directory: {temp_merged_dir}")
+        merged_model.save_pretrained(temp_merged_dir)
+        tokenizer.save_pretrained(temp_merged_dir)
+
+        del merged_model
+        import torch
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
+        model_id = temp_merged_dir
 
     class DownloadArgs:
         pass
@@ -542,8 +607,8 @@ def cmd_convert(args):
     download_args = DownloadArgs()
     download_args.model_id = model_id
     download_args.precision = args.precision
-    download_args.cache_dir = getattr(args, 'cache_dir', None)
-    download_args.token = getattr(args, 'token', None)
+    download_args.cache_dir = cache_dir
+    download_args.token = token
 
     original_get_weights = get_weights_dir
 
@@ -554,9 +619,13 @@ def cmd_convert(args):
     cli_module.get_weights_dir = custom_weights_dir
 
     try:
-        return cmd_download(download_args)
+        result = cmd_download(download_args)
+        return result
     finally:
         cli_module.get_weights_dir = original_get_weights
+        if temp_merged_dir and Path(temp_merged_dir).exists():
+            print_color(YELLOW, "Cleaning up temp directory...")
+            shutil.rmtree(temp_merged_dir)
 
 
 def create_parser():
@@ -586,6 +655,16 @@ def create_parser():
 
     Optional flags:
     --precision INT8|FP16              quantization (default: INT8)
+    --token <token>                    HuggingFace API token
+
+  -----------------------------------------------------------------
+
+  cactus convert <model> [output_dir]  converts model to custom directory
+                                       supports LoRA adapter merging
+
+    Optional flags:
+    --precision INT8|FP16              quantization (default: INT8)
+    --lora <path>                      LoRA adapter path to merge
     --token <token>                    HuggingFace API token
 
   -----------------------------------------------------------------
@@ -699,6 +778,7 @@ def create_parser():
                                 help='Quantization precision')
     convert_parser.add_argument('--cache-dir', help='Cache directory for HuggingFace models')
     convert_parser.add_argument('--token', help='HuggingFace API token')
+    convert_parser.add_argument('--lora', help='Path to LoRA adapter (local path or HuggingFace ID) to merge before conversion')
 
     return parser
 

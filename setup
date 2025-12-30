@@ -71,10 +71,10 @@ source "$VENV_DIR/bin/activate"
 echo ""
 echo -e "${BLUE}Step 3: Installing Python dependencies...${NC}"
 
-pip install --upgrade pip --quiet
+pip install --upgrade pip -q
 
 if [ -f "$REQUIREMENTS_FILE" ]; then
-    if pip install -r "$REQUIREMENTS_FILE" --quiet; then
+    if pip install -r "$REQUIREMENTS_FILE" --progress-bar on; then
         echo -e "${GREEN}✓ Dependencies installed${NC}"
     else
         echo -e "${RED}Failed to install dependencies${NC}"
@@ -88,7 +88,7 @@ if [ -f "$PARENT_REQUIREMENTS" ] && [ "$PARENT_REQUIREMENTS" != "$REQUIREMENTS_F
     echo ""
     echo -e "${BLUE}Detected parent repo requirements at: $PARENT_REQUIREMENTS${NC}"
     echo -e "${BLUE}Installing parent repo requirements...${NC}"
-    if pip install -r "$PARENT_REQUIREMENTS" --quiet; then
+    if pip install -r "$PARENT_REQUIREMENTS" --progress-bar on; then
         echo -e "${GREEN}✓ Parent repo dependencies installed${NC}"
     else
         echo -e "${YELLOW}Warning: failed to install parent repo requirements${NC}"
