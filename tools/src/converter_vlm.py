@@ -224,7 +224,7 @@ def convert_hf_model_weights_vlm(model, output_dir, precision='INT8', args=None)
         for suffix, outname in conv_patterns:
             fname = layer_prefix + suffix
             if fname in state_dict:
-                save_tensor_with_header(state_dict[fname], output_dir / outname, precision, stats_tracker=quantization_stats, args=args, model_type=detected_model_type)
+                save_tensor_with_header(state_dict[fname], output_dir / outname, 'FP16', stats_tracker=quantization_stats, args=args, model_type=detected_model_type)
                 saved_tensor_full_names.add(fname)
 
         weight_patterns = [
@@ -332,33 +332,4 @@ def convert_hf_model_weights_vlm(model, output_dir, precision='INT8', args=None)
 
 def convert_processors(processor, model_name, output_dir, token=None):
     """Save VLM processor config files to the output directory."""
-    if processor is None:
-        return
-
-    try:
-        if hasattr(processor, 'save_pretrained'):
-            processor.save_pretrained(str(output_dir))
-            print("  Saved processor with save_pretrained()")
-            return
-    except Exception as e:
-        print(f"  Warning: processor.save_pretrained failed: {e}")
-
-    try:
-        from huggingface_hub import hf_hub_download
-    except Exception:
-        print("  Note: huggingface_hub not available, skipping processor file download")
-        return
-
-    candidate_files = [
-        'preprocessor_config.json',
-        'processor_config.json'
-    ]
-
-    for fname in candidate_files:
-        try:
-            path = hf_hub_download(repo_id=model_name, filename=fname, token=token)
-            import shutil
-            shutil.copy2(path, output_dir / fname)
-            print(f"  Downloaded and saved {fname}")
-        except Exception:
-            pass
+    pass

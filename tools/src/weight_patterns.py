@@ -81,12 +81,14 @@ WHISPER_GLOBAL_WEIGHTS = [
 ]
 
 
-def get_layer_weight_patterns(i, precision):
-    return [
-        (['self_attn.q_proj.weight', 'attn.q_proj.weight', 'attn.c_attn.weight'], precision, f'layer_{i}_attn_q.weights', False),
-        (['self_attn.k_proj.weight', 'attn.k_proj.weight'], precision, f'layer_{i}_attn_k.weights', False),
-        (['self_attn.v_proj.weight', 'attn.v_proj.weight'], precision, f'layer_{i}_attn_v.weights', False),
-        (['self_attn.o_proj.weight', 'attn.o_proj.weight', 'attn.c_proj.weight', 'self_attn.out_proj.weight'], precision, f'layer_{i}_attn_output.weights', False),
+def get_layer_weight_patterns(i, precision, model_type=None):
+    is_whisper = model_type == 'whisper'
+
+    patterns = [
+        (['self_attn.q_proj.weight', 'attn.q_proj.weight', 'attn.c_attn.weight'], precision, f'layer_{i}_attn_q.weights', False) if not is_whisper else None,
+        (['self_attn.k_proj.weight', 'attn.k_proj.weight'], precision, f'layer_{i}_attn_k.weights', False) if not is_whisper else None,
+        (['self_attn.v_proj.weight', 'attn.v_proj.weight'], precision, f'layer_{i}_attn_v.weights', False) if not is_whisper else None,
+        (['self_attn.o_proj.weight', 'attn.o_proj.weight', 'attn.c_proj.weight', 'self_attn.out_proj.weight'], precision, f'layer_{i}_attn_output.weights', False) if not is_whisper else None,
         (['input_layernorm.weight', 'ln_1.weight', 'operator_norm.weight'], precision, f'layer_{i}_input_norm.weights', False),
         (['self_attn.q_norm.weight', 'self_attn.q_layernorm.weight'], precision, f'layer_{i}_attn_q_norm.weights', False),
         (['self_attn.k_norm.weight', 'self_attn.k_layernorm.weight'], precision, f'layer_{i}_attn_k_norm.weights', False),
@@ -130,16 +132,20 @@ def get_layer_weight_patterns(i, precision):
         (['fc2.bias'], precision, f'layer_{i}_mlp_fc2.bias', False),
         (['final_layer_norm.weight'], precision, f'layer_{i}_final_norm.weights', False),
         (['final_layer_norm.bias'], precision, f'layer_{i}_final_norm.bias', False),
-        (['self_attn.q_proj.weight'], precision, f'layer_{i}_self_attn_q.weights', False),
-        (['self_attn.k_proj.weight'], precision, f'layer_{i}_self_attn_k.weights', False),
-        (['self_attn.v_proj.weight'], precision, f'layer_{i}_self_attn_v.weights', False),
-        (['self_attn.q_proj.bias'], precision, f'layer_{i}_self_attn_q.bias', False),
-        (['self_attn.v_proj.bias'], precision, f'layer_{i}_self_attn_v.bias', False),
-        (['self_attn.out_proj.weight'], precision, f'layer_{i}_self_attn_output.weights', False),
-        (['self_attn.out_proj.bias'], precision, f'layer_{i}_self_attn_output.bias', False),
+        
+        # Whisper-only: separate self_attn_* outputs (non-Whisper uses attn_* above)
+        (['self_attn.q_proj.weight'], precision, f'layer_{i}_self_attn_q.weights', False) if is_whisper else None,
+        (['self_attn.k_proj.weight'], precision, f'layer_{i}_self_attn_k.weights', False) if is_whisper else None,
+        (['self_attn.v_proj.weight'], precision, f'layer_{i}_self_attn_v.weights', False) if is_whisper else None,
+        (['self_attn.q_proj.bias'], precision, f'layer_{i}_self_attn_q.bias', False) if is_whisper else None,
+        (['self_attn.v_proj.bias'], precision, f'layer_{i}_self_attn_v.bias', False) if is_whisper else None,
+        (['self_attn.out_proj.weight'], precision, f'layer_{i}_self_attn_output.weights', False) if is_whisper else None,
+        (['self_attn.out_proj.bias'], precision, f'layer_{i}_self_attn_output.bias', False) if is_whisper else None,
         (['self_attn_layer_norm.weight'], precision, f'layer_{i}_self_attn_norm.weights', False),
         (['self_attn_layer_norm.bias'], precision, f'layer_{i}_self_attn_norm.bias', False),
     ]
+
+    return [p for p in patterns if p is not None]
 
 
 def get_vision_layer_weights(i_v, vpref):
