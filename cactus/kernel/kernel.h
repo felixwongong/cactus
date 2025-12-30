@@ -15,6 +15,8 @@ enum class ScalarOpType {
     SIN
 };
 
+constexpr size_t KV_QUANT_GROUP_SIZE = 32;
+
 void cactus_add_f16(const __fp16* a, const __fp16* b, __fp16* output, size_t num_elements);
 void cactus_add_f16_clipped(const __fp16* a, const __fp16* b, __fp16* output, size_t num_elements);
 void cactus_subtract_f16(const __fp16* a, const __fp16* b, __fp16* output, size_t num_elements);
@@ -82,6 +84,20 @@ void cactus_attention_f16(const __fp16* queries, const __fp16* keys, const __fp1
                           size_t head_dim, float scale, const __fp16* mask, size_t position_offset = 0, size_t window_size = 0,
                           bool is_causal = true);
 
+void cactus_attention_hybrid_int8_fp16(
+    const __fp16* queries,        
+    const int8_t* keys_cached, 
+    const int8_t* values_cached, 
+    const float* k_scales,
+    const float* v_scales, 
+    const __fp16* keys_new, 
+    const __fp16* values_new, 
+    __fp16* output,
+    size_t batch_size, size_t seq_len, size_t cache_len, size_t new_len,
+    size_t num_q_heads, size_t num_kv_heads, size_t head_dim,
+    float scale, size_t position_offset = 0, bool is_causal = true,
+    size_t group_size = KV_QUANT_GROUP_SIZE);
+
 void cactus_conv1d_causal_depthwise_f16(
     const __fp16* input,
     const __fp16* weight,
@@ -126,5 +142,17 @@ void cactus_fp32_to_fp16(const float* src, __fp16* dst, size_t count);
 void cactus_int8_to_fp16(const int8_t* src, __fp16* dst, size_t count, float scale = 1.0f);
 void cactus_fp16_to_int8(const __fp16* src, int8_t* dst, size_t count, float scale = 1.0f);
 float cactus_fp16_max_abs(const __fp16* src, size_t count);
+
+void cactus_quantize_kv_fp16_to_int8(
+    const __fp16* src,
+    int8_t* dst,
+    float* scales,
+    size_t seq_len, size_t kv_heads, size_t head_dim,
+    size_t group_size = KV_QUANT_GROUP_SIZE);
+
+inline size_t kv_scales_count(size_t seq_len, size_t kv_heads, size_t head_dim, size_t group_size = KV_QUANT_GROUP_SIZE) {
+    size_t num_groups = (head_dim + group_size - 1) / group_size;
+    return seq_len * kv_heads * num_groups;
+}
 
 #endif

@@ -542,6 +542,39 @@ void compute_fused_node(GraphNode& node, const std::vector<std::unique_ptr<Graph
                                  node.params.position_offset, node.params.window_size, node.params.is_causal);
             break;
         }
+        case OpType::ATTENTION_INT8_HYBRID: {
+            const auto& query_buffer = nodes[node_index_map.at(node.input_ids[0])]->output_buffer;
+            const auto& key_new_buffer = nodes[node_index_map.at(node.input_ids[1])]->output_buffer;
+            const auto& value_new_buffer = nodes[node_index_map.at(node.input_ids[2])]->output_buffer;
+            const auto& q_shape = query_buffer.shape;
+
+            if (q_shape.size() < 4) {
+                throw std::runtime_error("ATTENTION_INT8_HYBRID requires 4D query tensor");
+            }
+
+            size_t batch_size = q_shape[0];
+            size_t seq_len = q_shape[1];
+            size_t num_q_heads = q_shape[2];
+            size_t head_dim = node.params.head_dim;
+            size_t num_kv_heads = node.params.num_kv_heads;
+            size_t cache_len = node.params.cache_seq_len;
+            size_t new_len = key_new_buffer.shape[1];
+
+            cactus_attention_hybrid_int8_fp16(
+                query_buffer.data_as<__fp16>(),
+                node.params.cached_keys_int8,
+                node.params.cached_values_int8,
+                node.params.cached_k_scales,
+                node.params.cached_v_scales,
+                key_new_buffer.data_as<__fp16>(),
+                value_new_buffer.data_as<__fp16>(),
+                node.output_buffer.data_as<__fp16>(),
+                batch_size, seq_len, cache_len, new_len,
+                num_q_heads, num_kv_heads, head_dim,
+                node.params.scale, node.params.position_offset, true
+            );
+            break;
+        }
         case OpType::CONV1D_CAUSAL: {
             if (node.params.backend == ComputeBackend::NPU) {
                 throw std::runtime_error("NPU causal convolution operation not yet implemented");
@@ -702,14 +735,13 @@ void compute_fused_node(GraphNode& node, const std::vector<std::unique_ptr<Graph
             const auto& input1_buffer = nodes[node_index_map.at(node.input_ids[0])]->output_buffer;
             const auto& input2_buffer = nodes[node_index_map.at(node.input_ids[1])]->output_buffer;
 
-            if (input1_buffer.precision != Precision::FP16) {
-                throw std::runtime_error("Concat operation only supports FP16 precision");
-            }
-
             std::vector<size_t> shape1 = input1_buffer.shape;
             std::vector<size_t> shape2 = input2_buffer.shape;
             std::vector<size_t> output_shape = node.output_buffer.shape;
 
+            if (input1_buffer.precision != Precision::FP16) {
+                throw std::runtime_error("Concat operation only supports FP16 precision");
+            }
             cactus_concat_f16(input1_buffer.data_as<__fp16>(), input2_buffer.data_as<__fp16>(),
                              node.output_buffer.data_as<__fp16>(),
                              shape1.data(), shape2.data(), output_shape.data(),

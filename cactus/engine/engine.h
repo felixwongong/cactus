@@ -332,6 +332,8 @@ struct KVCache {
     struct LayerCache {
         std::vector<uint8_t> keys;
         std::vector<uint8_t> values;
+        std::vector<float> key_scales;   
+        std::vector<float> value_scales; 
     };
 
     std::vector<LayerCache> layer_caches;
@@ -361,6 +363,7 @@ struct KVCache {
                          size_t num_tokens, size_t kv_heads, size_t head_dim);
 
     bool is_empty() const { return current_seq_len == 0; }
+    bool is_int8() const { return precision == Precision::INT8; }
     void* get_key_ptr(size_t layer);
     void* get_value_ptr(size_t layer);
 
@@ -374,39 +377,44 @@ struct KVCache {
 
     CircularView get_key_view(size_t layer);
     CircularView get_value_view(size_t layer);
+
+    const int8_t* get_keys_int8(size_t layer) const;
+    const int8_t* get_values_int8(size_t layer) const;
+    const float* get_key_scales(size_t layer) const;
+    const float* get_value_scales(size_t layer) const;
 };
 
 class ToolCallConstrainer {
 public:
     enum class State {
-        DONE,                   // complete
+        DONE,                   
 
-        QWEN_START,             // -> expect <tool_call>
-        QWEN_EXPECT_OPEN_BRACE, // -> expect {
-        QWEN_EXPECT_NAME_KEY,   // -> expect "name"
-        QWEN_EXPECT_NAME_COLON, // -> expect :
-        QWEN_EXPECT_NAME_VALUE, // -> expect function name
-        QWEN_EXPECT_COMMA,      // -> expect , or }
-        QWEN_EXPECT_ARGS_KEY,   // -> expect "arguments"
-        QWEN_EXPECT_ARGS_COLON, // -> expect :
-        QWEN_IN_ARGUMENTS,      // -> free JSON, track brace depth
-        QWEN_EXPECT_CLOSE_BRACE,// -> expect }
-        QWEN_EXPECT_END,        // -> expect </tool_call>
+        QWEN_START,             
+        QWEN_EXPECT_OPEN_BRACE, 
+        QWEN_EXPECT_NAME_KEY, 
+        QWEN_EXPECT_NAME_COLON,
+        QWEN_EXPECT_NAME_VALUE,
+        QWEN_EXPECT_COMMA, 
+        QWEN_EXPECT_ARGS_KEY, 
+        QWEN_EXPECT_ARGS_COLON, 
+        QWEN_IN_ARGUMENTS,  
+        QWEN_EXPECT_CLOSE_BRACE,
+        QWEN_EXPECT_END, 
 
-        LFM_START,              // -> expect <|tool_call_start|>
-        LFM_EXPECT_BRACKET,     // -> expect [
-        LFM_IN_FUNC_NAME,       // -> expect function name
-        LFM_EXPECT_PAREN,       // -> expect (
-        LFM_IN_ARGUMENTS,       // -> arguments until )
-        LFM_EXPECT_BRACKET_CLOSE, // -> expect ]
-        LFM_EXPECT_END,         // -> expect <|tool_call_end|>
+        LFM_START,              
+        LFM_EXPECT_BRACKET, 
+        LFM_IN_FUNC_NAME,
+        LFM_EXPECT_PAREN,
+        LFM_IN_ARGUMENTS, 
+        LFM_EXPECT_BRACKET_CLOSE, 
+        LFM_EXPECT_END,   
 
-        GEMMA_START,            // -> expect <start_function_call>
-        GEMMA_EXPECT_CALL,      // -> expect "call:"
-        GEMMA_IN_FUNC_NAME,     // -> expect function name
-        GEMMA_EXPECT_BRACE,     // -> expect {
-        GEMMA_IN_ARGUMENTS,     // -> arguments until }
-        GEMMA_EXPECT_END        // -> expect <end_function_call>
+        GEMMA_START,           
+        GEMMA_EXPECT_CALL, 
+        GEMMA_IN_FUNC_NAME, 
+        GEMMA_EXPECT_BRACE, 
+        GEMMA_IN_ARGUMENTS, 
+        GEMMA_EXPECT_END 
     };
 
     void init(Config::ModelType model_type,
@@ -431,8 +439,6 @@ private:
     std::string generated_text_;
     int brace_depth_ = 0;  
 
-
-    // Qwen-specific tokens
     std::unordered_set<uint32_t> qwen_tool_call_start_tokens_; 
     std::unordered_set<uint32_t> qwen_tool_call_end_tokens_;   
     std::unordered_set<uint32_t> open_brace_tokens_;         
@@ -446,7 +452,6 @@ private:
     std::unordered_set<uint32_t> all_func_name_tokens_;
     std::unordered_map<std::string, std::vector<uint32_t>> func_name_sequences_;  
 
-    // LFM2-specific tokens
     std::unordered_set<uint32_t> tool_start_tokens_;
     std::unordered_set<uint32_t> tool_end_tokens_;
     std::unordered_set<uint32_t> bracket_open_tokens_;   
@@ -455,7 +460,6 @@ private:
     std::unordered_set<uint32_t> paren_close_tokens_;   
     std::unordered_set<uint32_t> equals_tokens_;        
 
-    // Gemma-specific tokens
     std::unordered_set<uint32_t> gemma_call_start_tokens_;    
     std::unordered_set<uint32_t> gemma_call_end_tokens_;       
     std::unordered_set<uint32_t> gemma_response_start_tokens_; 

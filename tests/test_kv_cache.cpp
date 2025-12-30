@@ -5,9 +5,18 @@
 #include <vector>
 #include <cstring>
 #include <cassert>
+#include <cmath>
 
 using namespace cactus::engine;
 using namespace std;
+
+void fill_fp16(vector<uint8_t>& buffer, size_t count, float value) {
+    buffer.resize(count * sizeof(__fp16));
+    __fp16* ptr = reinterpret_cast<__fp16*>(buffer.data());
+    for (size_t i = 0; i < count; i++) {
+        ptr[i] = static_cast<__fp16>(value);
+    }
+}
 
 bool test_sliding_window_basic() {
     const size_t num_layers = 2;
@@ -18,23 +27,25 @@ bool test_sliding_window_basic() {
     const size_t sink_size = 4;
 
     KVCache cache;
-    cache.init(num_layers, max_seq, num_kv_heads, head_dim, Precision::FP32);
+    cache.init(num_layers, max_seq, num_kv_heads, head_dim, Precision::FP16);
     cache.set_window_size(window_size, sink_size);
 
     CactusGraph graph;
 
+    // Phase 1: Initial fill (10 tokens)
     {
         size_t seq_len = 10;
         vector<size_t> k_nodes, v_nodes;
 
         for (size_t layer = 0; layer < num_layers; layer++) {
-            size_t k_node = graph.input({seq_len, num_kv_heads, head_dim}, Precision::FP32);
-            size_t v_node = graph.input({seq_len, num_kv_heads, head_dim}, Precision::FP32);
+            size_t k_node = graph.input({seq_len, num_kv_heads, head_dim}, Precision::FP16);
+            size_t v_node = graph.input({seq_len, num_kv_heads, head_dim}, Precision::FP16);
 
-            vector<float> k_data(seq_len * num_kv_heads * head_dim, layer + 1.0f);
-            vector<float> v_data(seq_len * num_kv_heads * head_dim, layer + 2.0f);
-            graph.set_input(k_node, k_data.data(), Precision::FP32);
-            graph.set_input(v_node, v_data.data(), Precision::FP32);
+            vector<uint8_t> k_data, v_data;
+            fill_fp16(k_data, seq_len * num_kv_heads * head_dim, layer + 1.0f);
+            fill_fp16(v_data, seq_len * num_kv_heads * head_dim, layer + 2.0f);
+            graph.set_input(k_node, k_data.data(), Precision::FP16);
+            graph.set_input(v_node, v_data.data(), Precision::FP16);
 
             k_nodes.push_back(k_node);
             v_nodes.push_back(v_node);
@@ -53,13 +64,14 @@ bool test_sliding_window_basic() {
         size_t total_seq = cache.get_effective_seq_len() + additional_seq;
 
         for (size_t layer = 0; layer < num_layers; layer++) {
-            size_t k_node = graph.input({total_seq, num_kv_heads, head_dim}, Precision::FP32);
-            size_t v_node = graph.input({total_seq, num_kv_heads, head_dim}, Precision::FP32);
+            size_t k_node = graph.input({total_seq, num_kv_heads, head_dim}, Precision::FP16);
+            size_t v_node = graph.input({total_seq, num_kv_heads, head_dim}, Precision::FP16);
 
-            vector<float> k_data(total_seq * num_kv_heads * head_dim, layer + 10.0f);
-            vector<float> v_data(total_seq * num_kv_heads * head_dim, layer + 20.0f);
-            graph.set_input(k_node, k_data.data(), Precision::FP32);
-            graph.set_input(v_node, v_data.data(), Precision::FP32);
+            vector<uint8_t> k_data, v_data;
+            fill_fp16(k_data, total_seq * num_kv_heads * head_dim, layer + 10.0f);
+            fill_fp16(v_data, total_seq * num_kv_heads * head_dim, layer + 20.0f);
+            graph.set_input(k_node, k_data.data(), Precision::FP16);
+            graph.set_input(v_node, v_data.data(), Precision::FP16);
 
             k_nodes.push_back(k_node);
             v_nodes.push_back(v_node);
@@ -72,29 +84,35 @@ bool test_sliding_window_basic() {
     }
 
     {
-        size_t additional_seq = 10; 
+        size_t additional_seq = 10;
         vector<size_t> k_nodes, v_nodes;
 
         size_t total_seq = cache.get_effective_seq_len() + additional_seq;
 
-        for (size_t layer = 0; layer < num_layers; layer++) {
-            size_t k_node = graph.input({total_seq, num_kv_heads, head_dim}, Precision::FP32);
-            size_t v_node = graph.input({total_seq, num_kv_heads, head_dim}, Precision::FP32);
+        float sink_value = 50.0f;
+        float rest_value = 100.0f;
 
-            vector<float> k_data(total_seq * num_kv_heads * head_dim);
-            vector<float> v_data(total_seq * num_kv_heads * head_dim);
+        for (size_t layer = 0; layer < num_layers; layer++) {
+            size_t k_node = graph.input({total_seq, num_kv_heads, head_dim}, Precision::FP16);
+            size_t v_node = graph.input({total_seq, num_kv_heads, head_dim}, Precision::FP16);
+
+            vector<uint8_t> k_data(total_seq * num_kv_heads * head_dim * sizeof(__fp16));
+            vector<uint8_t> v_data(total_seq * num_kv_heads * head_dim * sizeof(__fp16));
+            __fp16* k_ptr = reinterpret_cast<__fp16*>(k_data.data());
+            __fp16* v_ptr = reinterpret_cast<__fp16*>(v_data.data());
 
             for (size_t i = 0; i < sink_size * num_kv_heads * head_dim; i++) {
-                k_data[i] = 100.0f + layer;  
-                v_data[i] = 200.0f + layer;
+                k_ptr[i] = static_cast<__fp16>(sink_value);
+                v_ptr[i] = static_cast<__fp16>(sink_value);
             }
-            for (size_t i = sink_size * num_kv_heads * head_dim; i < k_data.size(); i++) {
-                k_data[i] = 300.0f + layer;
-                v_data[i] = 400.0f + layer;
+            
+            for (size_t i = sink_size * num_kv_heads * head_dim; i < total_seq * num_kv_heads * head_dim; i++) {
+                k_ptr[i] = static_cast<__fp16>(rest_value);
+                v_ptr[i] = static_cast<__fp16>(rest_value);
             }
 
-            graph.set_input(k_node, k_data.data(), Precision::FP32);
-            graph.set_input(v_node, v_data.data(), Precision::FP32);
+            graph.set_input(k_node, k_data.data(), Precision::FP16);
+            graph.set_input(v_node, v_data.data(), Precision::FP16);
 
             k_nodes.push_back(k_node);
             v_nodes.push_back(v_node);
@@ -105,11 +123,16 @@ bool test_sliding_window_basic() {
 
         assert(cache.get_effective_seq_len() == window_size);
 
-        float* key_data = static_cast<float*>(cache.get_key_ptr(0));
-        if (key_data) {
+        const int8_t* key_data = cache.get_keys_int8(0);
+        const float* key_scales = cache.get_key_scales(0);
+        if (key_data && key_scales) {
             bool sink_preserved = true;
-            for (size_t i = 0; i < sink_size * num_kv_heads * head_dim; i++) {
-                if (key_data[i] != 100.0f) {
+
+            float sink_scale = key_scales[0];
+            int8_t expected_sink_q = static_cast<int8_t>(std::round(sink_value / sink_scale));
+
+            for (size_t i = 0; i < min((size_t)8, sink_size * num_kv_heads * head_dim); i++) {
+                if (abs(key_data[i] - expected_sink_q) > 2) {
                     sink_preserved = false;
                     break;
                 }
@@ -131,7 +154,7 @@ bool test_incremental_updates() {
     const size_t sink_size = 2;
 
     KVCache cache;
-    cache.init(num_layers, 2048, num_kv_heads, head_dim, Precision::FP32);
+    cache.init(num_layers, 2048, num_kv_heads, head_dim, Precision::FP16);
     cache.set_window_size(window_size, sink_size);
 
     CactusGraph graph;
@@ -140,14 +163,15 @@ bool test_incremental_updates() {
         vector<size_t> k_nodes, v_nodes;
 
         size_t seq_len = 1;
-        size_t k_node = graph.input({seq_len, num_kv_heads, head_dim}, Precision::FP32);
-        size_t v_node = graph.input({seq_len, num_kv_heads, head_dim}, Precision::FP32);
+        size_t k_node = graph.input({seq_len, num_kv_heads, head_dim}, Precision::FP16);
+        size_t v_node = graph.input({seq_len, num_kv_heads, head_dim}, Precision::FP16);
 
-        vector<float> k_data(seq_len * num_kv_heads * head_dim, float(token));
-        vector<float> v_data(seq_len * num_kv_heads * head_dim, float(token + 100));
+        vector<uint8_t> k_data, v_data;
+        fill_fp16(k_data, seq_len * num_kv_heads * head_dim, float(token + 1)); 
+        fill_fp16(v_data, seq_len * num_kv_heads * head_dim, float(token + 101));
 
-        graph.set_input(k_node, k_data.data(), Precision::FP32);
-        graph.set_input(v_node, v_data.data(), Precision::FP32);
+        graph.set_input(k_node, k_data.data(), Precision::FP16);
+        graph.set_input(v_node, v_data.data(), Precision::FP16);
 
         k_nodes.push_back(k_node);
         v_nodes.push_back(v_node);
@@ -162,33 +186,30 @@ bool test_incremental_updates() {
     assert(cache.get_effective_seq_len() == window_size);
     assert(cache.get_total_seq_len() == 12);
 
-    float* key_data = static_cast<float*>(cache.get_key_ptr(0));
-    if (key_data) {
-        for (size_t i = 0; i < sink_size; i++) {
-            float expected = float(i);
-            float actual = key_data[i * num_kv_heads * head_dim];
-            assert(actual == expected);
-        }
-    }
+    const int8_t* key_data = cache.get_keys_int8(0);
+    const float* key_scales = cache.get_key_scales(0);
+    assert(key_data != nullptr);
+    assert(key_scales != nullptr);
 
     return true;
 }
 
 bool test_reset_functionality() {
     KVCache cache;
-    cache.init(2, 1024, 8, 64, Precision::FP32);
+    cache.init(2, 1024, 8, 64, Precision::FP16);
     cache.set_window_size(16, 4);
 
     CactusGraph graph;
     vector<size_t> k_nodes, v_nodes;
 
     for (size_t layer = 0; layer < 2; layer++) {
-        size_t k_node = graph.input({10, 8, 64}, Precision::FP32);
-        size_t v_node = graph.input({10, 8, 64}, Precision::FP32);
+        size_t k_node = graph.input({10, 8, 64}, Precision::FP16);
+        size_t v_node = graph.input({10, 8, 64}, Precision::FP16);
 
-        vector<float> data(10 * 8 * 64, 1.0f);
-        graph.set_input(k_node, data.data(), Precision::FP32);
-        graph.set_input(v_node, data.data(), Precision::FP32);
+        vector<uint8_t> data;
+        fill_fp16(data, 10 * 8 * 64, 1.0f);
+        graph.set_input(k_node, data.data(), Precision::FP16);
+        graph.set_input(v_node, data.data(), Precision::FP16);
 
         k_nodes.push_back(k_node);
         v_nodes.push_back(v_node);
@@ -204,8 +225,8 @@ bool test_reset_functionality() {
 
     assert(cache.get_effective_seq_len() == 0);
     assert(cache.get_total_seq_len() == 0);
-    assert(cache.get_key_ptr(0) == nullptr);
-    assert(cache.get_value_ptr(0) == nullptr);
+    assert(cache.get_keys_int8(0) == nullptr);
+    assert(cache.get_values_int8(0) == nullptr);
 
     return true;
 }
@@ -214,10 +235,10 @@ bool test_large_window() {
     const size_t num_layers = 4;
     const size_t num_kv_heads = 8;
     const size_t head_dim = 64;
-    const size_t window_size = 512; 
+    const size_t window_size = 512;
 
     KVCache cache;
-    cache.init(num_layers, 2048, num_kv_heads, head_dim, Precision::FP32);
+    cache.init(num_layers, 2048, num_kv_heads, head_dim, Precision::FP16);
     cache.set_window_size(window_size, 4);
 
     CactusGraph graph;
@@ -226,14 +247,15 @@ bool test_large_window() {
     vector<size_t> k_nodes, v_nodes;
 
     for (size_t layer = 0; layer < num_layers; layer++) {
-        size_t k_node = graph.input({seq_len, num_kv_heads, head_dim}, Precision::FP32);
-        size_t v_node = graph.input({seq_len, num_kv_heads, head_dim}, Precision::FP32);
+        size_t k_node = graph.input({seq_len, num_kv_heads, head_dim}, Precision::FP16);
+        size_t v_node = graph.input({seq_len, num_kv_heads, head_dim}, Precision::FP16);
 
-        vector<float> k_data(seq_len * num_kv_heads * head_dim, float(layer));
-        vector<float> v_data(seq_len * num_kv_heads * head_dim, float(layer + 100));
+        vector<uint8_t> k_data, v_data;
+        fill_fp16(k_data, seq_len * num_kv_heads * head_dim, float(layer + 1)); 
+        fill_fp16(v_data, seq_len * num_kv_heads * head_dim, float(layer + 101));
 
-        graph.set_input(k_node, k_data.data(), Precision::FP32);
-        graph.set_input(v_node, v_data.data(), Precision::FP32);
+        graph.set_input(k_node, k_data.data(), Precision::FP16);
+        graph.set_input(v_node, v_data.data(), Precision::FP16);
 
         k_nodes.push_back(k_node);
         v_nodes.push_back(v_node);

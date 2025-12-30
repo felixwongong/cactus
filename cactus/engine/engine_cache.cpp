@@ -1,5 +1,6 @@
 #include "engine.h"
 #include "../graph/graph.h"
+#include "../kernel/kernel.h"
 #include <algorithm>
 #include <cstring>
 #include <stdexcept>
@@ -27,11 +28,19 @@ void KVCache::set_window_size(size_t window, size_t sink) {
 
     if (num_kv_heads > 0 && head_dim > 0 && window_size > 0) {
         size_t cache_bytes = window_size * num_kv_heads * head_dim * element_size;
+        size_t num_groups = (head_dim + KV_QUANT_GROUP_SIZE - 1) / KV_QUANT_GROUP_SIZE;
+        size_t num_scales = window_size * num_kv_heads * num_groups;
+
         for (auto& cache : layer_caches) {
             cache.keys.resize(cache_bytes);
             cache.values.resize(cache_bytes);
             std::memset(cache.keys.data(), 0, cache_bytes);
             std::memset(cache.values.data(), 0, cache_bytes);
+
+            cache.key_scales.resize(num_scales);
+            cache.value_scales.resize(num_scales);
+            std::fill(cache.key_scales.begin(), cache.key_scales.end(), 1.0f);
+            std::fill(cache.value_scales.begin(), cache.value_scales.end(), 1.0f);
         }
     }
 }
@@ -95,6 +104,8 @@ void KVCache::update_from_graph(CactusGraph* gb, const std::vector<size_t>& k_no
     size_t old_seq_len = current_seq_len;
     size_t new_total_len = old_seq_len + seq_len;
     size_t elements_per_token = kv_heads * dim;
+    size_t num_groups = (dim + KV_QUANT_GROUP_SIZE - 1) / KV_QUANT_GROUP_SIZE;
+    size_t scales_per_token = kv_heads * num_groups;
     size_t bytes_per_token = elements_per_token * element_size;
 
     total_seq_len += seq_len;
@@ -129,8 +140,22 @@ void KVCache::update_from_graph(CactusGraph* gb, const std::vector<size_t>& k_no
                     size_t total_bytes = new_total_len * bytes_per_token;
                     cache.keys.resize(total_bytes);
                     cache.values.resize(total_bytes);
-                    std::memcpy(cache.keys.data(), k_output, total_bytes);
-                    std::memcpy(cache.values.data(), v_output, total_bytes);
+
+                    size_t num_scales = new_total_len * scales_per_token;
+                    cache.key_scales.resize(num_scales);
+                    cache.value_scales.resize(num_scales);
+
+                    cactus_quantize_kv_fp16_to_int8(
+                        static_cast<const __fp16*>(k_output),
+                        reinterpret_cast<int8_t*>(cache.keys.data()),
+                        cache.key_scales.data(),
+                        new_total_len, kv_heads, dim);
+
+                    cactus_quantize_kv_fp16_to_int8(
+                        static_cast<const __fp16*>(v_output),
+                        reinterpret_cast<int8_t*>(cache.values.data()),
+                        cache.value_scales.data(),
+                        new_total_len, kv_heads, dim);
                 } else {
                     size_t cache_bytes = window_size * bytes_per_token;
 
@@ -139,36 +164,72 @@ void KVCache::update_from_graph(CactusGraph* gb, const std::vector<size_t>& k_no
                         cache.values.resize(cache_bytes);
                     }
 
-                    size_t sink_bytes = sink_size * bytes_per_token;
                     size_t remaining_window = window_size - sink_size;
                     size_t skip_tokens = new_total_len - window_size;
 
-                    std::memcpy(cache.keys.data(), k_output, sink_bytes);
-                    std::memcpy(cache.values.data(), v_output, sink_bytes);
+                    size_t num_scales = window_size * scales_per_token;
+                    cache.key_scales.resize(num_scales);
+                    cache.value_scales.resize(num_scales);
 
-                    const uint8_t* k_src = static_cast<const uint8_t*>(k_output) +
-                                          (sink_size + skip_tokens) * bytes_per_token;
-                    const uint8_t* v_src = static_cast<const uint8_t*>(v_output) +
-                                          (sink_size + skip_tokens) * bytes_per_token;
-                    size_t recent_bytes = remaining_window * bytes_per_token;
+                    const __fp16* k_fp16 = static_cast<const __fp16*>(k_output);
+                    const __fp16* v_fp16 = static_cast<const __fp16*>(v_output);
 
-                    std::memcpy(cache.keys.data() + sink_bytes, k_src, recent_bytes);
-                    std::memcpy(cache.values.data() + sink_bytes, v_src, recent_bytes);
+                    cactus_quantize_kv_fp16_to_int8(
+                        k_fp16,
+                        reinterpret_cast<int8_t*>(cache.keys.data()),
+                        cache.key_scales.data(),
+                        sink_size, kv_heads, dim);
+
+                    cactus_quantize_kv_fp16_to_int8(
+                        v_fp16,
+                        reinterpret_cast<int8_t*>(cache.values.data()),
+                        cache.value_scales.data(),
+                        sink_size, kv_heads, dim);
+
+                    size_t src_offset = (sink_size + skip_tokens) * elements_per_token;
+                    size_t dst_offset = sink_size * elements_per_token;
+                    size_t scale_dst_offset = sink_size * scales_per_token;
+
+                    cactus_quantize_kv_fp16_to_int8(
+                        k_fp16 + src_offset,
+                        reinterpret_cast<int8_t*>(cache.keys.data()) + dst_offset,
+                        cache.key_scales.data() + scale_dst_offset,
+                        remaining_window, kv_heads, dim);
+
+                    cactus_quantize_kv_fp16_to_int8(
+                        v_fp16 + src_offset,
+                        reinterpret_cast<int8_t*>(cache.values.data()) + dst_offset,
+                        cache.value_scales.data() + scale_dst_offset,
+                        remaining_window, kv_heads, dim);
                 }
-            } else if (seq_len * elements_per_token == k_buffer.total_size &&
+            }
+            else if (seq_len * elements_per_token == k_buffer.total_size &&
                       seq_len * elements_per_token == v_buffer.total_size) {
                 any_layer_updated = true;
 
                 if (!use_sliding_window) {
-                    size_t old_bytes = old_seq_len * bytes_per_token;
-                    size_t new_bytes = seq_len * bytes_per_token;
-                    size_t total_bytes = old_bytes + new_bytes;
-
+                    size_t total_bytes = (old_seq_len + seq_len) * bytes_per_token;
                     cache.keys.resize(total_bytes);
                     cache.values.resize(total_bytes);
 
-                    std::memcpy(cache.keys.data() + old_bytes, k_output, new_bytes);
-                    std::memcpy(cache.values.data() + old_bytes, v_output, new_bytes);
+                    size_t num_scales = (old_seq_len + seq_len) * scales_per_token;
+                    cache.key_scales.resize(num_scales);
+                    cache.value_scales.resize(num_scales);
+
+                    size_t dst_offset = old_seq_len * elements_per_token;
+                    size_t scale_offset = old_seq_len * scales_per_token;
+
+                    cactus_quantize_kv_fp16_to_int8(
+                        static_cast<const __fp16*>(k_output),
+                        reinterpret_cast<int8_t*>(cache.keys.data()) + dst_offset,
+                        cache.key_scales.data() + scale_offset,
+                        seq_len, kv_heads, dim);
+
+                    cactus_quantize_kv_fp16_to_int8(
+                        static_cast<const __fp16*>(v_output),
+                        reinterpret_cast<int8_t*>(cache.values.data()) + dst_offset,
+                        cache.value_scales.data() + scale_offset,
+                        seq_len, kv_heads, dim);
                 } else {
                     size_t cache_bytes = window_size * bytes_per_token;
 
@@ -177,25 +238,50 @@ void KVCache::update_from_graph(CactusGraph* gb, const std::vector<size_t>& k_no
                         cache.values.resize(cache_bytes);
                     }
 
-                    size_t sink_bytes = sink_size * bytes_per_token;
                     size_t tokens_to_shift = window_size - sink_size - seq_len;
 
                     if (tokens_to_shift > 0 && old_seq_len > sink_size) {
                         size_t shift_src = old_seq_len - tokens_to_shift;
                         if (shift_src > sink_size) {
-                            std::memmove(cache.keys.data() + sink_bytes,
-                                       cache.keys.data() + shift_src * bytes_per_token,
-                                       tokens_to_shift * bytes_per_token);
-                            std::memmove(cache.values.data() + sink_bytes,
-                                       cache.values.data() + shift_src * bytes_per_token,
-                                       tokens_to_shift * bytes_per_token);
+                            size_t sink_offset = sink_size * elements_per_token;
+                            size_t shift_src_offset = shift_src * elements_per_token;
+                            size_t shift_bytes = tokens_to_shift * bytes_per_token;
+
+                            std::memmove(cache.keys.data() + sink_offset * element_size,
+                                       cache.keys.data() + shift_src_offset * element_size,
+                                       shift_bytes);
+                            std::memmove(cache.values.data() + sink_offset * element_size,
+                                       cache.values.data() + shift_src_offset * element_size,
+                                       shift_bytes);
+
+                            size_t sink_scale_offset = sink_size * scales_per_token;
+                            size_t shift_src_scale_offset = shift_src * scales_per_token;
+                            size_t shift_scale_count = tokens_to_shift * scales_per_token;
+
+                            std::memmove(cache.key_scales.data() + sink_scale_offset,
+                                       cache.key_scales.data() + shift_src_scale_offset,
+                                       shift_scale_count * sizeof(float));
+                            std::memmove(cache.value_scales.data() + sink_scale_offset,
+                                       cache.value_scales.data() + shift_src_scale_offset,
+                                       shift_scale_count * sizeof(float));
                         }
                     }
 
-                    size_t append_offset = (window_size - seq_len) * bytes_per_token;
-                    size_t new_bytes = seq_len * bytes_per_token;
-                    std::memcpy(cache.keys.data() + append_offset, k_output, new_bytes);
-                    std::memcpy(cache.values.data() + append_offset, v_output, new_bytes);
+                    size_t append_token_offset = window_size - seq_len;
+                    size_t append_offset = append_token_offset * elements_per_token;
+                    size_t scale_offset = append_token_offset * scales_per_token;
+
+                    cactus_quantize_kv_fp16_to_int8(
+                        static_cast<const __fp16*>(k_output),
+                        reinterpret_cast<int8_t*>(cache.keys.data()) + append_offset,
+                        cache.key_scales.data() + scale_offset,
+                        seq_len, kv_heads, dim);
+
+                    cactus_quantize_kv_fp16_to_int8(
+                        static_cast<const __fp16*>(v_output),
+                        reinterpret_cast<int8_t*>(cache.values.data()) + append_offset,
+                        cache.value_scales.data() + scale_offset,
+                        seq_len, kv_heads, dim);
                 }
             }
         }
@@ -217,6 +303,8 @@ void KVCache::update_from_npu(size_t layer_idx, const __fp16* k_data, const __fp
     size_t new_total_len = old_seq_len + num_tokens;
     size_t elements_per_token = kv_heads * dim;
     size_t bytes_per_token = elements_per_token * element_size;
+    size_t num_groups = (dim + KV_QUANT_GROUP_SIZE - 1) / KV_QUANT_GROUP_SIZE;
+    size_t scales_per_token = kv_heads * num_groups;
 
     if (layer_idx == 0) {
         total_seq_len += num_tokens;
@@ -225,96 +313,138 @@ void KVCache::update_from_npu(size_t layer_idx, const __fp16* k_data, const __fp
     bool use_sliding_window = (window_size > 0 && new_total_len > window_size);
     size_t effective_seq_len = use_sliding_window ? window_size : new_total_len;
 
-
     if (!use_sliding_window) {
         size_t total_bytes = new_total_len * bytes_per_token;
         cache.keys.resize(total_bytes);
         cache.values.resize(total_bytes);
 
-        size_t offset = old_seq_len * bytes_per_token;
-        size_t new_bytes = num_tokens * bytes_per_token;
+        size_t num_scales = new_total_len * scales_per_token;
+        cache.key_scales.resize(num_scales);
+        cache.value_scales.resize(num_scales);
 
-        if (precision == Precision::FP16) {
-            std::memcpy(cache.keys.data() + offset, k_data, new_bytes);
-            std::memcpy(cache.values.data() + offset, v_data, new_bytes);
-        } else if (precision == Precision::FP32) {
-            float* k_dst = reinterpret_cast<float*>(cache.keys.data() + offset);
-            float* v_dst = reinterpret_cast<float*>(cache.values.data() + offset);
-            size_t count = num_tokens * elements_per_token;
-            for (size_t i = 0; i < count; ++i) {
-                k_dst[i] = static_cast<float>(k_data[i]);
-                v_dst[i] = static_cast<float>(v_data[i]);
-            }
-        }
+        size_t dst_offset = old_seq_len * elements_per_token;
+        size_t scale_offset = old_seq_len * scales_per_token;
+
+        cactus_quantize_kv_fp16_to_int8(
+            k_data,
+            reinterpret_cast<int8_t*>(cache.keys.data()) + dst_offset,
+            cache.key_scales.data() + scale_offset,
+            num_tokens, kv_heads, dim);
+
+        cactus_quantize_kv_fp16_to_int8(
+            v_data,
+            reinterpret_cast<int8_t*>(cache.values.data()) + dst_offset,
+            cache.value_scales.data() + scale_offset,
+            num_tokens, kv_heads, dim);
     } else {
         size_t cache_bytes = window_size * bytes_per_token;
 
         if (cache.keys.size() != cache_bytes) {
             cache.keys.resize(cache_bytes);
             cache.values.resize(cache_bytes);
+
+            size_t num_scales = window_size * scales_per_token;
+            cache.key_scales.resize(num_scales);
+            cache.value_scales.resize(num_scales);
         }
 
-        size_t sink_bytes = sink_size * bytes_per_token;
         size_t remaining_window = window_size - sink_size;
 
         if (num_tokens >= remaining_window) {
             size_t skip_tokens = num_tokens - remaining_window;
-            size_t recent_bytes = remaining_window * bytes_per_token;
+            size_t dst_offset = sink_size * elements_per_token;
+            size_t scale_offset = sink_size * scales_per_token;
 
-            if (precision == Precision::FP16) {
-                std::memcpy(cache.keys.data() + sink_bytes,
-                           k_data + skip_tokens * elements_per_token,
-                           recent_bytes);
-                std::memcpy(cache.values.data() + sink_bytes,
-                           v_data + skip_tokens * elements_per_token,
-                           recent_bytes);
-            } else if (precision == Precision::FP32) {
-                float* k_dst = reinterpret_cast<float*>(cache.keys.data() + sink_bytes);
-                float* v_dst = reinterpret_cast<float*>(cache.values.data() + sink_bytes);
-                size_t count = remaining_window * elements_per_token;
-                const __fp16* k_src = k_data + skip_tokens * elements_per_token;
-                const __fp16* v_src = v_data + skip_tokens * elements_per_token;
-                for (size_t i = 0; i < count; ++i) {
-                    k_dst[i] = static_cast<float>(k_src[i]);
-                    v_dst[i] = static_cast<float>(v_src[i]);
-                }
-            }
+            cactus_quantize_kv_fp16_to_int8(
+                k_data + skip_tokens * elements_per_token,
+                reinterpret_cast<int8_t*>(cache.keys.data()) + dst_offset,
+                cache.key_scales.data() + scale_offset,
+                remaining_window, kv_heads, dim);
+
+            cactus_quantize_kv_fp16_to_int8(
+                v_data + skip_tokens * elements_per_token,
+                reinterpret_cast<int8_t*>(cache.values.data()) + dst_offset,
+                cache.value_scales.data() + scale_offset,
+                remaining_window, kv_heads, dim);
         } else {
             size_t tokens_to_shift = remaining_window - num_tokens;
 
             if (tokens_to_shift > 0 && old_seq_len > sink_size) {
                 size_t shift_src = old_seq_len - tokens_to_shift;
                 if (shift_src > sink_size) {
-                    std::memmove(cache.keys.data() + sink_bytes,
-                               cache.keys.data() + shift_src * bytes_per_token,
-                               tokens_to_shift * bytes_per_token);
-                    std::memmove(cache.values.data() + sink_bytes,
-                               cache.values.data() + shift_src * bytes_per_token,
-                               tokens_to_shift * bytes_per_token);
+                    size_t sink_offset = sink_size * elements_per_token;
+                    size_t shift_src_offset = shift_src * elements_per_token;
+                    size_t shift_bytes = tokens_to_shift * bytes_per_token;
+
+                    std::memmove(cache.keys.data() + sink_offset,
+                               cache.keys.data() + shift_src_offset,
+                               shift_bytes);
+                    std::memmove(cache.values.data() + sink_offset,
+                               cache.values.data() + shift_src_offset,
+                               shift_bytes);
+
+                    size_t sink_scale_offset = sink_size * scales_per_token;
+                    size_t shift_src_scale_offset = shift_src * scales_per_token;
+                    size_t shift_scale_count = tokens_to_shift * scales_per_token;
+
+                    std::memmove(cache.key_scales.data() + sink_scale_offset,
+                               cache.key_scales.data() + shift_src_scale_offset,
+                               shift_scale_count * sizeof(float));
+                    std::memmove(cache.value_scales.data() + sink_scale_offset,
+                               cache.value_scales.data() + shift_src_scale_offset,
+                               shift_scale_count * sizeof(float));
                 }
             }
 
-            size_t append_offset = (window_size - num_tokens) * bytes_per_token;
-            size_t new_bytes = num_tokens * bytes_per_token;
+            size_t append_token_offset = window_size - num_tokens;
+            size_t append_offset = append_token_offset * elements_per_token;
+            size_t scale_offset = append_token_offset * scales_per_token;
 
-            if (precision == Precision::FP16) {
-                std::memcpy(cache.keys.data() + append_offset, k_data, new_bytes);
-                std::memcpy(cache.values.data() + append_offset, v_data, new_bytes);
-            } else if (precision == Precision::FP32) {
-                float* k_dst = reinterpret_cast<float*>(cache.keys.data() + append_offset);
-                float* v_dst = reinterpret_cast<float*>(cache.values.data() + append_offset);
-                size_t count = num_tokens * elements_per_token;
-                for (size_t i = 0; i < count; ++i) {
-                    k_dst[i] = static_cast<float>(k_data[i]);
-                    v_dst[i] = static_cast<float>(v_data[i]);
-                }
-            }
+            cactus_quantize_kv_fp16_to_int8(
+                k_data,
+                reinterpret_cast<int8_t*>(cache.keys.data()) + append_offset,
+                cache.key_scales.data() + scale_offset,
+                num_tokens, kv_heads, dim);
+
+            cactus_quantize_kv_fp16_to_int8(
+                v_data,
+                reinterpret_cast<int8_t*>(cache.values.data()) + append_offset,
+                cache.value_scales.data() + scale_offset,
+                num_tokens, kv_heads, dim);
         }
     }
 
     if (layer_idx == num_layers - 1) {
         current_seq_len = effective_seq_len;
     }
+}
+
+const int8_t* KVCache::get_keys_int8(size_t layer) const {
+    if (layer >= num_layers || current_seq_len == 0) {
+        return nullptr;
+    }
+    return reinterpret_cast<const int8_t*>(layer_caches[layer].keys.data());
+}
+
+const int8_t* KVCache::get_values_int8(size_t layer) const {
+    if (layer >= num_layers || current_seq_len == 0) {
+        return nullptr;
+    }
+    return reinterpret_cast<const int8_t*>(layer_caches[layer].values.data());
+}
+
+const float* KVCache::get_key_scales(size_t layer) const {
+    if (layer >= num_layers || current_seq_len == 0) {
+        return nullptr;
+    }
+    return layer_caches[layer].key_scales.data();
+}
+
+const float* KVCache::get_value_scales(size_t layer) const {
+    if (layer >= num_layers || current_seq_len == 0) {
+        return nullptr;
+    }
+    return layer_caches[layer].value_scales.data();
 }
 
 void ConvCache::init(size_t layers, size_t hidden_dim, size_t window_len, Precision model_precision) {

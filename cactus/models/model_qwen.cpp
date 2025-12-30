@@ -80,41 +80,27 @@ size_t QwenModel::build_attention(CactusGraph* gb, size_t normalized_input, uint
         k_proj_4d = gb->rope(k_proj_4d, config_.rope_theta, position_offset);
     }
 
-    size_t final_k = k_proj_4d;
-    size_t final_v = v_proj_4d;
-
-    if (use_cache && !kv_cache_.is_empty()) {
-        auto k_view = kv_cache_.get_key_view(layer_idx);
-        auto v_view = kv_cache_.get_value_view(layer_idx);
-
-        if (k_view.ptr2 == nullptr && v_view.ptr2 == nullptr) {
-            size_t cache_k_node = gb->input({1, kv_cache_.current_seq_len, config_.attention_kv_heads, config_.attention_head_dim}, kv_cache_.precision);
-            size_t cache_v_node = gb->input({1, kv_cache_.current_seq_len, config_.attention_kv_heads, config_.attention_head_dim}, kv_cache_.precision);
-
-            gb->set_input(cache_k_node, k_view.ptr1, kv_cache_.precision);
-            gb->set_input(cache_v_node, v_view.ptr1, kv_cache_.precision);
-
-            final_k = gb->concat(cache_k_node, k_proj_4d, 1);
-            final_v = gb->concat(cache_v_node, v_proj_4d, 1);
-        } else {
-            size_t cache_k_node = gb->input({1, kv_cache_.current_seq_len, config_.attention_kv_heads, config_.attention_head_dim}, kv_cache_.precision);
-            size_t cache_v_node = gb->input({1, kv_cache_.current_seq_len, config_.attention_kv_heads, config_.attention_head_dim}, kv_cache_.precision);
-
-            gb->set_input(cache_k_node, kv_cache_.get_key_ptr(layer_idx), kv_cache_.precision);
-            gb->set_input(cache_v_node, kv_cache_.get_value_ptr(layer_idx), kv_cache_.precision);
-
-            final_k = gb->concat(cache_k_node, k_proj_4d, 1);
-            final_v = gb->concat(cache_v_node, v_proj_4d, 1);
-        }
-    }
+    size_t attn_output_4d;
 
     if (use_cache) {
-        cache_k_output_nodes_[layer_idx] = final_k;
-        cache_v_output_nodes_[layer_idx] = final_v;
+        cache_k_output_nodes_[layer_idx] = k_proj_4d;
+        cache_v_output_nodes_[layer_idx] = v_proj_4d;
     }
 
+    if (use_cache && !kv_cache_.is_empty()) {
+        attn_output_4d = gb->attention_int8_hybrid(
+            q_proj_4d, k_proj_4d, v_proj_4d,
+            attention_scale_, position_offset,
+            kv_cache_.get_keys_int8(layer_idx),
+            kv_cache_.get_values_int8(layer_idx),
+            kv_cache_.get_key_scales(layer_idx),
+            kv_cache_.get_value_scales(layer_idx),
+            kv_cache_.current_seq_len, num_kv_heads, head_dim
+        );
+    } else {
+        attn_output_4d = gb->attention(q_proj_4d, k_proj_4d, v_proj_4d, attention_scale_, position_offset);
+    }
 
-    auto attn_output_4d = gb->attention(q_proj_4d, final_k, final_v, attention_scale_, position_offset);
     auto attn_output = gb->reshape(attn_output_4d, {seq_len, config_.attention_head_dim * config_.attention_heads});
     return gb->matmul(attn_output, layer.attn_output_weight, true, backend);
 }

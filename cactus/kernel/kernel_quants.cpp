@@ -196,26 +196,98 @@ void cactus_fp16_to_int8(const __fp16* src, int8_t* dst, size_t count, float sca
 float cactus_fp16_max_abs(const __fp16* src, size_t count) {
     float32x4_t abs_max_vec = vdupq_n_f32(0.0f);
     const size_t simd_end = (count / 8) * 8;
-    
+
     for (size_t i = 0; i < simd_end; i += 8) {
         float16x8_t input = vld1q_f16(&src[i]);
-        
+
         float32x4_t input_low = vcvt_f32_f16(vget_low_f16(input));
         float32x4_t input_high = vcvt_f32_f16(vget_high_f16(input));
-        
+
         float32x4_t abs_low = vabsq_f32(input_low);
         float32x4_t abs_high = vabsq_f32(input_high);
-        
+
         abs_max_vec = vmaxq_f32(abs_max_vec, abs_low);
         abs_max_vec = vmaxq_f32(abs_max_vec, abs_high);
     }
-    
+
     float max_abs = vmaxvq_f32(abs_max_vec);
-    
+
     for (size_t i = simd_end; i < count; ++i) {
         float abs_val = std::abs(static_cast<float>(src[i]));
         max_abs = std::max(max_abs, abs_val);
     }
-    
+
     return max_abs;
+}
+
+static inline float quantize_group_fp16_to_int8(const __fp16* src, int8_t* dst, size_t count) {
+
+    float32x4_t max_vec = vdupq_n_f32(0.0f);
+    size_t k = 0;
+
+    for (; k + 8 <= count; k += 8) {
+        float16x8_t vals = vld1q_f16(src + k);
+        max_vec = vmaxq_f32(max_vec, vabsq_f32(vcvt_f32_f16(vget_low_f16(vals))));
+        max_vec = vmaxq_f32(max_vec, vabsq_f32(vcvt_f32_f16(vget_high_f16(vals))));
+    }
+
+    float max_abs = vmaxvq_f32(max_vec);
+    for (; k < count; k++) {
+        float val = std::abs(static_cast<float>(src[k]));
+        if (val > max_abs) max_abs = val;
+    }
+
+    float scale = max_abs / 127.0f;
+    if (scale < 1e-10f) scale = 1e-10f;
+    float inv_scale = 1.0f / scale;
+    float32x4_t inv_scale_vec = vdupq_n_f32(inv_scale);
+
+    k = 0;
+    for (; k + 8 <= count; k += 8) {
+        float16x8_t vals = vld1q_f16(src + k);
+        int32x4_t i0 = vcvtnq_s32_f32(vmulq_f32(vcvt_f32_f16(vget_low_f16(vals)), inv_scale_vec));
+        int32x4_t i1 = vcvtnq_s32_f32(vmulq_f32(vcvt_f32_f16(vget_high_f16(vals)), inv_scale_vec));
+        int16x4_t s0 = vqmovn_s32(i0);
+        int16x4_t s1 = vqmovn_s32(i1);
+        int8x8_t result = vqmovn_s16(vcombine_s16(s0, s1));
+        vst1_s8(dst + k, result);
+    }
+
+    for (; k < count; k++) {
+        float val = static_cast<float>(src[k]) * inv_scale;
+        int32_t q = static_cast<int32_t>(roundf(val));
+        q = std::max(-128, std::min(127, q));
+        dst[k] = static_cast<int8_t>(q);
+    }
+
+    return scale;
+}
+
+void cactus_quantize_kv_fp16_to_int8(
+    const __fp16* src,
+    int8_t* dst,
+    float* scales,
+    size_t seq_len, size_t kv_heads, size_t head_dim,
+    size_t group_size
+) {
+    const size_t num_groups = (head_dim + group_size - 1) / group_size;
+
+    CactusThreading::parallel_for(seq_len * kv_heads, CactusThreading::Thresholds::ELEMENT_WISE,
+        [src, dst, scales, head_dim, group_size, num_groups](size_t start, size_t end) {
+            for (size_t idx = start; idx < end; idx++) {
+                const __fp16* head_src = src + idx * head_dim;
+                int8_t* head_dst = dst + idx * head_dim;
+                float* head_scales = scales + idx * num_groups;
+
+                for (size_t g = 0; g < num_groups; g++) {
+                    size_t group_start = g * group_size;
+                    size_t group_count = std::min(group_size, head_dim - group_start);
+                    head_scales[g] = quantize_group_fp16_to_int8(
+                        head_src + group_start,
+                        head_dst + group_start,
+                        group_count
+                    );
+                }
+            }
+        });
 }
