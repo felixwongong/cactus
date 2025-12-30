@@ -128,18 +128,7 @@ bool Model::init_internal(CactusGraph* gb, const std::string& model_folder, size
         attention_scale_ = 1.0f / std::sqrt(static_cast<float>(config_.attention_head_dim));
     }
 
-    Precision cache_precision;
-    switch (config_.precision) {
-        case Config::Precision::INT8:
-            cache_precision = Precision::INT8;
-            break;
-        case Config::Precision::FP16:
-            cache_precision = Precision::FP16;
-            break;
-        case Config::Precision::FP32:
-            cache_precision = Precision::FP32;
-            break;
-    }
+    Precision cache_precision = Precision::FP16;
     kv_cache_.init(config_.num_layers, context_size, config_.attention_kv_heads, config_.attention_head_dim, cache_precision);
 
     size_t window_size = std::min(context_size, size_t(512));
@@ -197,7 +186,7 @@ void Model::prefill(const std::vector<uint32_t>& tokens, size_t chunk_size, cons
         if (!profile_file.empty()) {
             gb->execute(profile_file);
         } else {
-            gb->execute("profile.txt");
+            gb->execute(profile_file);
         }
 
         post_execute_updates(gb, chunk.size());
@@ -320,8 +309,7 @@ std::vector<float> Model::get_embeddings(const std::vector<uint32_t>& tokens, bo
             Quantization::fp16_to_fp32(pooled_data, embeddings.data(), hidden_dim);
         } else if (pooled_buffer.precision == Precision::INT8) {
             int8_t* pooled_data = static_cast<int8_t*>(pooled_ptr);
-            float scale = pooled_buffer.quantization_scale;
-            Quantization::int8_to_fp32(pooled_data, embeddings.data(), hidden_dim, scale);
+            Quantization::int8_to_fp32(pooled_data, embeddings.data(), hidden_dim, 1.0f);
         }
     } else {
         if (!profile_file.empty()) {
@@ -344,9 +332,8 @@ std::vector<float> Model::get_embeddings(const std::vector<uint32_t>& tokens, bo
             }
         } else if (output_buffer.precision == Precision::INT8) {
             int8_t* hidden_states = static_cast<int8_t*>(output_ptr);
-            float scale = output_buffer.quantization_scale;
             for (size_t i = 0; i < total_size; i++) {
-                embeddings[i] = hidden_states[i] * scale;
+                embeddings[i] = static_cast<float>(hidden_states[i]);
             }
         }
     }
@@ -647,9 +634,8 @@ std::vector<__fp16> Model::get_token_embeddings(const std::vector<uint32_t>& tok
         }
     } else if (emb_buf.precision == Precision::INT8) {
         int8_t* src = static_cast<int8_t*>(emb_ptr);
-        float scale = emb_buf.quantization_scale;
         for (size_t i = 0; i < num_tokens * hidden_dim; i++) {
-            embeddings[i] = static_cast<__fp16>(src[i] * scale);
+            embeddings[i] = static_cast<__fp16>(src[i]);
         }
     }
 
@@ -796,7 +782,7 @@ double Model::score_tokens_window_logprob(
         } 
         else {
             const int8_t* src = static_cast<const int8_t*>(logits_ptr) + i * vocab_size;
-            Quantization::int8_to_fp32(const_cast<int8_t*>(src), row.data(), vocab_size, logits_buf.quantization_scale);
+            Quantization::int8_to_fp32(const_cast<int8_t*>(src), row.data(), vocab_size, 1.0f);
         }
 
         float max_logit = *std::max_element(row.begin(), row.end());

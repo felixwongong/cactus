@@ -11,6 +11,7 @@
 #include <mutex>
 #include <sstream>
 #include <iostream>
+#include <arm_neon.h>
 
 namespace cactus {
 
@@ -153,8 +154,6 @@ struct PrecisionTraits {
 namespace Quantization {
     void int8_to_fp32(const int8_t* src, float* dst, size_t count, float scale = 1.0f);
     void fp32_to_int8(const float* src, int8_t* dst, size_t count, float scale = 1.0f);
-    void dynamic_quantize_fp32_to_int8(const float* src, int8_t* dst, size_t count, 
-                                       float* computed_scale);
     void fp16_to_fp32(const __fp16* src, float* dst, size_t count);
     void fp32_to_fp16(const float* src, __fp16* dst, size_t count);
     void int8_to_fp16(const int8_t* src, __fp16* dst, size_t count, float scale = 1.0f);
@@ -188,10 +187,14 @@ struct BufferDesc {
     void* external_data;
     char* pooled_data;
     Precision precision;
-    float quantization_scale;
+
+    size_t group_size = 0;
+    size_t num_groups = 0;
+    void* scales_data = nullptr;
+    std::unique_ptr<char[]> owned_scales;
 
     BufferDesc();
-    BufferDesc(const std::vector<size_t>& s, Precision prec = Precision::INT8, float scale = 1.0f);
+    BufferDesc(const std::vector<size_t>& s, Precision prec = Precision::INT8);
     ~BufferDesc();
 
     BufferDesc(BufferDesc&& other) noexcept;
@@ -208,6 +211,18 @@ struct BufferDesc {
 
     template<typename T>
     const T* data_as() const { return static_cast<const T*>(get_data()); }
+
+    const __fp16* scales_as_fp16() const {
+        return reinterpret_cast<const __fp16*>(scales_data);
+    }
+    bool is_grouped_int8() const {
+        return precision == Precision::INT8 && group_size > 0;
+    }
+    void set_grouped_scales(size_t gs, size_t ng, void* scales_ptr) {
+        group_size = gs;
+        num_groups = ng;
+        scales_data = scales_ptr;
+    }
 
     void allocate();
     void allocate_from_pool(BufferPool& pool);
@@ -361,8 +376,8 @@ public:
     size_t gather(size_t embeddings, size_t indices);
     size_t mmap_embeddings(const std::string& filename);
     size_t mmap_weights(const std::string& filename);
-    size_t load_weights(const std::string& filename); 
-    void set_quantization_scale(size_t node_id, float scale);
+    size_t load_weights(const std::string& filename);
+    void set_grouped_scales(size_t node_id, size_t group_size, size_t num_groups, void* scales_ptr);
     size_t embedding(const std::string& filename, size_t indices);
     size_t embedding(size_t embedding_tensor, size_t indices);
     size_t bilinear_interpolation(size_t pos_embeds, size_t dst_height, size_t dst_width);
@@ -430,25 +445,28 @@ namespace GraphFile {
     public:
         MappedFile(const std::string& filename);
         ~MappedFile();
-        
+
         MappedFile(const MappedFile&) = delete;
         MappedFile& operator=(const MappedFile&) = delete;
         MappedFile(MappedFile&& other) noexcept;
         MappedFile& operator=(MappedFile&& other) noexcept;
-        
+
         const std::vector<size_t>& shape() const;
         Precision precision() const;
         size_t byte_size() const;
-        float quantization_scale() const;
-        
+
+        size_t group_size() const { return group_size_; }
+        size_t num_groups() const { return num_groups_; }
+        const void* scales_data() const;
+
         void* data();
         const void* data() const;
-        
+
         template<typename T>
         const T* typed_data() const;
-        
+
         LoadedNode load_into_graph(CactusGraph& graph) const;
-        
+
     private:
         int fd_;
         void* mapped_data_;
@@ -456,10 +474,12 @@ namespace GraphFile {
         std::vector<size_t> shape_;
         Precision precision_;
         size_t byte_size_;
-        float quantization_scale_;
+        size_t group_size_ = 0;
+        size_t num_groups_ = 0;
+        size_t scales_offset_ = 0;
         void parse_header();
     };
-    
+
     MappedFile mmap_load(const std::string& filename);
 }
 

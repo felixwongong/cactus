@@ -83,32 +83,6 @@ void cactus_fp32_to_int8(const float* src, int8_t* dst, size_t count, float scal
         });
 }
 
-void cactus_dynamic_quantize_fp32_to_int8(const float* src, int8_t* dst, size_t count, float* computed_scale) {
-    if (count == 0) return;
-    
-    float32x4_t abs_max_vec = vdupq_n_f32(0.0f);
-    const size_t simd_end = (count / 4) * 4;
-    
-    for (size_t i = 0; i < simd_end; i += 4) {
-        float32x4_t input = vld1q_f32(&src[i]);
-        float32x4_t abs_input = vabsq_f32(input);
-        abs_max_vec = vmaxq_f32(abs_max_vec, abs_input);
-    }
-    
-    float abs_max = vmaxvq_f32(abs_max_vec);
-    
-    for (size_t i = simd_end; i < count; ++i) {
-        abs_max = std::max(abs_max, std::abs(src[i]));
-    }
-    
-    float scale = abs_max / 127.0f;
-    if (scale == 0.0f) scale = 1.0f; 
-    
-    cactus_fp32_to_int8(src, dst, count, scale);
-    
-    if (computed_scale) *computed_scale = scale;
-}
-
 void cactus_fp16_to_fp32(const __fp16* src, float* dst, size_t count) {
     CactusThreading::parallel_for(count, CactusThreading::Thresholds::ELEMENT_WISE,
         [src, dst](size_t start, size_t end) {
@@ -244,28 +218,4 @@ float cactus_fp16_max_abs(const __fp16* src, size_t count) {
     }
     
     return max_abs;
-}
-
-void cactus_int32_to_fp16_scaled(const int32_t* src, __fp16* dst, size_t count, float scale) {
-    float32x4_t scale_vec = vdupq_n_f32(scale);
-    const size_t simd_end = (count / 8) * 8;
-    
-    for (size_t i = 0; i < simd_end; i += 8) {
-        int32x4_t int_low = vld1q_s32(&src[i]);
-        int32x4_t int_high = vld1q_s32(&src[i + 4]);
-        
-        float32x4_t fp32_low = vcvtq_f32_s32(int_low);
-        float32x4_t fp32_high = vcvtq_f32_s32(int_high);
-        
-        float32x4_t scaled_low = vmulq_f32(fp32_low, scale_vec);
-        float32x4_t scaled_high = vmulq_f32(fp32_high, scale_vec);
-        
-        float16x8_t result = vcombine_f16(vcvt_f16_f32(scaled_low), vcvt_f16_f32(scaled_high));
-        vst1q_f16(&dst[i], result);
-    }
-    
-    for (size_t i = simd_end; i < count; ++i) {
-        float fp32_val = static_cast<float>(src[i]) * scale;
-        dst[i] = static_cast<__fp16>(fp32_val);
-    }
 }

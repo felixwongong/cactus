@@ -563,31 +563,22 @@ size_t CactusGraph::slice(size_t input, int axis, size_t start, size_t length) {
 
 size_t CactusGraph::mmap_embeddings(const std::string& filename) {
     auto mapped_file = std::make_unique<GraphFile::MappedFile>(filename);
-    
+
     const auto& shape = mapped_file->shape();
     if (shape.size() != 2) {
         throw std::runtime_error("Memory-mapped embeddings must be 2D [vocab_size, embedding_dim]");
     }
-    
+
     Precision precision = mapped_file->precision();
-    
-    float scale = 1.0f;
-    if (precision == Precision::INT8) {
-        std::string scale_filename = filename;
-        size_t dot_pos = scale_filename.find_last_of('.');
-        if (dot_pos != std::string::npos) {
-            scale_filename = scale_filename.substr(0, dot_pos) + ".scale";
-            std::ifstream scale_file(scale_filename);
-            if (scale_file.is_open()) {
-                scale_file >> scale;
-                scale_file.close();
-            }
-        }
-    }
-    
+
     size_t node_id = input(shape, precision);
-    set_quantization_scale(node_id, scale);
     set_external_input(node_id, const_cast<void*>(mapped_file->data()), precision);
+
+    if (precision == Precision::INT8 && mapped_file->group_size() > 0) {
+        set_grouped_scales(node_id, mapped_file->group_size(), mapped_file->num_groups(),
+                          const_cast<void*>(mapped_file->scales_data()));
+    }
+
     mapped_files_.push_back(std::move(mapped_file));
     return node_id;
 }
@@ -597,29 +588,20 @@ size_t CactusGraph::mmap_weights(const std::string& filename) {
     if (it != weight_cache_.end()) {
         return it->second;
     }
-    
+
     auto mapped_file = std::make_unique<GraphFile::MappedFile>(filename);
-    
+
     const auto& shape = mapped_file->shape();
     Precision precision = mapped_file->precision();
-    
-    float scale = 1.0f;
-    if (precision == Precision::INT8) {
-        std::string scale_filename = filename;
-        size_t dot_pos = scale_filename.find_last_of('.');
-        if (dot_pos != std::string::npos) {
-            scale_filename = scale_filename.substr(0, dot_pos) + ".scale";
-            std::ifstream scale_file(scale_filename);
-            if (scale_file.is_open()) {
-                scale_file >> scale;
-                scale_file.close();
-            }
-        }
-    }
-    
+
     size_t node_id = input(shape, precision);
-    set_quantization_scale(node_id, scale);
     set_external_input(node_id, const_cast<void*>(mapped_file->data()), precision);
+
+    if (precision == Precision::INT8 && mapped_file->group_size() > 0) {
+        set_grouped_scales(node_id, mapped_file->group_size(), mapped_file->num_groups(),
+                          const_cast<void*>(mapped_file->scales_data()));
+    }
+
     mapped_files_.push_back(std::move(mapped_file));
     weight_cache_[filename] = node_id;
     return node_id;
@@ -631,76 +613,17 @@ size_t CactusGraph::load_weights(const std::string& filename) {
         return it->second;
     }
 
-    std::ifstream file(filename, std::ios::binary | std::ios::ate);
-    if (!file.is_open()) {
-        throw std::runtime_error("Cannot open weight file: " + filename);
-    }
-
-    size_t file_size = file.tellg();
-    file.seekg(0, std::ios::beg);
-
-    std::unique_ptr<char[]> buffer = std::make_unique<char[]>(file_size);
-    if (!file.read(buffer.get(), file_size)) {
-        throw std::runtime_error("Failed to read weight file: " + filename);
-    }
-    file.close();
-
-    const char* ptr = buffer.get();
-    size_t offset = 0;
-
-    uint32_t ndim = *reinterpret_cast<const uint32_t*>(ptr + offset);
-    offset += sizeof(uint32_t);
-
-    std::vector<size_t> shape(ndim);
-    for (uint32_t i = 0; i < ndim; i++) {
-        uint64_t dim_val = *reinterpret_cast<const uint64_t*>(ptr + offset);
-        shape[i] = static_cast<size_t>(dim_val);
-        offset += sizeof(uint64_t);
-    }
-
-    uint32_t prec_val = *reinterpret_cast<const uint32_t*>(ptr + offset);
-    Precision precision = static_cast<Precision>(prec_val);
-    offset += sizeof(uint32_t);
-
-    offset += sizeof(uint64_t);
-
-    float scale = 1.0f;
-    if (precision == Precision::INT8) {
-        scale = *reinterpret_cast<const float*>(ptr + offset);
-        offset += sizeof(float);
-
-        std::string scale_filename = filename;
-        size_t dot_pos = scale_filename.find_last_of('.');
-        if (dot_pos != std::string::npos) {
-            scale_filename = scale_filename.substr(0, dot_pos) + ".scale";
-            std::ifstream scale_file(scale_filename);
-            if (scale_file.is_open()) {
-                float external_scale;
-                scale_file >> external_scale;
-                scale = external_scale;  
-                scale_file.close();
-            }
-        }
-    }
-
-    size_t node_id = input(shape, precision);
-    set_quantization_scale(node_id, scale);
-
-    const void* weight_data = ptr + offset;
-    set_input(node_id, weight_data, precision);
-
-    weight_cache_[filename] = node_id;
-
-    return node_id;
+    auto loaded = GraphFile::load_into_graph(*this, filename);
+    weight_cache_[filename] = loaded.node_id;
+    return loaded.node_id;
 }
 
-void CactusGraph::set_quantization_scale(size_t node_id, float scale) {
+void CactusGraph::set_grouped_scales(size_t node_id, size_t group_size, size_t num_groups, void* scales_ptr) {
     auto it = node_index_map_.find(node_id);
     if (it != node_index_map_.end()) {
-        nodes_[it->second]->output_buffer.quantization_scale = scale;
+        nodes_[it->second]->output_buffer.set_grouped_scales(group_size, num_groups, scales_ptr);
     }
 }
-
 
 size_t CactusGraph::embedding(const std::string& filename, size_t indices) {
     auto mapped_file = std::make_unique<GraphFile::MappedFile>(filename);
@@ -750,7 +673,7 @@ size_t CactusGraph::bilinear_interpolation(size_t pos_embeds, size_t dst_height,
     OpParams params;
     params.dst_height = dst_height;
     params.dst_width = dst_width;
-    params.output_precision = Precision::FP32;
+    params.output_precision = Precision::FP16;
     
     return add_node(OpType::BILINEAR_INTERPOLATION, {pos_embeds}, output_shape, params);
 }   
@@ -766,11 +689,11 @@ void CactusGraph::set_input(size_t node_id, const void* data, Precision) {
     if (node.op_type != OpType::INPUT) {
         throw std::invalid_argument("Can only set data on input nodes");
     }
-    
+
     if (!node.output_buffer.data && !node.output_buffer.external_data) {
         node.output_buffer.allocate();
     }
-    
+
     std::memcpy(node.output_buffer.get_data(), data, node.output_buffer.byte_size);
 }
 
@@ -1140,9 +1063,8 @@ void CactusGraph::execute(const std::string& profile_file) {
                         }
                     } else if (buffer.precision == Precision::INT8) {
                         const int8_t* typed = reinterpret_cast<const int8_t*>(data_ptr);
-                        float scale = buffer.quantization_scale;
                         for (size_t i = 0; i < elements_to_process; ++i) {
-                            accumulate(static_cast<float>(typed[i]) * scale, i);
+                            accumulate(static_cast<float>(typed[i]), i);
                         }
                     } else {
                         has_data = false;

@@ -1,0 +1,125 @@
+# Deploying Unsloth Fine-Tunes to Cactus for Phones
+
+- Cactus is an inference engine for mobile devices, macs and ARM chips like Raspberry Pi. 
+- At INT8, Cactus runs `Qwen3-0.6B` and `LFM2-1.2B `at `60-70 toks/sec` on iPhone 17 Pro, `13-18 toks/sec` on budget Pixel 6a.
+- Task-Specific INT8 tunes of `Gemma3-270m` hits `150 toks/sec` on iPhone 17 Pro and `23 toks/sec` on Raspberry Pi. 
+
+## Quick Start
+
+### 1. Train (Google Colab / GPU)
+
+Use the provided notebook or your own Unsloth training script:
+
+```python
+from unsloth import FastLanguageModel
+
+model, tokenizer = FastLanguageModel.from_pretrained(
+    model_name="unsloth/gemma-3-4b-it",
+    max_seq_length=2048,
+    load_in_4bit=True,
+)
+
+model = FastLanguageModel.get_peft_model(
+    model,
+    r=16,
+    target_modules=["q_proj", "k_proj", "v_proj", "o_proj",
+                    "gate_proj", "up_proj", "down_proj"],
+    lora_alpha=16,
+    lora_dropout=0,
+    use_gradient_checkpointing="unsloth",
+)
+
+# ... train with SFTTrainer ...
+
+# Save adapter
+model.save_pretrained("my-lora-adapter")
+tokenizer.save_pretrained("my-lora-adapter")
+
+# Push to Hub (optional)
+model.push_to_hub("username/my-lora-adapter")
+```
+
+### 2. Setup Cactus
+
+```bash
+git clone https://github.com/cactus-compute/cactus && cd cactus && source ./setup
+```
+
+### 3. Convert for Cactus
+
+```bash
+# From local adapter
+cactus convert unsloth/gemma-3-270m-it weights/my-model --lora ./my-lora-adapter
+
+# From HuggingFace Hub
+cactus convert unsloth/gemma-3-270m-it weights/my-model --lora username/my-lora-adapter
+```
+
+### 4. Run
+
+Test your model on Mac:
+
+```bash
+cactus run weights/my-model
+```
+
+### 5. Use in iOS/macOS App
+
+Build the native library:
+
+```bash
+cactus build --apple
+# Output: apple/libcactus-device.a, apple/cactus-ios.xcframework
+```
+
+Link `cactus-ios.xcframework` to your Xcode project, then:
+
+```swift
+import Foundation
+
+// Load model from app bundle
+let modelPath = Bundle.main.path(forResource: "my-model", ofType: nil)!
+let model = cactus_init(modelPath, 2048, nil)
+
+// Run completion
+let messages = "[{\"role\":\"user\",\"content\":\"Hello!\"}]"
+var response = [CChar](repeating: 0, count: 4096)
+cactus_complete(model, messages, &response, response.count, nil, nil, nil, nil)
+print(String(cString: response))
+
+// Cleanup
+cactus_destroy(model)
+```
+
+### 6. Use in Android App
+
+Build the native library:
+
+```bash
+cactus build --android
+# Output: android/libcactus.so, android/libcactus.a
+```
+
+Copy `libcactus.so` to `app/src/main/jniLibs/arm64-v8a/`, then:
+
+```kotlin
+class CactusWrapper {
+    init { System.loadLibrary("cactus") }
+
+    external fun init(modelPath: String, contextSize: Long, corpusDir: String?): Long
+    external fun complete(model: Long, messagesJson: String, bufferSize: Int): String
+    external fun destroy(model: Long)
+}
+
+// Usage
+val cactus = CactusWrapper()
+val model = cactus.init("/data/local/tmp/my-model", 2048, null)
+val response = cactus.complete(model, """[{"role":"user","content":"Hello!"}]""", 4096)
+cactus.destroy(model)
+```
+
+## Resources
+
+Supported Base Models: `Qwen3, Gemma3, LFM2, SmolLM2` 
+Full API reference: [Cactus Engine](https://github.com/cactus-compute/cactus/blob/main/docs/cactus_engine.md)
+Learn more and report bugs: [Cactus](https://github.com/cactus-compute/cactus/tree/main)

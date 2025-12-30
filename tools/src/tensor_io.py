@@ -9,8 +9,11 @@ except ImportError:
     torch = None
 
 
-def save_tensor_with_header(tensor, output_path, precision='FP32', transpose=False, stats_tracker=None, args=None, model_type=None):
-    """Save a tensor to binary format with header metadata and optional quantization."""
+GROUP_SIZE = 32 
+
+
+def save_tensor_with_header(tensor, output_path, precision='FP16', transpose=False, stats_tracker=None, args=None, model_type=None):
+    """Save a tensor to binary format with header metadata and group-wise INT8 quantization."""
     if torch is not None and isinstance(tensor, torch.Tensor):
         data = tensor.detach().cpu().numpy()
     else:
@@ -22,125 +25,135 @@ def save_tensor_with_header(tensor, output_path, precision='FP32', transpose=Fal
         data = data + 1.0
         original_data = data.copy()
 
-    mean_val = np.mean(original_data)
-    std_val = np.std(original_data)
-    min_val = np.min(original_data)
-    max_val = np.max(original_data)
-
-
     if precision == 'INT8':
         filename = output_path.name
         if any(x in filename for x in ['norm', 'bias', 'vision']) or (model_type == 'bert' and 'embedding' in filename):
             precision = 'FP16'
 
+    shape = list(data.shape)
+    if transpose and len(shape) == 2:
+        data = data.T
+        original_data = original_data.T
+        shape = [shape[1], shape[0]]
+
     if precision == 'INT8':
-        qmin, qmax = -128, 127
-        standard_scale = (max_val - min_val) / (qmax - qmin) if max_val != min_val else 1.0
+        if len(shape) == 2:
+            N, K = shape
 
-        standard_zero_point = qmax - max_val / standard_scale
-        standard_zero_point_clipped = np.clip(np.round(standard_zero_point), qmin, qmax)
-        test_quantized = np.clip(np.round(original_data / standard_scale + standard_zero_point_clipped), qmin, qmax)
-        test_saturation = np.sum(np.abs(test_quantized) >= 127) / original_data.size
+            if K % GROUP_SIZE != 0:
+                pad_k = GROUP_SIZE - (K % GROUP_SIZE)
+                data = np.pad(data, ((0, 0), (0, pad_k)), mode='constant', constant_values=0)
+                original_data = np.pad(original_data, ((0, 0), (0, pad_k)), mode='constant', constant_values=0)
+                K = data.shape[1]
+                shape = [N, K]
 
-        saturation_threshold = getattr(args, 'saturation_threshold', 0.01) if args else 0.01
-        if test_saturation > saturation_threshold:
-            outlier_percentile = getattr(args, 'outlier_percentile', 0.01) if args else 0.01
-            lower_percentile = np.percentile(original_data, outlier_percentile)
-            upper_percentile = np.percentile(original_data, 100 - outlier_percentile)
+            num_groups = K // GROUP_SIZE
 
-            mean_val = np.mean(original_data)
-            std_val = np.std(original_data)
-            sigma_multiplier = getattr(args, 'sigma_multiplier', 3.5) if args else 3.5
-            three_sigma_min = mean_val - sigma_multiplier * std_val
-            three_sigma_max = mean_val + sigma_multiplier * std_val
+            data_grouped = data.reshape(N, num_groups, GROUP_SIZE)
+            original_grouped = original_data.reshape(N, num_groups, GROUP_SIZE)
 
-            clipped_min = max(min_val, min(lower_percentile, three_sigma_min))
-            clipped_max = min(max_val, max(upper_percentile, three_sigma_max))
+            group_abs_max = np.max(np.abs(data_grouped), axis=2) 
+            scales = (group_abs_max / 127.0).astype(np.float32)
+            scales = np.maximum(scales, 1e-10)  
 
-            range_threshold = getattr(args, 'range_threshold', 0.5) if args else 0.5
-            if (clipped_max - clipped_min) < range_threshold * (max_val - min_val):
-                clipped_min = min_val
-                clipped_max = max_val
+            quantized = np.clip(
+                np.round(data_grouped / scales[:, :, np.newaxis]),
+                -128, 127
+            ).astype(np.int8)
+            quantized_flat = quantized.reshape(N, K)
+
+            dequantized = (quantized.astype(np.float32) * scales[:, :, np.newaxis]).reshape(N, K)
+            mse_error = np.mean((original_data - dequantized) ** 2)
+            snr_db = 10 * np.log10(np.var(original_data) / mse_error) if mse_error > 0 else float('inf')
+
+            original_flat = original_data.flatten()
+            dequant_flat = dequantized.flatten()
+            cos_sim = np.dot(original_flat, dequant_flat) / (np.linalg.norm(original_flat) * np.linalg.norm(dequant_flat) + 1e-10)
+
+            scales_fp16 = scales.astype(np.float16)
+
+        elif len(shape) == 1:
+            K = shape[0]
+
+            if K % GROUP_SIZE != 0:
+                pad_k = GROUP_SIZE - (K % GROUP_SIZE)
+                data = np.pad(data, (0, pad_k), mode='constant', constant_values=0)
+                original_data = np.pad(original_data, (0, pad_k), mode='constant', constant_values=0)
+                K = data.shape[0]
+                shape = [K]
+
+            num_groups = K // GROUP_SIZE
+            N = 1
+
+            data_grouped = data.reshape(1, num_groups, GROUP_SIZE)
+            original_grouped = original_data.reshape(1, num_groups, GROUP_SIZE)
+
+            group_abs_max = np.max(np.abs(data_grouped), axis=2)
+            scales = (group_abs_max / 127.0).astype(np.float32)
+            scales = np.maximum(scales, 1e-10)
+
+            quantized = np.clip(
+                np.round(data_grouped / scales[:, :, np.newaxis]),
+                -128, 127
+            ).astype(np.int8)
+            quantized_flat = quantized.reshape(K)
+
+            dequantized = (quantized.astype(np.float32) * scales[:, :, np.newaxis]).reshape(K)
+            mse_error = np.mean((original_data - dequantized) ** 2)
+            snr_db = 10 * np.log10(np.var(original_data) / mse_error) if mse_error > 0 else float('inf')
+            cos_sim = np.dot(original_data, dequantized) / (np.linalg.norm(original_data) * np.linalg.norm(dequantized) + 1e-10)
+
+            scales_fp16 = scales.astype(np.float16)
         else:
-            clipped_min = min_val
-            clipped_max = max_val
+            precision = 'FP16'
 
-        abs_max = max(abs(clipped_min), abs(clipped_max))
-        scale = abs_max / 127.0 if abs_max != 0 else 1.0
-
-        quantized_data = np.clip(np.round(original_data / scale), qmin, qmax).astype(np.int8)
-
-        dequantized_data = quantized_data.astype(np.float32) * scale
-        mse_error = np.mean((original_data - dequantized_data) ** 2)
-        snr_db = 10 * np.log10(np.var(original_data) / mse_error) if mse_error > 0 else float('inf')
-
-        original_flat = original_data.flatten()
-        dequantized_flat = dequantized_data.flatten()
-        cos_sim = np.dot(original_flat, dequantized_flat) / (np.linalg.norm(original_flat) * np.linalg.norm(dequantized_flat))
-        saturated_values = np.sum(np.abs(quantized_data) == 127)
-        saturation_percent = (saturated_values / quantized_data.size) * 100
-        data = quantized_data
-
+    if precision == 'INT8':
         if stats_tracker:
             stats_tracker['quantized_tensors'] += 1
             stats_tracker['quantized_parameters'] += original_data.size
             stats_tracker['mse_values'].append(mse_error)
             stats_tracker['snr_values'].append(snr_db)
             stats_tracker['cos_sim_values'].append(cos_sim)
-            saturation_warning_threshold = getattr(args, 'saturation_warning_threshold', 0.1) if args else 0.1
-            if saturation_percent > saturation_warning_threshold:
-                stats_tracker['saturation_warnings'] += 1
-    elif precision == 'FP16':
-        data = data.astype(np.float16)
-        scale = 1.0
-    else:
-        data = data.astype(np.float32)
-        scale = 1.0
+
+        with open(output_path, 'wb') as f:
+            ndim = len(shape)
+            f.write(struct.pack('<I', ndim))
+            for dim in shape:
+                f.write(struct.pack('<Q', dim))
+            f.write(struct.pack('<I', 0))
+            byte_size = quantized_flat.size
+            f.write(struct.pack('<Q', byte_size))
+            f.write(struct.pack('<I', GROUP_SIZE))
+            f.write(struct.pack('<Q', num_groups))
+            f.write(quantized_flat.tobytes())
+            f.write(scales_fp16.tobytes())
+
+        if stats_tracker:
+            stats_tracker['total_tensors'] += 1
+            stats_tracker['total_parameters'] += original_data.size
+
+        return
+
+    data = data.astype(np.float16)
 
     if stats_tracker:
         stats_tracker['total_tensors'] += 1
         stats_tracker['total_parameters'] += original_data.size
 
-    shape = list(data.shape)
-    if transpose and len(shape) == 2:
-        data = data.T
-        shape = [shape[1], shape[0]]
-
-    data = data.flatten()
+    data_flat = data.flatten()
 
     with open(output_path, 'wb') as f:
         ndim = len(shape)
         f.write(struct.pack('<I', ndim))
-
         for dim in shape:
             f.write(struct.pack('<Q', dim))
 
-        if precision == 'INT8':
-            prec_val = 0
-        elif precision == 'FP16':
-            prec_val = 1
-        else:
-            prec_val = 2
-        f.write(struct.pack('<I', prec_val))
+        f.write(struct.pack('<I', 1))  # FP16 precision
 
-        if precision == 'INT8':
-            element_size = 1
-        elif precision == 'FP16':
-            element_size = 2
-        else:
-            element_size = 4
-        byte_size = data.size * element_size
+        byte_size = data_flat.size * 2  # FP16 = 2 bytes
         f.write(struct.pack('<Q', byte_size))
 
-        if precision == 'INT8':
-            f.write(struct.pack('<f', scale))
-
-        f.write(data.tobytes())
-
-    if precision == 'INT8':
-        scale_path = output_path.with_suffix('.scale')
-        with open(scale_path, 'w') as f:
-            f.write(f"{scale:.10f}\n")
+        f.write(data_flat.tobytes())
 
 
 def format_config_value(value):

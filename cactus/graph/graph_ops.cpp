@@ -13,167 +13,92 @@
 #include <assert.h>
 
 namespace {
-    thread_local std::vector<int8_t> transpose_buffer_int8;
     thread_local std::vector<__fp16> transpose_buffer_fp16;
-    thread_local std::vector<float> transpose_buffer_fp32;
-    thread_local std::vector<int8_t> quantization_buffer_int8;
-    
-    void ensure_transpose_buffer_int8(size_t required_size) {
-        if (transpose_buffer_int8.size() < required_size) {
-            transpose_buffer_int8.resize(required_size);
-        }
-    }
-    
+
     void ensure_transpose_buffer_fp16(size_t required_size) {
         if (transpose_buffer_fp16.size() < required_size) {
             transpose_buffer_fp16.resize(required_size);
         }
     }
-    
-    void ensure_transpose_buffer_fp32(size_t required_size) {
-        if (transpose_buffer_fp32.size() < required_size) {
-            transpose_buffer_fp32.resize(required_size);
-        }
-    }
-    
-    void ensure_quantization_buffer_int8(size_t required_size) {
-        if (quantization_buffer_int8.size() < required_size) {
-            quantization_buffer_int8.resize(required_size);
-        }
-    }
 }
 
 void shrink_thread_local_buffers() {
-    std::vector<int8_t>().swap(transpose_buffer_int8);
     std::vector<__fp16>().swap(transpose_buffer_fp16);
-    std::vector<float>().swap(transpose_buffer_fp32);
-    std::vector<int8_t>().swap(quantization_buffer_int8);
 }
 
 void compute_reduce_node(GraphNode& node, const std::vector<std::unique_ptr<GraphNode>>& nodes, const std::unordered_map<size_t, size_t>& node_index_map) {
     const auto& input_buffer = nodes[node_index_map.at(node.input_ids[0])]->output_buffer;
     int axis = node.params.axis;
-    
+
+    if (input_buffer.precision != Precision::FP16) {
+        throw std::runtime_error("Reduction operations only support FP16 precision");
+    }
+
     if (axis == -1) {
         switch (node.op_type) {
-            case OpType::SUM:
-                if (input_buffer.precision == Precision::INT8) {
-                    int64_t result = cactus_sum_all_int8(input_buffer.data_as<int8_t>(), input_buffer.total_size);
-                    node.output_buffer.data_as<int8_t>()[0] = static_cast<int8_t>(std::max(static_cast<int64_t>(-128), std::min(static_cast<int64_t>(127), result)));
-                } else if (input_buffer.precision == Precision::FP16) {
-                    double result = cactus_sum_all_f16(input_buffer.data_as<__fp16>(), input_buffer.total_size);
-                    node.output_buffer.data_as<__fp16>()[0] = static_cast<__fp16>(result);
-                } else {
-                    double result = cactus_sum_all_f32(input_buffer.data_as<float>(), input_buffer.total_size);
-                    node.output_buffer.data_as<float>()[0] = static_cast<float>(result);
-                }
+            case OpType::SUM: {
+                double result = cactus_sum_all_f16(input_buffer.data_as<__fp16>(), input_buffer.total_size);
+                node.output_buffer.data_as<__fp16>()[0] = static_cast<__fp16>(result);
                 break;
-            case OpType::MEAN:
-                if (input_buffer.precision == Precision::INT8) {
-                    double result = cactus_mean_all_int8(input_buffer.data_as<int8_t>(), input_buffer.total_size);
-                    node.output_buffer.data_as<int8_t>()[0] = static_cast<int8_t>(std::max(-128.0, std::min(127.0, result)));
-                } else if (input_buffer.precision == Precision::FP16) {
-                    double result = cactus_mean_all_f16(input_buffer.data_as<__fp16>(), input_buffer.total_size);
-                    node.output_buffer.data_as<__fp16>()[0] = static_cast<__fp16>(result);
-                } else {
-                    double result = cactus_mean_all_f32(input_buffer.data_as<float>(), input_buffer.total_size);
-                    node.output_buffer.data_as<float>()[0] = static_cast<float>(result);
-                }
+            }
+            case OpType::MEAN: {
+                double result = cactus_mean_all_f16(input_buffer.data_as<__fp16>(), input_buffer.total_size);
+                node.output_buffer.data_as<__fp16>()[0] = static_cast<__fp16>(result);
                 break;
-            case OpType::VARIANCE:
-                if (input_buffer.precision == Precision::INT8) {
-                    double result = cactus_variance_all_int8(input_buffer.data_as<int8_t>(), input_buffer.total_size);
-                    node.output_buffer.data_as<int8_t>()[0] = static_cast<int8_t>(std::max(-128.0, std::min(127.0, result)));
-                } else {
-                    double result = cactus_variance_all_f32(input_buffer.data_as<float>(), input_buffer.total_size);
-                    node.output_buffer.data_as<float>()[0] = static_cast<float>(result);
-                }
+            }
+            case OpType::VARIANCE: {
+                double result = cactus_variance_all_f16(input_buffer.data_as<__fp16>(), input_buffer.total_size);
+                node.output_buffer.data_as<__fp16>()[0] = static_cast<__fp16>(result);
                 break;
-            case OpType::MIN:
-                if (input_buffer.precision == Precision::INT8) {
-                    int64_t result = cactus_min_all_int8(input_buffer.data_as<int8_t>(), input_buffer.total_size);
-                    node.output_buffer.data_as<int8_t>()[0] = static_cast<int8_t>(result);
-                } else {
-                    float result = cactus_min_all_f32(input_buffer.data_as<float>(), input_buffer.total_size);
-                    node.output_buffer.data_as<float>()[0] = result;
-                }
+            }
+            case OpType::MIN: {
+                __fp16 result = cactus_min_all_f16(input_buffer.data_as<__fp16>(), input_buffer.total_size);
+                node.output_buffer.data_as<__fp16>()[0] = result;
                 break;
-            case OpType::MAX:
-                if (input_buffer.precision == Precision::INT8) {
-                    int64_t result = cactus_max_all_int8(input_buffer.data_as<int8_t>(), input_buffer.total_size);
-                    node.output_buffer.data_as<int8_t>()[0] = static_cast<int8_t>(result);
-                } else {
-                    float result = cactus_max_all_f32(input_buffer.data_as<float>(), input_buffer.total_size);
-                    node.output_buffer.data_as<float>()[0] = result;
-                }
+            }
+            case OpType::MAX: {
+                __fp16 result = cactus_max_all_f16(input_buffer.data_as<__fp16>(), input_buffer.total_size);
+                node.output_buffer.data_as<__fp16>()[0] = result;
                 break;
+            }
             default: break;
         }
     } else {
         const auto& shape = input_buffer.shape;
         size_t axis_idx = static_cast<size_t>(axis);
-        
+
         size_t outer_size = 1;
         for (size_t i = 0; i < axis_idx; i++) {
             outer_size *= shape[i];
         }
-        
+
         size_t axis_size = shape[axis_idx];
-        
+
         size_t inner_size = 1;
         for (size_t i = axis_idx + 1; i < shape.size(); i++) {
             inner_size *= shape[i];
         }
-        
-        
+
         switch (node.op_type) {
             case OpType::SUM:
-                if (input_buffer.precision == Precision::INT8) {
-                    cactus_sum_axis_int8(input_buffer.data_as<int8_t>(), node.output_buffer.data_as<int8_t>(), 
-                                        outer_size, axis_size, inner_size);
-                } else {
-                    cactus_sum_axis_f32(input_buffer.data_as<float>(), node.output_buffer.data_as<float>(), 
-                                        outer_size, axis_size, inner_size);
-                }
+                cactus_sum_axis_f16(input_buffer.data_as<__fp16>(), node.output_buffer.data_as<__fp16>(),
+                                    outer_size, axis_size, inner_size);
                 break;
             case OpType::MEAN:
-                if (input_buffer.precision == Precision::INT8) {
-                    cactus_mean_axis_int8(input_buffer.data_as<int8_t>(), node.output_buffer.data_as<int8_t>(), 
-                                         outer_size, axis_size, inner_size);
-                } else if (input_buffer.precision == Precision::FP16) {
-                    cactus_mean_axis_f16(input_buffer.data_as<__fp16>(), node.output_buffer.data_as<__fp16>(), 
-                                        outer_size, axis_size, inner_size);
-                } else {
-                    cactus_mean_axis_f32(input_buffer.data_as<float>(), node.output_buffer.data_as<float>(), 
-                                         outer_size, axis_size, inner_size);
-                }
+                cactus_mean_axis_f16(input_buffer.data_as<__fp16>(), node.output_buffer.data_as<__fp16>(),
+                                    outer_size, axis_size, inner_size);
                 break;
             case OpType::VARIANCE:
-                if (input_buffer.precision == Precision::INT8) {
-                    cactus_variance_axis_int8(input_buffer.data_as<int8_t>(), node.output_buffer.data_as<int8_t>(), 
-                                             outer_size, axis_size, inner_size);
-                } else {
-                    cactus_variance_axis_f32(input_buffer.data_as<float>(), node.output_buffer.data_as<float>(), 
-                                             outer_size, axis_size, inner_size);
-                }
+                cactus_variance_axis_f16(input_buffer.data_as<__fp16>(), node.output_buffer.data_as<__fp16>(),
+                                         outer_size, axis_size, inner_size);
                 break;
             case OpType::MIN:
-                if (input_buffer.precision == Precision::INT8) {
-                    cactus_min_axis_int8(input_buffer.data_as<int8_t>(), node.output_buffer.data_as<int8_t>(), 
-                                        outer_size, axis_size, inner_size);
-                } else {
-                    cactus_min_axis_f32(input_buffer.data_as<float>(), node.output_buffer.data_as<float>(), 
-                                        outer_size, axis_size, inner_size);
-                }
+                cactus_min_axis_f16(input_buffer.data_as<__fp16>(), node.output_buffer.data_as<__fp16>(),
+                                    outer_size, axis_size, inner_size);
                 break;
             case OpType::MAX:
-                if (input_buffer.precision == Precision::INT8) {
-                    cactus_max_axis_int8(input_buffer.data_as<int8_t>(), node.output_buffer.data_as<int8_t>(), 
-                                        outer_size, axis_size, inner_size);
-                } else {
-                    cactus_max_axis_f32(input_buffer.data_as<float>(), node.output_buffer.data_as<float>(), 
-                                        outer_size, axis_size, inner_size);
-                }
+                cactus_max_axis_f16(input_buffer.data_as<__fp16>(), node.output_buffer.data_as<__fp16>(),
+                                    outer_size, axis_size, inner_size);
                 break;
             default: break;
         }
@@ -197,15 +122,51 @@ void compute_fused_node(GraphNode& node, const std::vector<std::unique_ptr<Graph
             
             if (tensor_buffer.precision == Precision::INT8) {
                 const int8_t* tensor_data = tensor_buffer.data_as<int8_t>();
-                const int8_t* indices = indices_buffer.data_as<int8_t>();
                 int8_t* output = node.output_buffer.data_as<int8_t>();
-                
+
+                const bool is_grouped = tensor_buffer.is_grouped_int8();
+                __fp16* gathered_scales = nullptr;
+                const __fp16* src_scales = nullptr;
+                size_t num_groups = 0;
+
+                if (is_grouped) {
+                    num_groups = tensor_buffer.num_groups;
+                    src_scales = tensor_buffer.scales_as_fp16();
+                    size_t scales_bytes = num_indices * num_groups * sizeof(__fp16);
+                    node.output_buffer.owned_scales = std::make_unique<char[]>(scales_bytes);
+                    gathered_scales = reinterpret_cast<__fp16*>(node.output_buffer.owned_scales.get());
+                }
+
+                if (indices_buffer.precision == Precision::INT8) {
+                    const int8_t* indices = indices_buffer.data_as<int8_t>();
                     for (size_t i = 0; i < num_indices; i++) {
                         size_t idx = static_cast<size_t>(indices[i]);
                         if (idx >= first_dim) {
                             throw std::runtime_error("Gather index " + std::to_string(idx) + " out of bounds for dimension " + std::to_string(first_dim));
                         }
                         std::memcpy(output + i * element_size, tensor_data + idx * element_size, bytes_per_element);
+                        if (is_grouped) {
+                            std::memcpy(gathered_scales + i * num_groups, src_scales + idx * num_groups, num_groups * sizeof(__fp16));
+                        }
+                    }
+                } else {
+                    const float* indices = indices_buffer.data_as<float>();
+                    for (size_t i = 0; i < num_indices; i++) {
+                        size_t idx = static_cast<size_t>(indices[i]);
+                        if (idx >= first_dim) {
+                            throw std::runtime_error("Gather index " + std::to_string(idx) + " out of bounds for dimension " + std::to_string(first_dim));
+                        }
+                        std::memcpy(output + i * element_size, tensor_data + idx * element_size, bytes_per_element);
+                        if (is_grouped) {
+                            std::memcpy(gathered_scales + i * num_groups, src_scales + idx * num_groups, num_groups * sizeof(__fp16));
+                        }
+                    }
+                }
+
+                if (is_grouped) {
+                    node.output_buffer.group_size = tensor_buffer.group_size;
+                    node.output_buffer.num_groups = num_groups;
+                    node.output_buffer.scales_data = gathered_scales;
                 }
             } else if (tensor_buffer.precision == Precision::FP16) {
                 const __fp16* tensor_data = tensor_buffer.data_as<__fp16>();
@@ -287,7 +248,15 @@ void compute_fused_node(GraphNode& node, const std::vector<std::unique_ptr<Graph
 
                 node.output_buffer.set_external(base_ptr + byte_offset);
                 node.output_buffer.precision = input_buffer.precision;
-                node.output_buffer.quantization_scale = input_buffer.quantization_scale;
+
+                if (input_buffer.is_grouped_int8()) {
+                    node.output_buffer.group_size = input_buffer.group_size;
+                    node.output_buffer.num_groups = input_buffer.num_groups;
+                    const __fp16* input_scales = input_buffer.scales_as_fp16();
+                    node.output_buffer.scales_data = const_cast<void*>(
+                        static_cast<const void*>(input_scales + slice_start * input_buffer.num_groups)
+                    );
+                }
                 break;
             }
 
@@ -314,7 +283,6 @@ void compute_fused_node(GraphNode& node, const std::vector<std::unique_ptr<Graph
             node.output_buffer.external_data = nullptr;
             node.output_buffer.allocate();
             node.output_buffer.precision = input_buffer.precision;
-            node.output_buffer.quantization_scale = input_buffer.quantization_scale;
 
             auto* output_ptr = static_cast<char*>(node.output_buffer.get_data());
             if (!output_ptr) {
@@ -339,35 +307,75 @@ void compute_fused_node(GraphNode& node, const std::vector<std::unique_ptr<Graph
             if (embeddings_buffer.precision == Precision::INT8) {
                 const int8_t* embeddings = embeddings_buffer.data_as<int8_t>();
                 __fp16* output = node.output_buffer.data_as<__fp16>();
-                float scale = embeddings_buffer.quantization_scale;
-                
-                if (indices_buffer.precision == Precision::FP32) {
-                    const float* indices = indices_buffer.data_as<float>();
-                    for (size_t i = 0; i < num_indices; i++) {
-                        size_t idx = static_cast<size_t>(indices[i]);
-                        if (idx >= vocab_size) {
-                            throw std::runtime_error("Embedding index out of bounds: " + std::to_string(idx) + " >= " + std::to_string(vocab_size));
+
+                if (embeddings_buffer.is_grouped_int8()) {
+                    const __fp16* scales = embeddings_buffer.scales_as_fp16();
+                    size_t group_size = embeddings_buffer.group_size;
+                    size_t num_groups = embeddings_buffer.num_groups;
+
+                    auto dequant_row = [&](size_t i, size_t idx) {
+                        const int8_t* emb_row = embeddings + idx * hidden_dim;
+                        const __fp16* scale_row = scales + idx * num_groups;
+                        __fp16* out_row = output + i * hidden_dim;
+
+                        for (size_t g = 0; g < num_groups; g++) {
+                            float scale = (float)scale_row[g];
+                            size_t k_start = g * group_size;
+                            size_t k_end = std::min(k_start + group_size, hidden_dim);
+                            for (size_t k = k_start; k < k_end; k++) {
+                                out_row[k] = static_cast<__fp16>(emb_row[k] * scale);
+                            }
                         }
-                        for (size_t j = 0; j < hidden_dim; j++) {
-                            output[i * hidden_dim + j] = static_cast<__fp16>(embeddings[idx * hidden_dim + j] * scale);
+                    };
+
+                    if (indices_buffer.precision == Precision::FP32) {
+                        const float* indices = indices_buffer.data_as<float>();
+                        for (size_t i = 0; i < num_indices; i++) {
+                            size_t idx = static_cast<size_t>(indices[i]);
+                            if (idx >= vocab_size) {
+                                throw std::runtime_error("Embedding index out of bounds: " + std::to_string(idx) + " >= " + std::to_string(vocab_size));
+                            }
+                            dequant_row(i, idx);
+                        }
+                    } else {
+                        const int8_t* indices = indices_buffer.data_as<int8_t>();
+                        for (size_t i = 0; i < num_indices; i++) {
+                            size_t idx = static_cast<size_t>(indices[i]);
+                            if (idx >= vocab_size) {
+                                throw std::runtime_error("Embedding index out of bounds: " + std::to_string(idx) + " >= " + std::to_string(vocab_size));
+                            }
+                            dequant_row(i, idx);
                         }
                     }
                 } else {
-                    const int8_t* indices = indices_buffer.data_as<int8_t>();
-                    for (size_t i = 0; i < num_indices; i++) {
-                        size_t idx = static_cast<size_t>(indices[i]);
-                        if (idx >= vocab_size) {
-                            throw std::runtime_error("Embedding index out of bounds: " + std::to_string(idx) + " >= " + std::to_string(vocab_size));
+                    if (indices_buffer.precision == Precision::FP32) {
+                        const float* indices = indices_buffer.data_as<float>();
+                        for (size_t i = 0; i < num_indices; i++) {
+                            size_t idx = static_cast<size_t>(indices[i]);
+                            if (idx >= vocab_size) {
+                                throw std::runtime_error("Embedding index out of bounds: " + std::to_string(idx) + " >= " + std::to_string(vocab_size));
+                            }
+                            for (size_t j = 0; j < hidden_dim; j++) {
+                                output[i * hidden_dim + j] = static_cast<__fp16>(embeddings[idx * hidden_dim + j]);
+                            }
                         }
-                        for (size_t j = 0; j < hidden_dim; j++) {
-                            output[i * hidden_dim + j] = static_cast<__fp16>(embeddings[idx * hidden_dim + j] * scale);
+                    } else {
+                        const int8_t* indices = indices_buffer.data_as<int8_t>();
+                        for (size_t i = 0; i < num_indices; i++) {
+                            size_t idx = static_cast<size_t>(indices[i]);
+                            if (idx >= vocab_size) {
+                                throw std::runtime_error("Embedding index out of bounds: " + std::to_string(idx) + " >= " + std::to_string(vocab_size));
+                            }
+                            for (size_t j = 0; j < hidden_dim; j++) {
+                                output[i * hidden_dim + j] = static_cast<__fp16>(embeddings[idx * hidden_dim + j]);
+                            }
                         }
                     }
                 }
             } else if (embeddings_buffer.precision == Precision::FP16) {
                 const __fp16* embeddings = embeddings_buffer.data_as<__fp16>();
                 __fp16* output = node.output_buffer.data_as<__fp16>();
-                
+
                 if (indices_buffer.precision == Precision::FP32) {
                     const float* indices = indices_buffer.data_as<float>();
                     for (size_t i = 0; i < num_indices; i++) {
@@ -392,238 +400,146 @@ void compute_fused_node(GraphNode& node, const std::vector<std::unique_ptr<Graph
                     }
                 }
             } else {
-                const float* embeddings = embeddings_buffer.data_as<float>();
-                float* output = node.output_buffer.data_as<float>();
-                
-                if (indices_buffer.precision == Precision::FP32) {
-                    const float* indices = indices_buffer.data_as<float>();
-                    for (size_t i = 0; i < num_indices; i++) {
-                        size_t idx = static_cast<size_t>(indices[i]);
-                        if (idx >= vocab_size) {
-                            throw std::runtime_error("Embedding index out of bounds: " + std::to_string(idx) + " >= " + std::to_string(vocab_size));
-                        }
-                        for (size_t j = 0; j < hidden_dim; j++) {
-                            output[i * hidden_dim + j] = embeddings[idx * hidden_dim + j];
-                        }
-                    }
-                } else {
-                    const int8_t* indices = indices_buffer.data_as<int8_t>();
-                    for (size_t i = 0; i < num_indices; i++) {
-                        size_t idx = static_cast<size_t>(indices[i]);
-                        if (idx >= vocab_size) {
-                            throw std::runtime_error("Embedding index out of bounds: " + std::to_string(idx) + " >= " + std::to_string(vocab_size));
-                        }
-                        for (size_t j = 0; j < hidden_dim; j++) {
-                            output[i * hidden_dim + j] = embeddings[idx * hidden_dim + j];
-                        }
-                    }
-                }
+                throw std::runtime_error("Embedding only supports INT8 and FP16 precision");
             }
             break;
         }
         case OpType::BILINEAR_INTERPOLATION: {
             const auto& pos_embeds_buffer = nodes[node_index_map.at(node.input_ids[0])]->output_buffer;
-            
-            int total_pos_embeds = static_cast<int>(pos_embeds_buffer.shape[0]);
-            int embed_dim = static_cast<int>(pos_embeds_buffer.shape[1]);
-            
-            int src_height = static_cast<int>(std::sqrt(total_pos_embeds));
-            int src_width = src_height;
-            
-            int dst_height = static_cast<int>(node.params.dst_height);
-            int dst_width = static_cast<int>(node.params.dst_width);
 
-            std::vector<float> pos_embed_fp32(total_pos_embeds * embed_dim);
-            
-            if (pos_embeds_buffer.precision == Precision::INT8) {
-                const int8_t* pos_embeds_data = pos_embeds_buffer.data_as<int8_t>();
-                for (int i = 0; i < total_pos_embeds * embed_dim; ++i) {
-                    pos_embed_fp32[i] = static_cast<float>(pos_embeds_data[i]) * pos_embeds_buffer.quantization_scale;
-                }
+            size_t total_pos_embeds = pos_embeds_buffer.shape[0];
+            size_t embed_dim = pos_embeds_buffer.shape[1];
+
+            size_t src_height = static_cast<size_t>(std::sqrt(total_pos_embeds));
+            size_t src_width = src_height;
+
+            size_t dst_height = node.params.dst_height;
+            size_t dst_width = node.params.dst_width;
+
+            __fp16* output = node.output_buffer.data_as<__fp16>();
+
+            if (pos_embeds_buffer.precision == Precision::FP16) {
+                const __fp16* input = pos_embeds_buffer.data_as<__fp16>();
+                cactus_bilinear_interpolation_f16(input, output, src_height, src_width, embed_dim,
+                                                  dst_height, dst_width);
             }
-            else if (pos_embeds_buffer.precision == Precision::FP16) {
-                const __fp16* pos_embed_fp16 = pos_embeds_buffer.data_as<__fp16>();
-                for (int i = 0; i < total_pos_embeds * embed_dim; ++i) {
-                    pos_embed_fp32[i] = static_cast<float>(pos_embed_fp16[i]);
-                }
+            else if (pos_embeds_buffer.precision == Precision::INT8) {
+                std::vector<__fp16> input_fp16(total_pos_embeds * embed_dim);
+                cactus_int8_to_fp16(pos_embeds_buffer.data_as<int8_t>(), input_fp16.data(),
+                                    total_pos_embeds * embed_dim);
+                cactus_bilinear_interpolation_f16(input_fp16.data(), output, src_height, src_width, embed_dim,
+                                                  dst_height, dst_width);
             }
             else {
-                const float* pos_embed_data = pos_embeds_buffer.data_as<float>();
-                std::memcpy(pos_embed_fp32.data(), pos_embed_data, total_pos_embeds * embed_dim * sizeof(float));
+                throw std::runtime_error("BILINEAR_INTERPOLATION only supports INT8 and FP16 input precision");
             }
-            
-            
-            float* output = node.output_buffer.data_as<float>();
-            cactus_bilinear_interpolation_fp32(pos_embed_fp32.data(), output, 
-                                              src_height, src_width, embed_dim,
-                                              dst_height, dst_width);
             break;
         }
         case OpType::RMS_NORM: {
             const auto& input_buffer = nodes[node_index_map.at(node.input_ids[0])]->output_buffer;
             const auto& weight_buffer = nodes[node_index_map.at(node.input_ids[1])]->output_buffer;
-            
+
             if (input_buffer.shape.size() != 2) {
-                throw std::runtime_error("RMS normalization requires 2D input tensor [batch_size, dims], got " + 
+                throw std::runtime_error("RMS normalization requires 2D input tensor [batch_size, dims], got " +
                                         std::to_string(input_buffer.shape.size()) + "D tensor");
             }
-            
+
             size_t batch_size = input_buffer.shape[0];
             size_t dims = input_buffer.shape[1];
-            
-            if (input_buffer.precision == Precision::FP32) {
-                cactus_rms_norm_f32(input_buffer.data_as<float>(), weight_buffer.data_as<float>(), 
-                   node.output_buffer.data_as<float>(), batch_size, dims, node.params.epsilon);
-            } else if (input_buffer.precision == Precision::FP16) {
-                cactus_rms_norm_f16(input_buffer.data_as<__fp16>(), weight_buffer.data_as<__fp16>(), 
-                   node.output_buffer.data_as<__fp16>(), batch_size, dims, node.params.epsilon);
-            } else if (input_buffer.precision == Precision::INT8) {
-                float input_scale = input_buffer.quantization_scale;
-                
-                std::vector<float> fp32_temp(batch_size * dims);
-                
-                if (weight_buffer.precision == Precision::FP16) {
-                    std::vector<float> fp32_weights(dims);
-                    const __fp16* fp16_weights = weight_buffer.data_as<__fp16>();
-                    for (size_t i = 0; i < dims; i++) {
-                        fp32_weights[i] = static_cast<float>(fp16_weights[i]);
-                    }
-                    cactus_rms_norm_i8_f32(input_buffer.data_as<int8_t>(), fp32_weights.data(), 
-                                           fp32_temp.data(), batch_size, dims, node.params.epsilon, 
-                                           input_scale);
-                } else if (weight_buffer.precision == Precision::FP32) {
-                    cactus_rms_norm_i8_f32(input_buffer.data_as<int8_t>(), weight_buffer.data_as<float>(), 
-                                           fp32_temp.data(), batch_size, dims, node.params.epsilon, 
-                                           input_scale);
-                } else {
-                    throw std::runtime_error("INT8 RMS normalization requires FP16 or FP32 weight precision");
-                }
-                
-                float fast_scale = 2.0f / 127.0f; 
-                
-                for (size_t i = 0; i < batch_size * dims; ++i) {
-                    float quantized = fp32_temp[i] / fast_scale;
-                    node.output_buffer.data_as<int8_t>()[i] = static_cast<int8_t>(
-                        std::round(std::max(-128.0f, std::min(127.0f, quantized))));
-                }
-                
-                node.output_buffer.quantization_scale = fast_scale;
-            } else {
-                throw std::runtime_error("RMS normalization only supports FP32, FP16, and INT8 precision");
+
+            if (input_buffer.precision != Precision::FP16) {
+                throw std::runtime_error("RMS normalization only supports FP16 precision");
             }
+
+            cactus_rms_norm_f16(input_buffer.data_as<__fp16>(), weight_buffer.data_as<__fp16>(),
+               node.output_buffer.data_as<__fp16>(), batch_size, dims, node.params.epsilon);
             break;
         }
         case OpType::ROPE: {
             if (node.params.backend == ComputeBackend::NPU) {
                 throw std::runtime_error("NPU RoPE operation not yet implemented");
             }
-            
+
             const auto& input_buffer = nodes[node_index_map.at(node.input_ids[0])]->output_buffer;
             const auto& shape = input_buffer.shape;
-            
-            if (shape.size() >= 4) {
-                size_t batch_size = shape[0];
-                size_t seq_len = shape[1];
-                size_t num_heads = shape[2];
-                size_t head_dim = shape[3];
-                
-                if (input_buffer.precision == Precision::INT8 && node.output_buffer.precision == Precision::INT8) {
-                    float input_scale = 1.0f / input_buffer.quantization_scale;
-                    float output_scale = 1.0f / node.output_buffer.quantization_scale;
-                    cactus_rope_i8_f32_i8(input_buffer.data_as<int8_t>(), node.output_buffer.data_as<int8_t>(),
-                                         batch_size, seq_len, num_heads, head_dim, node.params.position_offset, node.params.theta,
-                                         input_scale, output_scale);
-                } else if (input_buffer.precision == Precision::FP16 && node.output_buffer.precision == Precision::FP16) {
-                    cactus_rope_f16(input_buffer.data_as<__fp16>(), node.output_buffer.data_as<__fp16>(),
-                                   batch_size, seq_len, num_heads, head_dim, node.params.position_offset, node.params.theta);
-                } else if (input_buffer.precision == Precision::FP32 && node.output_buffer.precision == Precision::FP32) {
-                    cactus_rope_f32(input_buffer.data_as<float>(), node.output_buffer.data_as<float>(),
-                                   batch_size, seq_len, num_heads, head_dim, node.params.position_offset, node.params.theta);
-                } else {
-                    throw std::runtime_error("RoPE operation only supports FP32->FP32, FP16->FP16, or INT8->INT8 precision");
-                }
-            } else {
-                throw std::runtime_error("RoPE operation requires 4D tensor with shape [batch, seq_len, num_heads, head_dim], got " + 
+
+            if (shape.size() < 4) {
+                throw std::runtime_error("RoPE operation requires 4D tensor with shape [batch, seq_len, num_heads, head_dim], got " +
                                         std::to_string(shape.size()) + "D tensor");
             }
+
+            if (input_buffer.precision != Precision::FP16 || node.output_buffer.precision != Precision::FP16) {
+                throw std::runtime_error("RoPE operation only supports FP16 precision");
+            }
+
+            size_t batch_size = shape[0];
+            size_t seq_len = shape[1];
+            size_t num_heads = shape[2];
+            size_t head_dim = shape[3];
+
+            cactus_rope_f16(input_buffer.data_as<__fp16>(), node.output_buffer.data_as<__fp16>(),
+                           batch_size, seq_len, num_heads, head_dim, node.params.position_offset, node.params.theta);
             break;
         }
         case OpType::SOFTMAX: {
             const auto& input_buffer = nodes[node_index_map.at(node.input_ids[0])]->output_buffer;
             const auto& shape = input_buffer.shape;
-            
-            if (shape.size() >= 2) {
-                size_t batch_size = 1;
-                for (size_t i = 0; i < shape.size() - 1; i++) {
-                    batch_size *= shape[i];
-                }
-                size_t vocab_size = shape[shape.size() - 1];
-                
-                if (input_buffer.precision == Precision::FP16) {
-                    cactus_softmax_f16(input_buffer.data_as<__fp16>(), node.output_buffer.data_as<__fp16>(),
-                                      batch_size, 1, vocab_size);
-                } else {
-                    cactus_softmax_f32(input_buffer.data_as<float>(), node.output_buffer.data_as<float>(),
-                                      batch_size, 1, vocab_size);
-                }
-            } else {
-                throw std::runtime_error("Softmax operation requires at least 2D tensor, got " + 
+
+            if (shape.size() < 2) {
+                throw std::runtime_error("Softmax operation requires at least 2D tensor, got " +
                                         std::to_string(shape.size()) + "D tensor");
             }
+
+            if (input_buffer.precision != Precision::FP16) {
+                throw std::runtime_error("Softmax operation only supports FP16 precision");
+            }
+
+            size_t batch_size = 1;
+            for (size_t i = 0; i < shape.size() - 1; i++) {
+                batch_size *= shape[i];
+            }
+            size_t vocab_size = shape[shape.size() - 1];
+
+            cactus_softmax_f16(input_buffer.data_as<__fp16>(), node.output_buffer.data_as<__fp16>(),
+                              batch_size, 1, vocab_size);
             break;
         }
         case OpType::ATTENTION: {
             if (node.params.backend == ComputeBackend::NPU) {
                 throw std::runtime_error("NPU attention operation not yet implemented");
             }
-            
+
             if (node.input_ids.size() < 3) {
-                throw std::runtime_error("Attention operation requires 3 inputs (query, key, value), got " + 
+                throw std::runtime_error("Attention operation requires 3 inputs (query, key, value), got " +
                                         std::to_string(node.input_ids.size()) + " inputs");
             }
-            
+
             const auto& query_buffer = nodes[node_index_map.at(node.input_ids[0])]->output_buffer;
             const auto& key_buffer = nodes[node_index_map.at(node.input_ids[1])]->output_buffer;
             const auto& value_buffer = nodes[node_index_map.at(node.input_ids[2])]->output_buffer;
             const auto& q_shape = query_buffer.shape;
             const auto& k_shape = key_buffer.shape;
-            
+
             if (q_shape.size() < 4) {
-                throw std::runtime_error("Attention operation requires 4D tensors [batch, seq_len, num_heads, head_dim], got " + 
+                throw std::runtime_error("Attention operation requires 4D tensors [batch, seq_len, num_heads, head_dim], got " +
                                         std::to_string(q_shape.size()) + "D tensor");
             }
-            
+
+            if (query_buffer.precision != Precision::FP16) {
+                throw std::runtime_error("Attention operation only supports FP16 precision");
+            }
+
             size_t batch_size = q_shape[0];
             size_t seq_len = q_shape[1];
             size_t num_q_heads = q_shape[2];
             size_t head_dim = q_shape[3];
-            size_t num_kv_heads = k_shape[2];  
-            size_t kv_seq_len = key_buffer.shape[1]; 
-            
-            if (query_buffer.precision == Precision::INT8) {
-                float q_scale = 1.0f / query_buffer.quantization_scale;
-                float k_scale = 1.0f / key_buffer.quantization_scale;
-                float v_scale = 1.0f / value_buffer.quantization_scale;
-                float output_scale = 1.0f / node.output_buffer.quantization_scale;
-                cactus_attention_int8(query_buffer.data_as<int8_t>(), key_buffer.data_as<int8_t>(),
-                                      value_buffer.data_as<int8_t>(), node.output_buffer.data_as<int8_t>(),
-                                      batch_size, seq_len, kv_seq_len, num_q_heads, num_kv_heads, head_dim, node.params.scale, nullptr,
-                                      q_scale, k_scale, v_scale, output_scale, node.params.position_offset, node.params.window_size,
-                                      node.params.is_causal);
-            } else if (query_buffer.precision == Precision::FP16) {
-                cactus_attention_f16(query_buffer.data_as<__fp16>(), key_buffer.data_as<__fp16>(),
-                                     value_buffer.data_as<__fp16>(), node.output_buffer.data_as<__fp16>(),
-                                     batch_size, seq_len, kv_seq_len, num_q_heads, num_kv_heads, head_dim, node.params.scale, nullptr,
-                                     node.params.position_offset, node.params.window_size, node.params.is_causal);
-            } else if (query_buffer.precision == Precision::FP32) {
-                cactus_attention_f32(query_buffer.data_as<float>(), key_buffer.data_as<float>(),
-                                     value_buffer.data_as<float>(), node.output_buffer.data_as<float>(),
-                                     batch_size, seq_len, kv_seq_len, num_q_heads, num_kv_heads, head_dim, node.params.scale, nullptr,
-                                     node.params.position_offset, node.params.window_size, node.params.is_causal);
-            } else {
-                throw std::runtime_error("Attention operation only supports INT8, FP16, and FP32 precision, got " + 
-                                       std::to_string(static_cast<int>(query_buffer.precision)));
-            }
+            size_t num_kv_heads = k_shape[2];
+            size_t kv_seq_len = key_buffer.shape[1];
+
+            cactus_attention_f16(query_buffer.data_as<__fp16>(), key_buffer.data_as<__fp16>(),
+                                 value_buffer.data_as<__fp16>(), node.output_buffer.data_as<__fp16>(),
+                                 batch_size, seq_len, kv_seq_len, num_q_heads, num_kv_heads, head_dim, node.params.scale, nullptr,
+                                 node.params.position_offset, node.params.window_size, node.params.is_causal);
             break;
         }
         case OpType::CONV1D_CAUSAL: {
@@ -662,13 +578,29 @@ void compute_fused_node(GraphNode& node, const std::vector<std::unique_ptr<Graph
             Y.precision = X.precision;
             
             if (W.precision == Precision::INT8) {
-                const float w_s   = W.quantization_scale;
                 const size_t W_size = W0 * W1 * K;
                 const int8_t* W_int8 = W.data_as<int8_t>();
 
                 std::vector<__fp16> W_fp16(W_size);
-                for (size_t i = 0; i < W_size; ++i) {
-                    W_fp16[i] = static_cast<__fp16>(W_int8[i] * w_s);
+
+                if (W.is_grouped_int8()) {
+                    const __fp16* scales = W.scales_as_fp16();
+                    const size_t K_total = W1 * K;
+                    const size_t group_size = W.group_size;
+                    const size_t num_groups = W.num_groups;
+
+                    for (size_t row = 0; row < W0; ++row) {
+                        for (size_t col = 0; col < K_total; ++col) {
+                            size_t idx = row * K_total + col;
+                            size_t group_idx = col / group_size;
+                            float scale = static_cast<float>(scales[row * num_groups + group_idx]);
+                            W_fp16[idx] = static_cast<__fp16>(W_int8[idx] * scale);
+                        }
+                    }
+                } else {
+                    for (size_t i = 0; i < W_size; ++i) {
+                        W_fp16[i] = static_cast<__fp16>(W_int8[i]);
+                    }
                 }
 
                 cactus_conv1d_causal_depthwise_f16(
@@ -678,12 +610,8 @@ void compute_fused_node(GraphNode& node, const std::vector<std::unique_ptr<Graph
                 cactus_conv1d_causal_depthwise_f16(
                     X.data_as<__fp16>(), W.data_as<__fp16>(), Y.data_as<__fp16>(),
                     N, L, C_in, K, dil);
-            } else if (W.precision == Precision::FP32) {
-                cactus_conv1d_causal_depthwise_f32(
-                    X.data_as<float>(), W.data_as<float>(), Y.data_as<float>(),
-                    N, L, C_in, K, dil);
             } else {
-                throw std::runtime_error("Depthwise causal conv supports INT8/FP16/FP32");
+                throw std::runtime_error("Depthwise causal conv supports INT8/FP16 weights");
             }
             break;
         }
@@ -719,19 +647,34 @@ void compute_fused_node(GraphNode& node, const std::vector<std::unique_ptr<Graph
                 Y.shape     = { N, C_out, L_out };
                 Y.precision = X.precision;
 
-                if (W.precision == Precision::INT8) {
-                    if (X.precision != Precision::FP16) {
-                        throw std::runtime_error(
-                            "Conv1d_k3 with INT8 weights currently requires FP16 activations");
-                    }
+                if (X.precision != Precision::FP16) {
+                    throw std::runtime_error("Conv1d_k3 only supports FP16 activations");
+                }
 
-                    const float w_s = W.quantization_scale;
+                if (W.precision == Precision::INT8) {
                     const size_t W_size = C_out * C_in * K;
                     const int8_t* W_int8 = W.data_as<int8_t>();
 
                     std::vector<__fp16> W_fp16(W_size);
-                    for (size_t i = 0; i < W_size; ++i) {
-                        W_fp16[i] = static_cast<__fp16>(W_int8[i] * w_s);
+
+                    if (W.is_grouped_int8()) {
+                        const __fp16* scales = W.scales_as_fp16();
+                        const size_t K_total = C_in * K;
+                        const size_t group_size = W.group_size;
+                        const size_t num_groups = W.num_groups;
+
+                        for (size_t row = 0; row < C_out; ++row) {
+                            for (size_t col = 0; col < K_total; ++col) {
+                                size_t idx = row * K_total + col;
+                                size_t group_idx = col / group_size;
+                                float scale = static_cast<float>(scales[row * num_groups + group_idx]);
+                                W_fp16[idx] = static_cast<__fp16>(W_int8[idx] * scale);
+                            }
+                        }
+                    } else {
+                        for (size_t i = 0; i < W_size; ++i) {
+                            W_fp16[i] = static_cast<__fp16>(W_int8[i]);
+                        }
                     }
 
                     cactus_conv1d_f16_k3(
@@ -740,25 +683,15 @@ void compute_fused_node(GraphNode& node, const std::vector<std::unique_ptr<Graph
                         Y.data_as<__fp16>(),
                         N, L, C_in, C_out, stride
                     );
-                }
-                else if (X.precision == Precision::FP32) {
-                    cactus_conv1d_f32_k3(
-                        X.data_as<float>(),
-                        W.data_as<float>(),
-                        Y.data_as<float>(),
-                        N, L, C_in, C_out, stride
-                    );
-                }
-                else if (X.precision == Precision::FP16) {
+                } else if (W.precision == Precision::FP16) {
                     cactus_conv1d_f16_k3(
                         X.data_as<__fp16>(),
                         W.data_as<__fp16>(),
                         Y.data_as<__fp16>(),
                         N, L, C_in, C_out, stride
                     );
-                }
-                else {
-                    throw std::runtime_error("Conv1d_k3 only supports FP32, FP16, and INT8 weights with FP16 activations!");
+                } else {
+                    throw std::runtime_error("Conv1d_k3 only supports FP16 and INT8 weights");
                 }
 
                 break;
@@ -768,27 +701,19 @@ void compute_fused_node(GraphNode& node, const std::vector<std::unique_ptr<Graph
         case OpType::CONCAT: {
             const auto& input1_buffer = nodes[node_index_map.at(node.input_ids[0])]->output_buffer;
             const auto& input2_buffer = nodes[node_index_map.at(node.input_ids[1])]->output_buffer;
-            
+
+            if (input1_buffer.precision != Precision::FP16) {
+                throw std::runtime_error("Concat operation only supports FP16 precision");
+            }
+
             std::vector<size_t> shape1 = input1_buffer.shape;
             std::vector<size_t> shape2 = input2_buffer.shape;
             std::vector<size_t> output_shape = node.output_buffer.shape;
-            
-            if (input1_buffer.precision == Precision::INT8) {
-                cactus_concat_int8(input1_buffer.data_as<int8_t>(), input2_buffer.data_as<int8_t>(),
-                                  node.output_buffer.data_as<int8_t>(),
-                                  shape1.data(), shape2.data(), output_shape.data(),
-                                  shape1.size(), node.params.axis);
-            } else if (input1_buffer.precision == Precision::FP16) {
-                cactus_concat_f16(input1_buffer.data_as<__fp16>(), input2_buffer.data_as<__fp16>(),
-                                 node.output_buffer.data_as<__fp16>(),
-                                 shape1.data(), shape2.data(), output_shape.data(),
-                                 shape1.size(), node.params.axis);
-            } else if (input1_buffer.precision == Precision::FP32) {
-                cactus_concat_f32(input1_buffer.data_as<float>(), input2_buffer.data_as<float>(),
-                                 node.output_buffer.data_as<float>(),
-                                 shape1.data(), shape2.data(), output_shape.data(),
-                                 shape1.size(), node.params.axis);
-            }
+
+            cactus_concat_f16(input1_buffer.data_as<__fp16>(), input2_buffer.data_as<__fp16>(),
+                             node.output_buffer.data_as<__fp16>(),
+                             shape1.data(), shape2.data(), output_shape.data(),
+                             shape1.size(), node.params.axis);
             break;
         }
         default: break;
@@ -799,30 +724,18 @@ void compute_transpose_node(GraphNode& node, const std::vector<std::unique_ptr<G
     if (node.params.backend == ComputeBackend::NPU) {
         throw std::runtime_error("NPU transpose operation not yet implemented");
     }
-    
+
     const auto& input_buffer = nodes[node_index_map.at(node.input_ids[0])]->output_buffer;
-    
-    const auto& permutation = node.params.permutation;
-    
-    switch (input_buffer.precision) {
-        case Precision::INT8:
-            cactus_transpose_int8(input_buffer.data_as<int8_t>(), node.output_buffer.data_as<int8_t>(), 
-                                 input_buffer.shape.data(), permutation.data(), permutation.size(),
-                                 0, input_buffer.total_size);
-            break;
-        case Precision::FP16: {
-            const __fp16* input = input_buffer.data_as<__fp16>();
-            __fp16* output = node.output_buffer.data_as<__fp16>();
-            cactus_transpose_f16(input, output, input_buffer.shape.data(), permutation.data(), permutation.size(), 0, input_buffer.total_size);
-            break;
-        }
-        case Precision::FP32: {
-            const float* input = input_buffer.data_as<float>();
-            float* output = node.output_buffer.data_as<float>();
-            cactus_transpose_f32(input, output, input_buffer.shape.data(), permutation.data(), permutation.size(), 0, input_buffer.total_size);
-            break;
-        }
+
+    if (input_buffer.precision != Precision::FP16) {
+        throw std::runtime_error("Transpose only supports FP16 precision");
     }
+
+    const auto& permutation = node.params.permutation;
+
+    const __fp16* input = input_buffer.data_as<__fp16>();
+    __fp16* output = node.output_buffer.data_as<__fp16>();
+    cactus_transpose_f16(input, output, input_buffer.shape.data(), permutation.data(), permutation.size(), 0, input_buffer.total_size);
 }
 
 
@@ -845,108 +758,37 @@ void compute_matmul_node(GraphNode& node, const std::vector<std::unique_ptr<Grap
         throw std::runtime_error("NPU matrix multiplication not yet implemented");
     }
     
-    if (lhs_buffer.precision == Precision::FP16 && rhs_buffer.precision == Precision::INT8) {
+    if (lhs_buffer.precision == Precision::FP16 && rhs_buffer.is_grouped_int8()) {
         const __fp16* lhs = lhs_buffer.data_as<__fp16>();
         const int8_t* rhs = rhs_buffer.data_as<int8_t>();
+        const __fp16* rhs_scales = rhs_buffer.scales_as_fp16();
         __fp16* output = node.output_buffer.data_as<__fp16>();
-        
-        size_t lhs_size = M * K;
-        size_t output_size = M * N;
-        ensure_quantization_buffer_int8(lhs_size);
-        
-        float max_abs = cactus_fp16_max_abs(lhs, lhs_size);
-        float lhs_scale = max_abs / 127.0f;
-        if (lhs_scale == 0.0f) lhs_scale = 1.0f;
-        
-        Quantization::fp16_to_int8(lhs, quantization_buffer_int8.data(), lhs_size, lhs_scale);
-        
-        float rhs_scale = rhs_buffer.quantization_scale;
-        
-        std::vector<int32_t> int32_output(output_size);
-        
+
+        if (!pretransposed_rhs) {
+            throw std::runtime_error("Group-wise INT8 matmul requires pretransposed weights");
+        }
+
+        cactus_matmul_int(lhs, rhs, rhs_scales, output,
+                                   M, K, N, rhs_buffer.group_size);
+
+    } else {
+        if (lhs_buffer.precision != Precision::FP16) {
+            throw std::runtime_error("Matmul only supports FP16 precision for activations");
+        }
+
+        const __fp16* lhs = lhs_buffer.data_as<__fp16>();
+        const __fp16* rhs = rhs_buffer.data_as<__fp16>();
+        __fp16* output = node.output_buffer.data_as<__fp16>();
+
         if (pretransposed_rhs) {
-            cactus_matmul_int8_to_int32(quantization_buffer_int8.data(), rhs, 
-                                           int32_output.data(), M, K, N);
+            cactus_matmul_f16(lhs, rhs, output, M, K, N);
         } else {
             size_t transpose_size = rhs_shape[0] * rhs_shape[1];
-            ensure_transpose_buffer_int8(transpose_size);
-            
-            size_t rhs_perm[] = {1, 0};
-            cactus_transpose_int8(rhs, transpose_buffer_int8.data(), rhs_shape.data(), rhs_perm, 2, 0, rhs_shape[0]);
-            cactus_matmul_int8_to_int32(quantization_buffer_int8.data(), transpose_buffer_int8.data(), 
-                                     int32_output.data(), M, K, N);
-        }
-        
-        float combined_scale = lhs_scale * rhs_scale;
-        cactus_int32_to_fp16_scaled(int32_output.data(), output, output_size, combined_scale);
-        
-    } else {
-        switch (lhs_buffer.precision) {
-            case Precision::INT8: {
-                const int8_t* lhs = lhs_buffer.data_as<int8_t>();
-                const int8_t* rhs = rhs_buffer.data_as<int8_t>();
-                
-                float lhs_scale = lhs_buffer.quantization_scale;
-                float rhs_scale = rhs_buffer.quantization_scale;
-                
-                if (node.output_buffer.quantization_scale == 1.0f) {
-                    float estimated_scale = lhs_scale * rhs_scale;
-                    estimated_scale = std::max(0.001f, std::min(estimated_scale, 10.0f));
-                    
-                    node.output_buffer.quantization_scale = estimated_scale;
-                    
-                }
-                
-                int8_t* output = node.output_buffer.data_as<int8_t>();
-                
-                if (pretransposed_rhs) {
-                    cactus_matmul_int8(lhs, rhs, output, M, K, N, lhs_scale, rhs_scale, node.output_buffer.quantization_scale);
-                } else {
-                    size_t transpose_size = rhs_shape[0] * rhs_shape[1];
-                    ensure_transpose_buffer_int8(transpose_size);
-                    
-                    size_t rhs_perm[] = {1, 0};
-                    cactus_transpose_int8(rhs, transpose_buffer_int8.data(), rhs_shape.data(), rhs_perm, 2, 0, rhs_shape[0]);
-                    cactus_matmul_int8(lhs, transpose_buffer_int8.data(), output, M, K, N, lhs_scale, rhs_scale, node.output_buffer.quantization_scale);
-                }
-                
-                break;
-            }
-            case Precision::FP16: {
-                const __fp16* lhs = lhs_buffer.data_as<__fp16>();
-                const __fp16* rhs = rhs_buffer.data_as<__fp16>();
-                __fp16* output = node.output_buffer.data_as<__fp16>();
+            ensure_transpose_buffer_fp16(transpose_size);
 
-                if (pretransposed_rhs) {
-                    cactus_matmul_f16(lhs, rhs, output, M, K, N);
-                } else {
-                    size_t transpose_size = rhs_shape[0] * rhs_shape[1];
-                    ensure_transpose_buffer_fp16(transpose_size);
-
-                    cactus_transpose_2d_f16(rhs, transpose_buffer_fp16.data(),
-                                            rhs_shape[0], rhs_shape[1], 0, rhs_shape[0]);
-                    cactus_matmul_f16(lhs, transpose_buffer_fp16.data(), output, M, K, N);
-                }
-
-                break;
-            }
-            case Precision::FP32: {
-                const float* lhs = lhs_buffer.data_as<float>();
-                const float* rhs = rhs_buffer.data_as<float>();
-                float* output = node.output_buffer.data_as<float>();
-                
-                if (pretransposed_rhs) {
-                    cactus_matmul_f32(lhs, rhs, output, M, K, N);
-                } else {
-                    size_t transpose_size = rhs_shape[0] * rhs_shape[1];
-                    ensure_transpose_buffer_fp32(transpose_size);
-                    
-                    size_t rhs_perm[] = {1, 0};
-                    cactus_transpose_f32(rhs, transpose_buffer_fp32.data(), rhs_shape.data(), rhs_perm, 2, 0, rhs_shape[0]);
-                    cactus_matmul_f32(lhs, transpose_buffer_fp32.data(), output, M, K, N);
-                }
-                break;
-            }
+            cactus_transpose_2d_f16(rhs, transpose_buffer_fp16.data(),
+                                    rhs_shape[0], rhs_shape[1], 0, rhs_shape[0]);
+            cactus_matmul_f16(lhs, transpose_buffer_fp16.data(), output, M, K, N);
         }
     }
 }
@@ -971,19 +813,7 @@ void compute_sample_node(GraphNode& node, const std::vector<std::unique_ptr<Grap
     size_t vocab_size = logits_buffer.shape[1];
     size_t last_token_offset = (seq_len - 1) * vocab_size;
 
-    if (logits_buffer.precision == Precision::INT8) {
-        const int8_t* logits_int8 = logits_buffer.data_as<int8_t>();
-        float scale = logits_buffer.quantization_scale;
-
-        std::vector<float> probs(vocab_size);
-        for (size_t i = 0; i < vocab_size; ++i) {
-            probs[i] = logits_int8[last_token_offset + i] * scale;
-        }
-
-        cactus_sample_f32(probs.data(), node.output_buffer.data_as<uint32_t>(),
-                         vocab_size, temperature, top_p, top_k, random_seed,
-                         bias_values, bias_indices, bias_count);
-    } else if (logits_buffer.precision == Precision::FP16) {
+    if (logits_buffer.precision == Precision::FP16) {
         const __fp16* logits_fp16 = logits_buffer.data_as<__fp16>();
         cactus_sample_f16(logits_fp16 + last_token_offset, node.output_buffer.data_as<uint32_t>(),
                          vocab_size, temperature, top_p, top_k, random_seed,
@@ -1190,10 +1020,6 @@ void compute_index_node(GraphNode& node, const std::vector<std::unique_ptr<Graph
         size_t slice_size = input_buffer.total_size / input_shape[0];
         size_t offset_bytes = index_value * slice_size * element_size;
         node.output_buffer.set_external(const_cast<char*>(input_data) + offset_bytes);
-
-        if (input_buffer.precision == Precision::INT8) {
-            node.output_buffer.quantization_scale = input_buffer.quantization_scale;
-        }
         return;
     }
     
@@ -1217,9 +1043,5 @@ void compute_index_node(GraphNode& node, const std::vector<std::unique_ptr<Graph
                     slice_size * element_size);
         
         output_idx += slice_size;
-    }
-    
-    if (input_buffer.precision == Precision::INT8) {
-        node.output_buffer.quantization_scale = input_buffer.quantization_scale;
     }
 }

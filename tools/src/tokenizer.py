@@ -31,14 +31,6 @@ def convert_hf_tokenizer(tokenizer, output_dir, token=None):
             except Exception:
                 pass
 
-    if is_sentencepiece and tokenizer_model_path:
-        import shutil
-        dest_path = output_dir / "tokenizer.model"
-        try:
-            shutil.copy2(tokenizer_model_path, dest_path)
-            print(f"  Copied SentencePiece model to {dest_path.name}")
-        except Exception as e:
-            print(f"  Warning: Could not copy tokenizer.model: {e}")
 
     tokenizer_json_data = {}
     tokenizer_json_path = output_dir / "tokenizer.json"
@@ -47,6 +39,17 @@ def convert_hf_tokenizer(tokenizer, output_dir, token=None):
         if tokenizer_json_path.exists():
             with open(tokenizer_json_path, 'r', encoding='utf-8') as f:
                 tokenizer_json_data = json.load(f)
+
+        unused_files = [
+            "tokenizer_config.json", 
+            "special_tokens_map.json", 
+            "added_tokens.json",
+            "chat_template.jinja",  
+        ]
+        for filename in unused_files:
+            filepath = output_dir / filename
+            if filepath.exists():
+                filepath.unlink()
     except Exception as e:
         print(f"  Warning: Could not save tokenizer JSON: {e}")
 

@@ -123,13 +123,9 @@ Siglip2VisionModel::VisionEmbeddingResult Siglip2VisionModel::build_vision_embed
         }
     }
 
-    const BufferDesc& weight_buffer = gb->get_output_buffer(vision_weight_nodes_.patch_embedding_weight);
-    float original_weight_buffer_quantization_scale = weight_buffer.quantization_scale;
-
     size_t reshaped_weight = gb->reshape(
         vision_weight_nodes_.patch_embedding_weight,
         {static_cast<size_t>(config_.vision_embed_dim), static_cast<size_t>(patch_dim)});
-    gb->set_quantization_scale(reshaped_weight, original_weight_buffer_quantization_scale);
 
     size_t patch_bias = vision_weight_nodes_.patch_embedding_bias;
     std::vector<size_t> tile_embeddings;

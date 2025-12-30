@@ -85,6 +85,11 @@ void fill_random_float(std::vector<float>& data) {
     for (auto& val : data) val = dist(gen);
 }
 
+void fill_random_fp16(std::vector<__fp16>& data) {
+    std::uniform_real_distribution<float> dist(-2.0f, 2.0f);
+    for (auto& val : data) val = static_cast<__fp16>(dist(gen));
+}
+
 TestRunner::TestRunner(const std::string& suite_name)
     : suite_name_(suite_name), passed_count_(0), total_count_(0) {
     std::cout << "\n╔══════════════════════════════════════════════════════════════════════════════════════╗\n"
@@ -103,7 +108,7 @@ void TestRunner::run_test(const std::string& test_name, bool result) {
 }
 
 void TestRunner::log_performance(const std::string& test_name, const std::string& details) {
-    std::cout << "⚡PERF │ " << std::left << std::setw(25) << test_name << " │ " << details << "\n";
+    std::cout << "⚡PERF │ " << std::left << std::setw(38) << test_name << " │ " << details << "\n";
 }
 
 void TestRunner::log_skip(const std::string& test_name, const std::string& reason) {
@@ -125,23 +130,23 @@ bool TestRunner::all_passed() const {
 
 bool test_basic_operation(const std::string& op_name,
                           std::function<size_t(CactusGraph&, size_t, size_t)> op_func,
-                          const std::vector<int8_t>& data_a,
-                          const std::vector<int8_t>& data_b,
-                          const std::vector<int8_t>& expected,
+                          const std::vector<__fp16>& data_a,
+                          const std::vector<__fp16>& data_b,
+                          const std::vector<__fp16>& expected,
                           const std::vector<size_t>& shape) {
     (void)op_name;
     CactusGraph graph;
-    size_t input_a = graph.input(shape, Precision::INT8);
-    size_t input_b = graph.input(shape, Precision::INT8);
+    size_t input_a = graph.input(shape, Precision::FP16);
+    size_t input_b = graph.input(shape, Precision::FP16);
     size_t result_id = op_func(graph, input_a, input_b);
 
-    graph.set_input(input_a, const_cast<void*>(static_cast<const void*>(data_a.data())), Precision::INT8);
-    graph.set_input(input_b, const_cast<void*>(static_cast<const void*>(data_b.data())), Precision::INT8);
+    graph.set_input(input_a, const_cast<void*>(static_cast<const void*>(data_a.data())), Precision::FP16);
+    graph.set_input(input_b, const_cast<void*>(static_cast<const void*>(data_b.data())), Precision::FP16);
     graph.execute();
 
-    int8_t* output = static_cast<int8_t*>(graph.get_output(result_id));
+    __fp16* output = static_cast<__fp16*>(graph.get_output(result_id));
     for (size_t i = 0; i < expected.size(); ++i) {
-        if (output[i] != expected[i]) {
+        if (std::abs(static_cast<float>(output[i]) - static_cast<float>(expected[i])) > 1e-2f) {
             graph.hard_reset();
             return false;
         }
@@ -152,21 +157,21 @@ bool test_basic_operation(const std::string& op_name,
 
 bool test_scalar_operation(const std::string& op_name,
                            std::function<size_t(CactusGraph&, size_t, float)> op_func,
-                           const std::vector<int8_t>& data,
+                           const std::vector<__fp16>& data,
                            float scalar,
-                           const std::vector<int8_t>& expected,
+                           const std::vector<__fp16>& expected,
                            const std::vector<size_t>& shape) {
     (void)op_name;
     CactusGraph graph;
-    size_t input_a = graph.input(shape, Precision::INT8);
+    size_t input_a = graph.input(shape, Precision::FP16);
     size_t result_id = op_func(graph, input_a, scalar);
 
-    graph.set_input(input_a, const_cast<void*>(static_cast<const void*>(data.data())), Precision::INT8);
+    graph.set_input(input_a, const_cast<void*>(static_cast<const void*>(data.data())), Precision::FP16);
     graph.execute();
 
-    int8_t* output = static_cast<int8_t*>(graph.get_output(result_id));
+    __fp16* output = static_cast<__fp16*>(graph.get_output(result_id));
     for (size_t i = 0; i < expected.size(); ++i) {
-        if (output[i] != expected[i]) {
+        if (std::abs(static_cast<float>(output[i]) - static_cast<float>(expected[i])) > 1e-2f) {
             graph.hard_reset();
             return false;
         }

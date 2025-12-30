@@ -153,7 +153,7 @@ def convert_hf_model_weights(model, output_dir, precision='INT8', args=None):
             missing_tensors.append((i, "<no-layer-prefix>", ["<no-matching-prefix>"]))
             continue
 
-        weight_patterns = get_layer_weight_patterns(i, precision)
+        weight_patterns = get_layer_weight_patterns(i, precision, model_type_str)
 
         for layer_prefix in existing_prefixes:
             for name_patterns, tensor_precision, output_name, should_transpose in weight_patterns:
