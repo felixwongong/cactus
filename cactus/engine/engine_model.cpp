@@ -186,7 +186,7 @@ void Model::prefill(const std::vector<uint32_t>& tokens, size_t chunk_size, cons
         if (!profile_file.empty()) {
             gb->execute(profile_file);
         } else {
-            gb->execute("profile.txt");
+            gb->execute(profile_file);
         }
 
         post_execute_updates(gb, chunk.size());

@@ -220,110 +220,17 @@ static inline float quantize_row_fp16_to_int8(const __fp16* src, int8_t* dst, si
     return scale;
 }
 
-static void matmul_int8_grouped_small_m(
+void cactus_matmul_int(
     const __fp16* A,
     const int8_t* B,
     const __fp16* B_scales,
     __fp16* C,
     size_t M, size_t K, size_t N,
-    size_t group_size,
-    size_t num_groups
+    size_t group_size
 ) {
-    constexpr size_t TILE_M = 4;
-    constexpr size_t TILE_N = 4;
-    const size_t num_m_tiles = (M + TILE_M - 1) / TILE_M;
+    if (M == 0 || K == 0 || N == 0) return;
 
-    const size_t K_aligned = ((K + 31) / 32) * 32;
-
-    CactusThreading::parallel_for(num_m_tiles, CactusThreading::Thresholds::SCALAR_EXPENSIVE,
-        [=](size_t tile_start, size_t tile_end) {
-            std::vector<int8_t> a_quant_storage(TILE_M * K_aligned);
-            int8_t* a_quant[TILE_M];
-            
-            for (size_t i = 0; i < TILE_M; i++) {
-                a_quant[i] = a_quant_storage.data() + i * K_aligned;
-            }
-            float a_scales[TILE_M];
-
-            for (size_t tile_idx = tile_start; tile_idx < tile_end; tile_idx++) {
-                size_t m_start = tile_idx * TILE_M;
-                size_t m_end = std::min(m_start + TILE_M, M);
-                size_t actual_m = m_end - m_start;
-
-                for (size_t mi = 0; mi < actual_m; mi++) {
-                    a_scales[mi] = quantize_row_fp16_to_int8(
-                        A + (m_start + mi) * K, a_quant[mi], K);
-                }
-
-                size_t n = 0;
-                for (; n + TILE_N <= N; n += TILE_N) {
-                    float acc[TILE_M][TILE_N] = {{0}};
-
-                    for (size_t g = 0; g < num_groups; g++) {
-                        size_t k_base = g * group_size;
-
-                        int8x16_t b_vec0[TILE_N], b_vec1[TILE_N];
-                        float b_scale[TILE_N];
-                        for (size_t ni = 0; ni < TILE_N; ni++) {
-                            b_vec0[ni] = vld1q_s8(B + (n + ni) * K + k_base);
-                            b_vec1[ni] = vld1q_s8(B + (n + ni) * K + k_base + 16);
-                            b_scale[ni] = (float)B_scales[(n + ni) * num_groups + g];
-                        }
-
-                        for (size_t mi = 0; mi < actual_m; mi++) {
-                            int8x16_t a_vec0 = vld1q_s8(a_quant[mi] + k_base);
-                            int8x16_t a_vec1 = vld1q_s8(a_quant[mi] + k_base + 16);
-                            float combined_base = a_scales[mi];
-
-                            for (size_t ni = 0; ni < TILE_N; ni++) {
-                                int32x4_t sum = vdupq_n_s32(0);
-                                sum = vdotq_s32(sum, a_vec0, b_vec0[ni]);
-                                sum = vdotq_s32(sum, a_vec1, b_vec1[ni]);
-                                acc[mi][ni] += (float)vaddvq_s32(sum) * (combined_base * b_scale[ni]);
-                            }
-                        }
-                    }
-
-                    for (size_t mi = 0; mi < actual_m; mi++) {
-                        for (size_t ni = 0; ni < TILE_N; ni++) {
-                            C[(m_start + mi) * N + n + ni] = (__fp16)acc[mi][ni];
-                        }
-                    }
-                }
-
-                for (; n < N; n++) {
-                    for (size_t mi = 0; mi < actual_m; mi++) {
-                        float acc = 0.0f;
-                        for (size_t g = 0; g < num_groups; g++) {
-                            size_t k_base = g * group_size;
-                            float b_scale = (float)B_scales[n * num_groups + g];
-
-                            int8x16_t a_vec0 = vld1q_s8(a_quant[mi] + k_base);
-                            int8x16_t a_vec1 = vld1q_s8(a_quant[mi] + k_base + 16);
-                            int8x16_t b_vec0 = vld1q_s8(B + n * K + k_base);
-                            int8x16_t b_vec1 = vld1q_s8(B + n * K + k_base + 16);
-
-                            int32x4_t sum = vdupq_n_s32(0);
-                            sum = vdotq_s32(sum, a_vec0, b_vec0);
-                            sum = vdotq_s32(sum, a_vec1, b_vec1);
-                            acc += (float)vaddvq_s32(sum) * (a_scales[mi] * b_scale);
-                        }
-                        C[(m_start + mi) * N + n] = (__fp16)acc;
-                    }
-                }
-            }
-        });
-}
-
-static void matmul_int8_grouped_large_m(
-    const __fp16* A,
-    const int8_t* B,
-    const __fp16* B_scales,
-    __fp16* C,
-    size_t M, size_t K, size_t N,
-    size_t group_size,
-    size_t num_groups
-) {
+    const size_t num_groups = K / group_size;
     constexpr size_t TILE_M = 4;
     constexpr size_t TILE_N = 4;
     const size_t K_aligned = ((K + 31) / 32) * 32;
@@ -378,25 +285,4 @@ static void matmul_int8_grouped_large_m(
                 }
             }
         });
-}
-
-void cactus_matmul_int8_grouped(
-    const __fp16* A,
-    const int8_t* B,
-    const __fp16* B_scales,
-    __fp16* C,
-    size_t M, size_t K, size_t N,
-    size_t group_size
-) {
-    if (M == 0 || K == 0 || N == 0) return;
-
-    const size_t num_groups = K / group_size;
-
-    constexpr size_t M_THRESHOLD = 16;
-
-    if (M <= M_THRESHOLD) {
-        matmul_int8_grouped_small_m(A, B, B_scales, C, M, K, N, group_size, num_groups);
-    } else {
-        matmul_int8_grouped_large_m(A, B, B_scales, C, M, K, N, group_size, num_groups);
-    }
 }
