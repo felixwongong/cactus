@@ -44,9 +44,9 @@ cmake -DCMAKE_TOOLCHAIN_FILE="$CMAKE_TOOLCHAIN_FILE" \
       -DANDROID_PLATFORM="$ANDROID_PLATFORM" \
       -DCMAKE_BUILD_TYPE="$CMAKE_BUILD_TYPE" \
       -S "$ANDROID_DIR" \
-      -B "$BUILD_DIR"
+      -B "$BUILD_DIR" >/dev/null
 
-cmake --build "$BUILD_DIR" --config "$CMAKE_BUILD_TYPE" -j "$n_cpu"
+cmake --build "$BUILD_DIR" --config "$CMAKE_BUILD_TYPE" -j "$n_cpu" >/dev/null
 
 cp "$BUILD_DIR/lib/libcactus.so" "$ANDROID_DIR/" 2>/dev/null || \
    cp "$BUILD_DIR/libcactus.so" "$ANDROID_DIR" 2>/dev/null || \

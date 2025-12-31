@@ -129,9 +129,9 @@ function build_static_library() {
           -DCMAKE_BUILD_TYPE="$CMAKE_BUILD_TYPE" \
           -DBUILD_SHARED_LIBS=OFF \
           -S "$APPLE_DIR" \
-          -B "$BUILD_DIR"
+          -B "$BUILD_DIR" >/dev/null
 
-    cmake --build "$BUILD_DIR" --config "$CMAKE_BUILD_TYPE" -j "$n_cpu"
+    cmake --build "$BUILD_DIR" --config "$CMAKE_BUILD_TYPE" -j "$n_cpu" >/dev/null
 
     mkdir -p "$APPLE_DIR"
 
@@ -164,9 +164,9 @@ function build_static_library() {
           -DCMAKE_BUILD_TYPE="$CMAKE_BUILD_TYPE" \
           -DBUILD_SHARED_LIBS=OFF \
           -S "$APPLE_DIR" \
-          -B "$BUILD_DIR_SIM"
+          -B "$BUILD_DIR_SIM" >/dev/null
 
-    cmake --build "$BUILD_DIR_SIM" --config "$CMAKE_BUILD_TYPE" -j "$n_cpu"
+    cmake --build "$BUILD_DIR_SIM" --config "$CMAKE_BUILD_TYPE" -j "$n_cpu" >/dev/null
 
     PRO_LIB_SIM="$ROOT_DIR/libs/libcactus_pro-ios-simulator.a"
     if [ -f "$PRO_LIB_SIM" ]; then
@@ -194,9 +194,9 @@ function build_framework() {
         -DCMAKE_BUILD_TYPE="$CMAKE_BUILD_TYPE" \
         -DBUILD_SHARED_LIBS=ON \
         -DCMAKE_XCODE_ATTRIBUTE_ONLY_ACTIVE_ARCH=NO \
-        -DCMAKE_IOS_INSTALL_COMBINED=YES
+        -DCMAKE_IOS_INSTALL_COMBINED=YES >/dev/null
 
-    cmake --build . --config "$CMAKE_BUILD_TYPE" -j "$n_cpu"
+    cmake --build . --config "$CMAKE_BUILD_TYPE" -j "$n_cpu" >/dev/null 2>&1
 
     DEST_DIR="$ROOT_DIR/apple/$6/$4"
     

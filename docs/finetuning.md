@@ -2,7 +2,7 @@
 
 - Cactus is an inference engine for mobile devices, macs and ARM chips like Raspberry Pi. 
 - At INT8, Cactus runs `Qwen3-0.6B` and `LFM2-1.2B `at `60-70 toks/sec` on iPhone 17 Pro, `13-18 toks/sec` on budget Pixel 6a.
-- Task-Specific INT8 tunes of `Gemma3-270m` hits `150 toks/sec` on iPhone 17 Pro and `23 toks/sec` on Raspberry Pi. 
+- Task-Specific INT8 tunes of `Gemma3-270m` hit `150 toks/sec` on iPhone 17 Pro and `23 toks/sec` on Raspberry Pi. 
 
 ## Quick Start
 
@@ -44,24 +44,28 @@ model.push_to_hub("username/my-lora-adapter")
 ```bash
 git clone https://github.com/cactus-compute/cactus && cd cactus && source ./setup
 ```
+<img src="../assets/setup.png" alt="Logo" style="border-radius: 30px; width: 100%;">
 
 ### 3. Convert for Cactus
 
 ```bash
-# From local adapter
-cactus convert unsloth/gemma-3-270m-it weights/my-model --lora ./my-lora-adapter
+# From local adapter: Use the correct base model!
+cactus convert Qwen/Qwen3-0.6B ./my-qwen3-0.6b --lora ./my-lora-adapter 
 
-# From HuggingFace Hub
-cactus convert unsloth/gemma-3-270m-it weights/my-model --lora username/my-lora-adapter
+# From HuggingFace Hub: Use the correct base model!
+cactus convert Qwen/Qwen3-0.6B ./my-qwen3-0.6b  --lora username/my-lora-adapter 
+
 ```
+<img src="../assets/lora.png" alt="Logo" style="border-radius: 30px; width: 100%;">
 
 ### 4. Run
 
 Test your model on Mac:
 
 ```bash
-cactus run weights/my-model
+cactus run ./my-qwen3-0.6b
 ```
+<img src="../assets/run.png" alt="Logo" style="border-radius: 30px; width: 100%;">
 
 ### 5. Use in iOS/macOS App
 
@@ -69,7 +73,18 @@ Build the native library:
 
 ```bash
 cactus build --apple
-# Output: apple/libcactus-device.a, apple/cactus-ios.xcframework
+```
+```bash
+Build complete!
+Total time: 58 seconds
+Static libraries:
+  Device: /Users/henry/Desktop/cactus/apple/libcactus-device.a
+  Simulator: /Users/henry/Desktop/cactus/apple/libcactus-simulator.a
+XCFrameworks:
+  iOS: /Users/henry/Desktop/cactus/apple/cactus-ios.xcframework
+  macOS: /Users/henry/Desktop/cactus/apple/cactus-macos.xcframework
+Apple build complete!
+(venv) henry@Henrys-MacBook-Air cactus % 
 ```
 
 Link `cactus-ios.xcframework` to your Xcode project, then:
@@ -97,7 +112,13 @@ Build the native library:
 
 ```bash
 cactus build --android
-# Output: android/libcactus.so, android/libcactus.a
+```
+```bash
+Build complete!
+Shared library location: /Users/henry/Desktop/cactus/android/libcactus.so
+Static library location: /Users/henry/Desktop/cactus/android/libcactus.a
+Android build complete!
+(venv) henry@Henrys-MacBook-Air cactus % 
 ```
 
 Copy `libcactus.so` to `app/src/main/jniLibs/arm64-v8a/`, then:
@@ -120,6 +141,6 @@ cactus.destroy(model)
 
 ## Resources
 
-Supported Base Models: `Qwen3, Gemma3, LFM2, SmolLM2` 
-Full API reference: [Cactus Engine](https://github.com/cactus-compute/cactus/blob/main/docs/cactus_engine.md)
-Learn more and report bugs: [Cactus](https://github.com/cactus-compute/cactus/tree/main)
+- Supported Base Models: `Qwen3, Gemma3, LFM2, SmolLM2` 
+- Full API reference: [Cactus Engine](https://github.com/cactus-compute/cactus/blob/main/docs/cactus_engine.md)
+- Learn more and report bugs: [Cactus](https://github.com/cactus-compute/cactus/tree/main)
