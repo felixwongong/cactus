@@ -44,7 +44,7 @@ model.push_to_hub("username/my-lora-adapter")
 ```bash
 git clone https://github.com/cactus-compute/cactus && cd cactus && source ./setup
 ```
-<img src="../assets/setup.png" alt="Logo" style="border-radius: 30px; width: 50%;">
+<img src="../assets/setup.png" alt="Logo" style="border-radius: 30px; width: 70%;">
 
 ### 3. Convert for Cactus
 
@@ -56,7 +56,7 @@ cactus convert Qwen/Qwen3-0.6B ./my-qwen3-0.6b --lora ./my-lora-adapter
 cactus convert Qwen/Qwen3-0.6B ./my-qwen3-0.6b  --lora username/my-lora-adapter 
 
 ```
-<img src="../assets/lora.png" alt="Logo" style="border-radius: 30px; width: 50%;">
+<img src="../assets/lora.png" alt="Logo" style="border-radius: 30px; width: 70%;">
 
 ### 4. Run
 
@@ -65,7 +65,7 @@ Test your model on Mac:
 ```bash
 cactus run ./my-qwen3-0.6b
 ```
-<img src="../assets/run.png" alt="Logo" style="border-radius: 30px; width: 50%;">
+<img src="../assets/run.png" alt="Logo" style="border-radius: 30px; width: 70%;">
 
 ### 5. Use in iOS/macOS App
 
