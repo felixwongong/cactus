@@ -20,7 +20,7 @@ static const char* op_type_names[] = {
     "MATMUL", "TRANSPOSE", "RESHAPE", "SLICE", "GATHER", "EMBEDDING",
     "BILINEAR_INTERPOLATION",
     "SUM", "MEAN", "VARIANCE", "MIN", "MAX",
-    "RMS_NORM", "ROPE", "SOFTMAX", "ATTENTION", "CONV1D_CAUSAL", "CONV1D_K3",
+    "RMS_NORM", "ROPE", "SOFTMAX", "ATTENTION", "ATTENTION_INT8_HYBRID", "CONV1D_CAUSAL", "CONV1D_K3",
     "SCALAR_ADD", "SCALAR_SUBTRACT", "SCALAR_MULTIPLY", "SCALAR_DIVIDE",
     "SCALAR_EXP", "SCALAR_SQRT", "SCALAR_COS", "SCALAR_SIN",
     "SILU", "GELU", "GELU_ERF", "SAMPLE", "CONCAT",
@@ -586,7 +586,7 @@ size_t CactusGraph::mmap_embeddings(const std::string& filename) {
         throw std::runtime_error("Memory-mapped embeddings must be 2D [vocab_size, embedding_dim]");
     }
 
-    Precision precision = mapped_file->precision();
+    Precision precision = mapped_file->effective_precision();
 
     size_t node_id = input(shape, precision);
     set_external_input(node_id, const_cast<void*>(mapped_file->data()), precision);
@@ -596,7 +596,9 @@ size_t CactusGraph::mmap_embeddings(const std::string& filename) {
                           const_cast<void*>(mapped_file->scales_data()));
     }
 
+    size_t file_idx = mapped_files_.size();
     mapped_files_.push_back(std::move(mapped_file));
+    node_to_mapped_file_[node_id] = file_idx;
     return node_id;
 }
 
@@ -609,7 +611,7 @@ size_t CactusGraph::mmap_weights(const std::string& filename) {
     auto mapped_file = std::make_unique<GraphFile::MappedFile>(filename);
 
     const auto& shape = mapped_file->shape();
-    Precision precision = mapped_file->precision();
+    Precision precision = mapped_file->effective_precision();
 
     size_t node_id = input(shape, precision);
     set_external_input(node_id, const_cast<void*>(mapped_file->data()), precision);
@@ -619,9 +621,31 @@ size_t CactusGraph::mmap_weights(const std::string& filename) {
                           const_cast<void*>(mapped_file->scales_data()));
     }
 
+    size_t file_idx = mapped_files_.size();
     mapped_files_.push_back(std::move(mapped_file));
+    node_to_mapped_file_[node_id] = file_idx;
     weight_cache_[filename] = node_id;
     return node_id;
+}
+
+void CactusGraph::release_weight_pages(size_t node_id) {
+    auto it = node_to_mapped_file_.find(node_id);
+    if (it != node_to_mapped_file_.end() && it->second < mapped_files_.size()) {
+        mapped_files_[it->second]->release_pages();
+    }
+}
+
+void CactusGraph::prefetch_weight_pages(size_t node_id) {
+    auto it = node_to_mapped_file_.find(node_id);
+    if (it != node_to_mapped_file_.end() && it->second < mapped_files_.size()) {
+        mapped_files_[it->second]->prefetch_pages();
+    }
+}
+
+void CactusGraph::release_all_weight_pages() {
+    for (auto& mf : mapped_files_) {
+        if (mf) mf->release_pages();
+    }
 }
 
 size_t CactusGraph::load_weights(const std::string& filename) {
@@ -644,24 +668,30 @@ void CactusGraph::set_grouped_scales(size_t node_id, size_t group_size, size_t n
 
 size_t CactusGraph::embedding(const std::string& filename, size_t indices) {
     auto mapped_file = std::make_unique<GraphFile::MappedFile>(filename);
-    
+
     const auto& shape = mapped_file->shape();
     if (shape.size() != 2) {
         throw std::runtime_error("Embedding file must contain 2D tensor [vocab_size, hidden_dim]");
     }
-    
-    Precision precision = mapped_file->precision();
+
+    Precision precision = mapped_file->effective_precision();
     size_t embeddings_node = input(shape, precision);
     set_external_input(embeddings_node, const_cast<void*>(mapped_file->data()), precision);
+
+    if (precision == Precision::INT8 && mapped_file->group_size() > 0) {
+        set_grouped_scales(embeddings_node, mapped_file->group_size(), mapped_file->num_groups(),
+                          const_cast<void*>(mapped_file->scales_data()));
+    }
+
     mapped_files_.push_back(std::move(mapped_file));
-    
+
     const auto& idx_shape = get_output_buffer(indices).shape;
     std::vector<size_t> output_shape = idx_shape;
-    output_shape.push_back(shape[1]);  
-    
+    output_shape.push_back(shape[1]);
+
     OpParams params;
     params.output_precision = (precision == Precision::INT8) ? Precision::FP16 : precision;
-    
+
     return add_node(OpType::EMBEDDING, {embeddings_node, indices}, output_shape, params);
 }
 
@@ -705,6 +735,10 @@ void CactusGraph::set_input(size_t node_id, const void* data, Precision) {
     auto& node = *nodes_[node_index_map_[node_id]];
     if (node.op_type != OpType::INPUT) {
         throw std::invalid_argument("Can only set data on input nodes");
+    }
+
+    if (node.output_buffer.is_packed_int4()) {
+        throw std::invalid_argument("Cannot use set_input on packed INT4 buffer - use set_external_input instead");
     }
 
     if (!node.output_buffer.data && !node.output_buffer.external_data) {
@@ -1204,6 +1238,40 @@ void CactusGraph::soft_reset() {
 
     next_node_id_ = max_preserved_id + 1;
     debug_nodes_.clear();
-    buffer_pool_.clear();
-    shrink_thread_local_buffers();
+    if (!prefill_mode_) {
+        buffer_pool_.clear();
+        shrink_thread_local_buffers();
+    }
+}
+
+void CactusGraph::soft_reset_keep_pool() {
+    std::set<size_t> cached_node_ids;
+    for (const auto& cache_entry : weight_cache_) {
+        cached_node_ids.insert(cache_entry.second);
+    }
+
+    size_t max_preserved_id = 0;
+    for (const auto& node : nodes_) {
+        if ((node->op_type == OpType::INPUT && node->output_buffer.external_data) ||
+            cached_node_ids.count(node->id)) {
+            max_preserved_id = std::max(max_preserved_id, node->id);
+        }
+    }
+
+    auto preserved_nodes = std::move(nodes_);
+
+    nodes_.clear();
+    node_index_map_.clear();
+
+    for (auto& node : preserved_nodes) {
+        if ((node->op_type == OpType::INPUT && node->output_buffer.external_data) ||
+            cached_node_ids.count(node->id)) {
+            size_t index = nodes_.size();
+            node_index_map_[node->id] = index;
+            nodes_.push_back(std::move(node));
+        }
+    }
+
+    next_node_id_ = max_preserved_id + 1;
+    debug_nodes_.clear();
 }

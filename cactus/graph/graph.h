@@ -97,9 +97,10 @@ namespace GraphFile {
 }
 
 enum class Precision {
-    INT8, 
+    INT8,
     FP16,
-    FP32
+    FP32,
+    INT4 
 };
 
 enum class ComputeBackend {
@@ -123,27 +124,38 @@ enum class OpType {
 };
 
 struct PrecisionTraits {
+    // Returns in-memory element size (INT4 unpacks to INT8, so returns 1)
     static constexpr size_t size_of(Precision prec) {
         switch (prec) {
             case Precision::INT8: return 1;
             case Precision::FP16: return 2;
             case Precision::FP32: return 4;
+            case Precision::INT4: return 1; 
         }
         return 1;
     }
-    
+
+    static constexpr size_t packed_size_of(Precision prec, size_t count) {
+        switch (prec) {
+            case Precision::INT4: return (count + 1) / 2;  
+            default: return count * size_of(prec);
+        }
+    }
+
     static constexpr bool is_integer(Precision prec) {
         switch (prec) {
             case Precision::INT8: return true;
+            case Precision::INT4: return true;
             case Precision::FP16: return false;
             case Precision::FP32: return false;
         }
         return true;
     }
-    
+
     static constexpr bool is_floating_point(Precision prec) {
         switch (prec) {
             case Precision::INT8: return false;
+            case Precision::INT4: return false;
             case Precision::FP16: return true;
             case Precision::FP32: return true;
         }
@@ -193,6 +205,9 @@ struct BufferDesc {
     void* scales_data = nullptr;
     std::unique_ptr<char[]> owned_scales;
 
+    const void* packed_int4_data = nullptr;  
+    size_t packed_int4_size = 0; 
+
     BufferDesc();
     BufferDesc(const std::vector<size_t>& s, Precision prec = Precision::INT8);
     ~BufferDesc();
@@ -218,10 +233,20 @@ struct BufferDesc {
     bool is_grouped_int8() const {
         return precision == Precision::INT8 && group_size > 0;
     }
+    bool is_packed_int4() const {
+        return packed_int4_data != nullptr && packed_int4_size > 0;
+    }
+    const uint8_t* packed_int4_as_uint8() const {
+        return reinterpret_cast<const uint8_t*>(packed_int4_data);
+    }
     void set_grouped_scales(size_t gs, size_t ng, void* scales_ptr) {
         group_size = gs;
         num_groups = ng;
         scales_data = scales_ptr;
+    }
+    void set_packed_int4(const void* packed_data, size_t packed_size) {
+        packed_int4_data = packed_data;
+        packed_int4_size = packed_size;
     }
 
     void allocate();
@@ -263,7 +288,6 @@ struct OpParams {
     std::vector<float> bias_values;
     std::vector<uint32_t> bias_indices;
 
-    // INT8 hybrid attention: external cache pointers
     const int8_t* cached_keys_int8 = nullptr;
     const int8_t* cached_values_int8 = nullptr;
     const float* cached_k_scales = nullptr;
@@ -350,7 +374,7 @@ public:
     size_t precision_cast(size_t input, Precision target_precision);
     
     size_t add(size_t input1, size_t input2);
-    size_t add_clipped(size_t input1, size_t input2);  // For FP16 residual connections (Gemma)
+    size_t add_clipped(size_t input1, size_t input2);  
     size_t subtract(size_t input1, size_t input2);
     size_t multiply(size_t input1, size_t input2);
     size_t divide(size_t input1, size_t input2);
@@ -387,6 +411,10 @@ public:
     size_t mmap_weights(const std::string& filename);
     size_t load_weights(const std::string& filename);
     void set_grouped_scales(size_t node_id, size_t group_size, size_t num_groups, void* scales_ptr);
+
+    void release_weight_pages(size_t node_id);
+    void prefetch_weight_pages(size_t node_id);
+    void release_all_weight_pages();
     size_t embedding(const std::string& filename, size_t indices);
     size_t embedding(size_t embedding_tensor, size_t indices);
     size_t bilinear_interpolation(size_t pos_embeds, size_t dst_height, size_t dst_width);
@@ -400,7 +428,6 @@ public:
     size_t attention(size_t query, size_t key, size_t value, float scale, size_t position_offset, ComputeBackend backend = ComputeBackend::CPU);
     size_t attention(size_t query, size_t key, size_t value, float scale, size_t position_offset, size_t window_size, ComputeBackend backend = ComputeBackend::CPU);
 
-    // Hybrid INT8/FP16 attention: cached K/V as INT8 with scales, new K/V as FP16
     size_t attention_int8_hybrid(size_t query, size_t key_new, size_t value_new, float scale, size_t position_offset,
                                  const int8_t* cached_keys, const int8_t* cached_values,
                                  const float* k_scales, const float* v_scales,
@@ -422,6 +449,8 @@ public:
     void execute(const std::string& profile_file = "");
     void hard_reset();
     void soft_reset();
+    void soft_reset_keep_pool();
+    void set_prefill_mode(bool enabled) { prefill_mode_ = enabled; }
 
     void register_debug_node(uint32_t layer_idx, const std::string& name, size_t node_id);
     void capture_debug_node(uint32_t layer_idx, const std::string& name, size_t node_id);
@@ -440,8 +469,10 @@ private:
     size_t next_node_id_;
     std::vector<std::unique_ptr<GraphFile::MappedFile>> mapped_files_;
     std::unordered_map<std::string, size_t> weight_cache_;
+    std::unordered_map<size_t, size_t> node_to_mapped_file_;
     std::vector<DebugNodeEntry> debug_nodes_;
     BufferPool buffer_pool_;
+    bool prefill_mode_ = false;
 };
 
 
@@ -468,11 +499,16 @@ namespace GraphFile {
 
         const std::vector<size_t>& shape() const;
         Precision precision() const;
+        Precision effective_precision() const {
+            return is_int4_ ? Precision::INT8 : precision_;
+        }
         size_t byte_size() const;
 
         size_t group_size() const { return group_size_; }
         size_t num_groups() const { return num_groups_; }
         const void* scales_data() const;
+        const void* raw_packed_data() const;  // Get raw mmap'd data without unpacking (for INT4)
+        bool is_int4() const { return is_int4_; }
 
         void* data();
         const void* data() const;
@@ -481,6 +517,9 @@ namespace GraphFile {
         const T* typed_data() const;
 
         LoadedNode load_into_graph(CactusGraph& graph) const;
+
+        void release_pages();
+        void prefetch_pages();
 
     private:
         int fd_;
@@ -492,7 +531,14 @@ namespace GraphFile {
         size_t group_size_ = 0;
         size_t num_groups_ = 0;
         size_t scales_offset_ = 0;
+        size_t scales_bytes_ = 0;
+        uint32_t version_ = 1;
+        uint32_t alignment_ = 32;
+        bool is_int4_ = false;
+        mutable std::unique_ptr<int8_t[]> unpacked_int4_data_;
         void parse_header();
+        void apply_madvise_hints();
+        void unpack_int4_if_needed() const;
     };
 
     MappedFile mmap_load(const std::string& filename);

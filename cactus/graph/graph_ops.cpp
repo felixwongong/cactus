@@ -1,5 +1,6 @@
 #include "graph.h"
 #include "../kernel/kernel.h"
+#include "../kernel/kernel_utils.h"
 #include <cstring>
 #include <vector>
 #include <stdexcept>
@@ -14,16 +15,71 @@
 
 namespace {
     thread_local std::vector<__fp16> transpose_buffer_fp16;
+    thread_local std::vector<int8_t> quant_activation_buffer;
+    thread_local std::vector<float> quant_scales_buffer;
+
+    thread_local const __fp16* cached_quant_src = nullptr;
+    thread_local size_t cached_quant_M = 0;
+    thread_local size_t cached_quant_K = 0;
 
     void ensure_transpose_buffer_fp16(size_t required_size) {
         if (transpose_buffer_fp16.size() < required_size) {
             transpose_buffer_fp16.resize(required_size);
         }
     }
+
+    void ensure_quant_buffers(size_t M, size_t K) {
+        size_t required_data = M * K;
+        if (quant_activation_buffer.size() < required_data) {
+            quant_activation_buffer.resize(required_data);
+        }
+        if (quant_scales_buffer.size() < M) {
+            quant_scales_buffer.resize(M);
+        }
+    }
+
+    void quantize_activations_fp16_to_int8(const __fp16* src, int8_t* dst, float* scales, size_t M, size_t K) {
+       
+        if (src == cached_quant_src && M == cached_quant_M && K == cached_quant_K) {
+            return;
+        }
+
+        constexpr size_t PARALLEL_THRESHOLD = 16;
+
+        if (M >= PARALLEL_THRESHOLD) {
+            CactusThreading::parallel_for(M, CactusThreading::Thresholds::ELEMENT_WISE,
+                [src, dst, scales, K](size_t m_start, size_t m_end) {
+                    for (size_t m = m_start; m < m_end; m++) {
+                        float max_abs = cactus_fp16_max_abs(src + m * K, K);
+                        float scale = max_abs / 127.0f;
+                        if (scale < 1e-10f) scale = 1e-10f;
+                        scales[m] = scale;
+                        cactus_fp16_to_int8(src + m * K, dst + m * K, K, scale);
+                    }
+                });
+        } else {
+            for (size_t m = 0; m < M; m++) {
+                float max_abs = cactus_fp16_max_abs(src + m * K, K);
+                float scale = max_abs / 127.0f;
+                if (scale < 1e-10f) scale = 1e-10f;
+                scales[m] = scale;
+                cactus_fp16_to_int8(src + m * K, dst + m * K, K, scale);
+            }
+        }
+
+        cached_quant_src = src;
+        cached_quant_M = M;
+        cached_quant_K = K;
+    }
 }
 
 void shrink_thread_local_buffers() {
     std::vector<__fp16>().swap(transpose_buffer_fp16);
+    std::vector<int8_t>().swap(quant_activation_buffer);
+    std::vector<float>().swap(quant_scales_buffer);
+    cached_quant_src = nullptr;
+    cached_quant_M = 0;
+    cached_quant_K = 0;
 }
 
 void compute_reduce_node(GraphNode& node, const std::vector<std::unique_ptr<GraphNode>>& nodes, const std::unordered_map<size_t, size_t>& node_index_map) {
@@ -146,7 +202,10 @@ void compute_fused_node(GraphNode& node, const std::vector<std::unique_ptr<Graph
                         }
                         std::memcpy(output + i * element_size, tensor_data + idx * element_size, bytes_per_element);
                         if (is_grouped) {
-                            std::memcpy(gathered_scales + i * num_groups, src_scales + idx * num_groups, num_groups * sizeof(__fp16));
+                            // Scale layout is [N, num_groups]
+                            for (size_t g = 0; g < num_groups; g++) {
+                                gathered_scales[i * num_groups + g] = src_scales[idx * num_groups + g];
+                            }
                         }
                     }
                 } else {
@@ -158,7 +217,10 @@ void compute_fused_node(GraphNode& node, const std::vector<std::unique_ptr<Graph
                         }
                         std::memcpy(output + i * element_size, tensor_data + idx * element_size, bytes_per_element);
                         if (is_grouped) {
-                            std::memcpy(gathered_scales + i * num_groups, src_scales + idx * num_groups, num_groups * sizeof(__fp16));
+                            // Scale layout is [N, num_groups]
+                            for (size_t g = 0; g < num_groups; g++) {
+                                gathered_scales[i * num_groups + g] = src_scales[idx * num_groups + g];
+                            }
                         }
                     }
                 }
@@ -250,12 +312,21 @@ void compute_fused_node(GraphNode& node, const std::vector<std::unique_ptr<Graph
                 node.output_buffer.precision = input_buffer.precision;
 
                 if (input_buffer.is_grouped_int8()) {
-                    node.output_buffer.group_size = input_buffer.group_size;
-                    node.output_buffer.num_groups = input_buffer.num_groups;
+                    size_t num_groups = input_buffer.num_groups;
+                    size_t scales_bytes = slice_length * num_groups * sizeof(__fp16);
+                    node.output_buffer.owned_scales = std::make_unique<char[]>(scales_bytes);
+                    __fp16* sliced_scales = reinterpret_cast<__fp16*>(node.output_buffer.owned_scales.get());
                     const __fp16* input_scales = input_buffer.scales_as_fp16();
-                    node.output_buffer.scales_data = const_cast<void*>(
-                        static_cast<const void*>(input_scales + slice_start * input_buffer.num_groups)
-                    );
+
+                    for (size_t i = 0; i < slice_length; i++) {
+                        for (size_t g = 0; g < num_groups; g++) {
+                            sliced_scales[i * num_groups + g] = input_scales[(slice_start + i) * num_groups + g];
+                        }
+                    }
+
+                    node.output_buffer.group_size = input_buffer.group_size;
+                    node.output_buffer.num_groups = num_groups;
+                    node.output_buffer.scales_data = sliced_scales;
                 }
                 break;
             }
@@ -315,11 +386,10 @@ void compute_fused_node(GraphNode& node, const std::vector<std::unique_ptr<Graph
 
                     auto dequant_row = [&](size_t i, size_t idx) {
                         const int8_t* emb_row = embeddings + idx * hidden_dim;
-                        const __fp16* scale_row = scales + idx * num_groups;
                         __fp16* out_row = output + i * hidden_dim;
 
                         for (size_t g = 0; g < num_groups; g++) {
-                            float scale = (float)scale_row[g];
+                            float scale = (float)scales[idx * num_groups + g];
                             size_t k_start = g * group_size;
                             size_t k_end = std::min(k_start + group_size, hidden_dim);
                             for (size_t k = k_start; k < k_end; k++) {
@@ -620,7 +690,7 @@ void compute_fused_node(GraphNode& node, const std::vector<std::unique_ptr<Graph
                     const __fp16* scales = W.scales_as_fp16();
                     const size_t K_total = W1 * K;
                     const size_t group_size = W.group_size;
-                    const size_t num_groups = W.num_groups;
+                    const size_t num_groups = K_total / group_size;
 
                     for (size_t row = 0; row < W0; ++row) {
                         for (size_t col = 0; col < K_total; ++col) {
@@ -694,7 +764,7 @@ void compute_fused_node(GraphNode& node, const std::vector<std::unique_ptr<Graph
                         const __fp16* scales = W.scales_as_fp16();
                         const size_t K_total = C_in * K;
                         const size_t group_size = W.group_size;
-                        const size_t num_groups = W.num_groups;
+                        const size_t num_groups = K_total / group_size;
 
                         for (size_t row = 0; row < C_out; ++row) {
                             for (size_t col = 0; col < K_total; ++col) {
@@ -776,21 +846,39 @@ void compute_matmul_node(GraphNode& node, const std::vector<std::unique_ptr<Grap
     const auto& rhs_buffer = nodes[node_index_map.at(node.input_ids[1])]->output_buffer;
     const auto& lhs_shape = lhs_buffer.shape;
     const auto& rhs_shape = rhs_buffer.shape;
-    
+
     size_t M = lhs_shape[lhs_shape.size() - 2];
     size_t K = lhs_shape[lhs_shape.size() - 1];
-    size_t N = node.params.pretransposed_rhs ? 
+    size_t N = node.params.pretransposed_rhs ?
                rhs_shape[rhs_shape.size() - 2] : rhs_shape[rhs_shape.size() - 1];
-    
+
     bool pretransposed_rhs = node.params.pretransposed_rhs;
-    
+
     ComputeBackend backend = node.params.backend;
-    
+
     if (backend == ComputeBackend::NPU) {
         throw std::runtime_error("NPU matrix multiplication not yet implemented");
     }
-    
-    if (lhs_buffer.precision == Precision::FP16 && rhs_buffer.is_grouped_int8()) {
+
+    if (lhs_buffer.precision == Precision::FP16 && rhs_buffer.is_packed_int4()) {
+        const __fp16* lhs = lhs_buffer.data_as<__fp16>();
+        const uint8_t* rhs_packed = rhs_buffer.packed_int4_as_uint8();
+        const __fp16* rhs_scales = rhs_buffer.scales_as_fp16();
+        __fp16* output = node.output_buffer.data_as<__fp16>();
+
+        if (!pretransposed_rhs) {
+            throw std::runtime_error("INT4 matmul requires pretransposed weights");
+        }
+
+        ensure_quant_buffers(M, K);
+        quantize_activations_fp16_to_int8(lhs, quant_activation_buffer.data(),
+                                          quant_scales_buffer.data(), M, K);
+
+        cactus_matmul_int4(quant_activation_buffer.data(), quant_scales_buffer.data(),
+                           rhs_packed, rhs_scales, output,
+                           M, K, N, rhs_buffer.group_size);
+
+    } else if (lhs_buffer.precision == Precision::FP16 && rhs_buffer.is_grouped_int8()) {
         const __fp16* lhs = lhs_buffer.data_as<__fp16>();
         const int8_t* rhs = rhs_buffer.data_as<int8_t>();
         const __fp16* rhs_scales = rhs_buffer.scales_as_fp16();
@@ -800,8 +888,13 @@ void compute_matmul_node(GraphNode& node, const std::vector<std::unique_ptr<Grap
             throw std::runtime_error("Group-wise INT8 matmul requires pretransposed weights");
         }
 
-        cactus_matmul_int(lhs, rhs, rhs_scales, output,
-                                   M, K, N, rhs_buffer.group_size);
+        ensure_quant_buffers(M, K);
+        quantize_activations_fp16_to_int8(lhs, quant_activation_buffer.data(),
+                                          quant_scales_buffer.data(), M, K);
+
+        cactus_matmul_int8(quant_activation_buffer.data(), quant_scales_buffer.data(),
+                           rhs, rhs_scales, output,
+                           M, K, N, rhs_buffer.group_size);
 
     } else {
         if (lhs_buffer.precision != Precision::FP16) {

@@ -15,7 +15,7 @@ enum class ScalarOpType {
     SIN
 };
 
-constexpr size_t KV_QUANT_GROUP_SIZE = 32;
+constexpr size_t KV_QUANT_GROUP_SIZE = 128;
 
 void cactus_add_f16(const __fp16* a, const __fp16* b, __fp16* output, size_t num_elements);
 void cactus_add_f16_clipped(const __fp16* a, const __fp16* b, __fp16* output, size_t num_elements);
@@ -38,8 +38,13 @@ void cactus_divide_broadcast_f16(const __fp16* a, const __fp16* b, __fp16* outpu
 
 void cactus_scalar_op_f16(const __fp16* input, __fp16* output, size_t num_elements, float scalar_value, ScalarOpType op_type);
 
-void cactus_matmul_int(const __fp16* A, const int8_t* B, const __fp16* B_scales,
-                       __fp16* C, size_t M, size_t K, size_t N, size_t group_size);
+void cactus_matmul_int8(const int8_t* A, const float* A_scales,
+                        const int8_t* B, const __fp16* B_scales,
+                        __fp16* C, size_t M, size_t K, size_t N, size_t group_size);
+
+void cactus_matmul_int4(const int8_t* A, const float* A_scales,
+                        const uint8_t* B_packed, const __fp16* B_scales,
+                        __fp16* C, size_t M, size_t K, size_t N, size_t group_size);
 
 void cactus_matmul_f16(const __fp16* a, const __fp16* b_transposed, __fp16* c,
                        size_t M, size_t K, size_t N);
@@ -154,5 +159,7 @@ inline size_t kv_scales_count(size_t seq_len, size_t kv_heads, size_t head_dim, 
     size_t num_groups = (head_dim + group_size - 1) / group_size;
     return seq_len * kv_heads * num_groups;
 }
+
+void cactus_unpack_int4_to_int8(const uint8_t* packed, int8_t* unpacked, size_t unpacked_count);
 
 #endif
