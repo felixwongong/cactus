@@ -89,7 +89,7 @@ Example response from Gemma3-270m-INT8
 
 # Supported models
 
-| Model | Zipped INT4/INT8 | RAM@4k-Context | Completion | Tool Call | Vision | Embed | Speech | Pro |
+| Model | Zipped INT4/INT8 | RAM@4k-Context | Completion | Tools | Vision | Embed | Speech | Pro |
 |-------|-----------|--------|------------|-----------|--------|-------|--------|-----|
 | google/gemma-3-270m-it | 115MB/172MB | 180MB | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ |
 | google/functiongemma-270m-it | 115MB/172MB | 180MB | ✓ | ✓ | ✗ | ✗ | ✗ | ✗ |
