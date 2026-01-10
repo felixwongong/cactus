@@ -106,9 +106,9 @@ Example response from Gemma3-270m-INT8
 | LiquidAI/LFM2.5-1.2B-Instruct | 474MB/722MB | 1280MB | ✓ | ✓ | ✗ | ✓ | ✗ | ✗ |
 | LiquidAI/LFM2-1.2B-RAG | 474MB/722MB | 1280MB | ✓ | ✓ | ✗ | ✓ | ✗ | ✗ |
 | LiquidAI/LFM2-1.2B-Tool | 474MB/722MB | 1280MB | ✓ | ✓ | ✗ | ✓ | ✗ | ✗ |
-| LiquidAI/LFM2.5-VL-1.6B | 954MB/1440MB | 1280MB | ✓ | ✗ | ✓ | ✓ | ✗ | Apple |
-| Qwen/Qwen3-1.7B | 801MB/1161MB | 1680MB | ✓ | ✓ | ✗ | ✓ | ✗ | ✗ |
-| HuggingFaceTB/SmolLM2-1.7B-Instruct | 801MB/1161MB | 1680MB | ✓ | ✗ | ✗ | ✓ | ✗ | ✗ |
+| LiquidAI/LFM2.5-VL-1.6B | 954MB/1440MB | 1190MB | ✓ | ✗ | ✓ | ✓ | ✗ | Apple |
+| Qwen/Qwen3-1.7B | 749MB/1161MB | 1380MB | ✓ | ✓ | ✗ | ✓ | ✗ | ✗ |
+| HuggingFaceTB/SmolLM2-1.7B-Instruct | 801MB/1161MB | 1380MB | ✓ | ✗ | ✗ | ✓ | ✗ | ✗ |
 
 
 # Using this repo on a Mac

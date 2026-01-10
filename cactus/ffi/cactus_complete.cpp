@@ -49,6 +49,30 @@ int cactus_complete(
             return -1;
         }
 
+        if (handle->corpus_index) {
+            std::string query;
+            for (auto it = messages.rbegin(); it != messages.rend(); ++it) {
+                if (it->role == "user") {
+                    query = it->content;
+                    break;
+                }
+            }
+
+            if (!query.empty()) {
+                std::string rag_context = retrieve_rag_context(handle, query);
+                if (!rag_context.empty()) {
+                    if (!messages.empty() && messages[0].role == "system") {
+                        messages[0].content = rag_context + messages[0].content;
+                    } else {
+                        ChatMessage system_msg;
+                        system_msg.role = "system";
+                        system_msg.content = rag_context + "Answer the user's question using ONLY the context above. Do not use any prior knowledge. If the answer cannot be found in the context, respond with \"I don't have enough information to answer that.\"";
+                        messages.insert(messages.begin(), system_msg);
+                    }
+                }
+            }
+        }
+
         float temperature, top_p;
         size_t top_k, max_tokens;
         std::vector<std::string> stop_sequences;
@@ -327,7 +351,5 @@ int cactus_score_window(
         return -1;
     }
 }
-
-
 
 }

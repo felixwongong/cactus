@@ -116,7 +116,15 @@ def cmd_download(args):
                 print(f"Install with: pip install {' '.join(missing_deps)}")
                 return 1
 
-            processor = AutoProcessor.from_pretrained(model_id, cache_dir=cache_dir, trust_remote_code=True, token=token)
+            processor = None
+            try:
+                processor = AutoProcessor.from_pretrained(model_id, cache_dir=cache_dir, trust_remote_code=True, token=token)
+            except Exception as proc_err:
+                if "TokenizersBackend" in str(proc_err) or "does not exist or is not currently imported" in str(proc_err):
+                    print(f"  Note: AutoProcessor failed, using fallback tokenizer loading...")
+                else:
+                    raise
+
             cfg = AutoConfig.from_pretrained(model_id, cache_dir=cache_dir, trust_remote_code=True, token=token)
             dtype = pick_dtype()
 
@@ -125,9 +133,17 @@ def cmd_download(args):
             else:
                 model = AutoModelForImageTextToText.from_pretrained(model_id, cache_dir=cache_dir, trust_remote_code=True, dtype=dtype, token=token)
 
-            tokenizer = getattr(processor, "tokenizer", None)
+            tokenizer = getattr(processor, "tokenizer", None) if processor else None
             if tokenizer is None:
-                tokenizer = AutoTokenizer.from_pretrained(model_id, cache_dir=cache_dir, trust_remote_code=True, token=token)
+                try:
+                    tokenizer = AutoTokenizer.from_pretrained(model_id, cache_dir=cache_dir, trust_remote_code=True, token=token)
+                except Exception as tok_err:
+                    if "TokenizersBackend" in str(tok_err) or "does not exist or is not currently imported" in str(tok_err):
+                        from transformers import PreTrainedTokenizerFast
+                        print(f"  Note: Using PreTrainedTokenizerFast fallback for invalid tokenizer_class...")
+                        tokenizer = PreTrainedTokenizerFast.from_pretrained(model_id, cache_dir=cache_dir, token=token)
+                    else:
+                        raise
 
             if is_lfm2_vl(model_id, cfg) and not vision_weight_sanity_check(model):
                 print_color(RED, "Vision embeddings look randomly initialized.")

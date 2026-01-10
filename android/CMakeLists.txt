@@ -16,7 +16,6 @@ file(GLOB GRAPH_SOURCES "${SOURCE_DIR}/graph/*.cpp")
 file(GLOB KERNEL_SOURCES "${SOURCE_DIR}/kernel/*.cpp")
 file(GLOB MODEL_SOURCES "${SOURCE_DIR}/models/*.cpp")
 file(GLOB FFI_SOURCES "${SOURCE_DIR}/ffi/*.cpp")
-file(GLOB INDEX_SOURCES "${SOURCE_DIR}/index/*.cpp")
 file(GLOB NPU_SOURCES "${SOURCE_DIR}/npu/*.cpp")
 
 set(HEADER_FILES
@@ -28,7 +27,6 @@ set(HEADER_FILES
     ${SOURCE_DIR}/ffi/cactus_ffi.h
     ${SOURCE_DIR}/ffi/cactus_utils.h
     ${SOURCE_DIR}/models/model.h
-    ${SOURCE_DIR}/index/index.h
     ${SOURCE_DIR}/npu/npu.h
 )
 
@@ -38,7 +36,6 @@ set(COMMON_SOURCES
     ${ENGINE_SOURCES}
     ${FFI_SOURCES}
     ${MODEL_SOURCES}
-    ${INDEX_SOURCES}
     ${NPU_SOURCES}
 )
 
@@ -67,7 +64,6 @@ set(COMMON_INCLUDE_DIRS
     ${SOURCE_DIR}/kernel
     ${SOURCE_DIR}/ffi
     ${SOURCE_DIR}/models
-    ${SOURCE_DIR}/index
     ${SOURCE_DIR}/npu
 )
 

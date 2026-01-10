@@ -1,16 +1,15 @@
 #include "cactus_ffi.h"
 #include "cactus_utils.h"
-#include "../index/index.h"
 #include <cstring>
 
 using namespace cactus::ffi;
 
 struct CactusIndexHandle {
-    std::unique_ptr<cactus::index::Index> index;
+    std::unique_ptr<cactus::engine::index::Index> index;
 };
 
-static cactus::index::QueryOptions parse_query_options_json(const std::string& json) {
-    cactus::index::QueryOptions options;
+static cactus::engine::index::QueryOptions parse_query_options_json(const std::string& json) {
+    cactus::engine::index::QueryOptions options;
 
     if (json.empty()) return options;
 
@@ -60,7 +59,7 @@ cactus_index_t cactus_index_init(const char* index_dir, size_t embedding_dim) {
 
     try {
         auto* handle = new CactusIndexHandle();
-        handle->index = std::make_unique<cactus::index::Index>(
+        handle->index = std::make_unique<cactus::engine::index::Index>(
             index_path_str,
             data_path_str,
             embedding_dim
@@ -124,7 +123,7 @@ int cactus_index_add(
     try {
         auto* handle = static_cast<CactusIndexHandle*>(index);
 
-        std::vector<cactus::index::Document> docs;
+        std::vector<cactus::engine::index::Document> docs;
         docs.reserve(count);
 
         for (size_t i = 0; i < count; ++i) {
@@ -249,7 +248,7 @@ int cactus_index_get(
         std::vector<int> doc_ids(ids, ids + ids_count);
 
         CACTUS_LOG_INFO("index_get", "Getting " << doc_ids.size() << " documents");
-        std::vector<cactus::index::Document> docs = handle->index->get_documents(doc_ids);
+        std::vector<cactus::engine::index::Document> docs = handle->index->get_documents(doc_ids);
 
         for (size_t i = 0; i < docs.size(); ++i) {
             if (document_buffers) {
@@ -381,13 +380,13 @@ int cactus_index_query(
             embeddings_vec.emplace_back(embeddings[i], embeddings[i] + embedding_dim);
         }
 
-        cactus::index::QueryOptions options;
+        cactus::engine::index::QueryOptions options;
         if (options_json && std::strlen(options_json) > 0) {
             options = parse_query_options_json(options_json);
         }
 
         CACTUS_LOG_DEBUG("index_query", "Querying with " << embeddings_count << " queries, dim: " << embedding_dim << ", top_k: " << options.top_k);
-        std::vector<std::vector<cactus::index::QueryResult>> results = handle->index->query(embeddings_vec, options);
+        std::vector<std::vector<cactus::engine::index::QueryResult>> results = handle->index->query(embeddings_vec, options);
 
         for (size_t i = 0; i < results.size(); ++i) {
             size_t result_count = results[i].size();

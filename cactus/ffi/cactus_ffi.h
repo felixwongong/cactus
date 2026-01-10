@@ -121,6 +121,14 @@ CACTUS_FFI_EXPORT void cactus_reset(cactus_model_t model);
 
 CACTUS_FFI_EXPORT void cactus_stop(cactus_model_t model);
 
+CACTUS_FFI_EXPORT int cactus_rag_query(
+    cactus_model_t model,
+    const char* query,
+    char* response_buffer,
+    size_t buffer_size,
+    size_t top_k
+);
+
 CACTUS_FFI_EXPORT void cactus_destroy(cactus_model_t model);
 
 CACTUS_FFI_EXPORT const char* cactus_get_last_error(void);

@@ -159,9 +159,6 @@ public:
     uint32_t get_fake_token_id() const { return fake_token_id_; }
     uint32_t get_global_img_token_id() const { return global_img_token_id_; }
 
-
-    void set_corpus_dir(const std::string& dir) { corpus_dir_ = dir; }
-
 protected:
     enum class ModelType { UNKNOWN, QWEN, GEMMA, LFM2, SMOL, BERT, WHISPER};
     ModelType model_type_ = ModelType::UNKNOWN;
@@ -173,7 +170,6 @@ protected:
     uint32_t image_token_id_ = 396;
     uint32_t fake_token_id_ = 49189;
     uint32_t global_img_token_id_ = 49152;
-    std::string corpus_dir_;
 
     void detect_model_type(const std::string& config_path);
     std::string format_qwen_style(const std::vector<ChatMessage>& messages, bool add_generation_prompt, const std::string& tools_json) const;
@@ -700,6 +696,103 @@ private:
     size_t num_frequency_bins_;
     size_t num_mel_filters_;
 };
+
+namespace index {
+    constexpr uint32_t MAGIC = 0x43414354;
+    constexpr uint32_t VERSION = 1;
+
+    struct Document {
+        int id;
+        std::vector<float> embedding;
+        std::string content;
+        std::string metadata;
+    };
+
+    struct QueryResult {
+        int doc_id;
+        float score;
+    };
+
+    struct QueryOptions {
+        size_t top_k = 10;
+        float score_threshold = -1.0f;
+    };
+
+    class Index {
+        public:
+            Index(const std::string& index_path, const std::string& data_path, size_t embedding_dim);
+            ~Index();
+
+            Index(const Index&) = delete;
+            Index& operator=(const Index&) = delete;
+            Index(Index&&) = delete;
+            Index& operator=(Index&&) = delete;
+
+            void add_documents(const std::vector<Document>& documents);
+            void delete_documents(const std::vector<int>& doc_ids);
+            std::vector<Document> get_documents(const std::vector<int>& doc_ids);
+            std::vector<std::vector<QueryResult>> query(const std::vector<std::vector<float>>& embeddings, const QueryOptions& options);
+            void compact();
+
+        private:
+            struct IndexHeader {
+                uint32_t magic;
+                uint32_t version;
+                uint32_t embedding_dim;
+                uint32_t num_documents;
+            };
+
+            struct IndexEntry {
+                int32_t doc_id;
+                uint64_t data_offset;
+                uint8_t flags; // bit 0: tombstone
+
+                const __fp16* embedding() const {
+                    return reinterpret_cast<const __fp16*>(this + 1);
+                }
+
+                static size_t size(size_t embedding_dim) {
+                    return sizeof(IndexEntry) + embedding_dim * sizeof(__fp16);
+                }
+            };
+
+            struct DataHeader {
+                uint32_t magic;
+                uint32_t version;
+            };
+
+            struct DataEntry {
+                uint16_t content_len;
+                uint16_t metadata_len;
+
+                const char* content() const {
+                    return reinterpret_cast<const char*>(this + 1);
+                }
+
+                const char* metadata() const {
+                    return content() + content_len;
+                }
+            };
+
+            void parse_index_header();
+            void parse_data_header();
+            void build_doc_id_map();
+            void validate_documents(const std::vector<Document>& documents);
+            void validate_doc_ids(const std::vector<int>& doc_ids);
+            ssize_t write_full(int fd, const void* buf, size_t count);
+
+            std::unordered_map<int, uint32_t> doc_id_map_;
+
+            std::string index_path_, data_path_;
+            size_t embedding_dim_;
+            size_t index_entry_size_;
+            uint32_t num_documents_;
+
+            int index_fd_, data_fd_;
+            void *mapped_index_, *mapped_data_;
+            size_t index_file_size_, data_file_size_;
+    };
+} // namespace index
 
 }
 }

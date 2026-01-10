@@ -1,4 +1,4 @@
-#include "index.h"
+#include "engine.h"
 #include "kernel/kernel.h"
 #include <fcntl.h>
 #include <unistd.h>
@@ -10,6 +10,7 @@
 #include <cerrno>
 
 namespace cactus {
+namespace engine {
 namespace index {
 
     __fp16 dot_product(const __fp16 *a, const __fp16 *b, size_t dim) {
@@ -772,4 +773,5 @@ namespace index {
     }
 
 } // namespace index
+} // namespace engine
 } // namespace cactus

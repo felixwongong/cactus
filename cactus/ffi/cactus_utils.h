@@ -27,6 +27,9 @@ struct CactusModelHandle {
     std::vector<uint32_t> processed_tokens;
     std::mutex model_mutex;
     std::string model_name;
+    std::unique_ptr<cactus::engine::index::Index> corpus_index;
+    std::string corpus_dir;
+    size_t corpus_embedding_dim = 0;
 
     CactusModelHandle() : should_stop(false) {}
 };
@@ -35,6 +38,8 @@ extern std::string last_error_message;
 
 bool matches_stop_sequence(const std::vector<uint32_t>& generated_tokens,
                            const std::vector<std::vector<uint32_t>>& stop_sequences);
+
+std::string retrieve_rag_context(CactusModelHandle* handle, const std::string& query);
 
 namespace cactus {
 namespace ffi {
