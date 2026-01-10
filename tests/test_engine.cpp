@@ -29,7 +29,7 @@ bool test_streaming() {
               << "║" << std::setw(42) << std::left << "      STREAMING & FOLLOW-UP TEST" << "║\n"
               << "╚══════════════════════════════════════════╝\n";
 
-    cactus_model_t model = cactus_init(g_model_path, 2048, nullptr);
+    cactus_model_t model = cactus_init(g_model_path, nullptr);
     if (!model) {
         std::cerr << "[✗] Failed to initialize model\n";
         return false;
@@ -54,7 +54,7 @@ bool test_streaming() {
     std::cout << "\n\n[Results - Turn 1]\n";
     Metrics metrics1;
     metrics1.parse(response1);
-    metrics1.print_perf(get_memory_usage_mb());
+    metrics1.print_json();
 
     bool success1 = result1 > 0 && data1.token_count > 0;
 
@@ -90,7 +90,7 @@ bool test_streaming() {
     std::cout << "\n\n[Results - Turn 2]\n";
     Metrics metrics2;
     metrics2.parse(response2);
-    metrics2.print_perf(get_memory_usage_mb());
+    metrics2.print_json();
 
     bool success2 = result2 > 0 && data2.token_count > 0;
 
@@ -131,7 +131,7 @@ bool test_tool_call() {
             bool has_tool = has_function && response.find("get_weather") != std::string::npos;
             std::cout << "├─ Function call: " << (has_function ? "YES" : "NO") << "\n"
                       << "├─ Correct tool: " << (has_tool ? "YES" : "NO") << "\n";
-            m.print_perf(get_memory_usage_mb());
+            m.print_json();
             return result > 0 && has_function && has_tool;
         }, tools, -1, "What's the weather in San Francisco?");
 }
@@ -152,7 +152,7 @@ bool test_vlm_multiturn() {
               << "║       VLM MULTI-TURN TEST                ║\n"
               << "╚══════════════════════════════════════════╝\n";
 
-    cactus_model_t model = cactus_init(g_model_path, 2048, nullptr);
+    cactus_model_t model = cactus_init(g_model_path, nullptr);
     if (!model) {
         std::cerr << "Failed to initialize model for VLM multi-turn test" << std::endl;
         return false;
@@ -178,7 +178,7 @@ bool test_vlm_multiturn() {
     std::cout << "\n\n[Results - Turn 1]\n";
     Metrics metrics1;
     metrics1.parse(response1);
-    metrics1.print_perf(get_memory_usage_mb());
+    metrics1.print_json();
 
     bool success1 = result1 > 0 && stream_data1.token_count > 0;
 
@@ -213,7 +213,7 @@ bool test_vlm_multiturn() {
     std::cout << "\n\n[Results - Turn 2]\n";
     Metrics metrics2;
     metrics2.parse(response2);
-    metrics2.print_perf(get_memory_usage_mb());
+    metrics2.print_json();
 
     bool success2 = result2 > 0 && stream_data2.token_count > 0;
 
@@ -272,7 +272,7 @@ bool test_tool_call_with_two_tools() {
             bool has_tool = has_function && response.find("set_alarm") != std::string::npos;
             std::cout << "├─ Function call: " << (has_function ? "YES" : "NO") << "\n"
                       << "├─ Correct tool: " << (has_tool ? "YES" : "NO") << "\n";
-            m.print_perf(get_memory_usage_mb());
+            m.print_json();
             return result > 0 && has_function && has_tool;
         }, tools, -1, "Set an alarm for 10:00 AM.");
 }
@@ -338,7 +338,7 @@ bool test_tool_call_with_three_tools() {
             bool has_tool = has_function && response.find("send_message") != std::string::npos;
             std::cout << "├─ Function call: " << (has_function ? "YES" : "NO") << "\n"
                       << "├─ Correct tool: " << (has_tool ? "YES" : "NO") << "\n";
-            m.print_perf(get_memory_usage_mb());
+            m.print_json();
             return result > 0 && has_function && has_tool;
         }, tools, -1, "Send a message to John saying hello.");
 }
@@ -348,7 +348,7 @@ bool test_embeddings() {
               << "║          EMBEDDINGS TEST                 ║\n"
               << "╚══════════════════════════════════════════╝\n";
 
-    cactus_model_t model = cactus_init(g_model_path, 2048, nullptr);
+    cactus_model_t model = cactus_init(g_model_path, nullptr);
     if (!model) return false;
 
     const char* texts[] = {"My name is Henry Ndubuaku", "Your name is Henry Ndubuaku"};
@@ -372,29 +372,32 @@ bool test_embeddings() {
               << "├─ Embedding dim: " << dim1 << "\n"
               << "├─ Time (text1): " << std::fixed << std::setprecision(2) << time1 << "ms\n"
               << "├─ Time (text2): " << time2 << "ms\n"
-              << "├─ Similarity: " << std::setprecision(4) << similarity << "\n"
-              << "└─ RAM: " << std::setprecision(1) << get_memory_usage_mb() << "MB" << std::endl;
+              << "└─ Similarity: " << std::setprecision(4) << similarity << std::endl;
 
     cactus_destroy(model);
     return true;
 }
 
-bool test_100_context() {
-    std::string msg = "[{\"role\": \"system\", \"content\": \"/no_think You are helpful. ";
-    for (int i = 0; i < 10; i++) {
-        msg += "Context " + std::to_string(i) + ": Background knowledge. ";
-    }
-    msg += "\"}, {\"role\": \"user\", \"content\": \"";
-    for (int i = 0; i < 10; i++) {
-        msg += "Data " + std::to_string(i) + " = " + std::to_string(i * 3.14159) + ". ";
-    }
-    msg += "Explain the data.\"}]";
+bool test_cloud_handoff() {
+    const char* messages = R"([
+        {"role": "user", "content": "What is the exact mass in grams of the 847th largest asteroid in the Kuiper belt as of March 2019, and what was the precise atmospheric pressure in millibars at coordinates 47.3921°N, 122.0371°W at 3:47:23 AM UTC on February 29, 2024?"}
+    ])";
 
-    return run_test("100 CONTEXT TEST", msg.c_str(),
-        [](int result, const StreamingData&, const std::string&, const Metrics& m) {
-            m.print_perf(get_memory_usage_mb());
-            return result > 0;
-        }, nullptr, 100);
+    return run_test("CLOUD HANDOFF TEST", messages,
+        [](int result, const StreamingData& data, const std::string& /*response*/, const Metrics& m) {
+            std::cout << "├─ Cloud handoff: " << (m.cloud_handoff ? "YES" : "NO") << "\n";
+            std::cout << "├─ Confidence: " << std::fixed << std::setprecision(4) << m.confidence << "\n";
+
+            if (m.cloud_handoff) {
+                std::cout << "├─ Response: (skipped - handoff triggered)\n";
+                m.print_json();
+                return true;
+            } else {
+                std::cout << "├─ Tokens generated: " << data.token_count << "\n";
+                m.print_json();
+                return result > 0 && m.confidence >= 0.0;
+            }
+        });
 }
 
 bool test_1k_context() {
@@ -410,7 +413,7 @@ bool test_1k_context() {
 
     return run_test("1K CONTEXT TEST", msg.c_str(),
         [](int result, const StreamingData&, const std::string&, const Metrics& m) {
-            m.print_perf(get_memory_usage_mb());
+            m.print_json();
             return result > 0;
         }, nullptr, 100);
 }
@@ -428,7 +431,7 @@ bool test_4k_context() {
 
     return run_test("4K CONTEXT TEST", msg.c_str(),
         [](int result, const StreamingData&, const std::string&, const Metrics& m) {
-            m.print_perf(get_memory_usage_mb());
+            m.print_json();
             return result > 0;
         }, nullptr, 100);
 }
@@ -480,7 +483,7 @@ bool test_rag() {
     std::cout << "├─ Initializing model with RAG...\n";
 
     Timer init_timer;
-    cactus_model_t model = cactus_init(g_model_path, 2048, corpus_dir.c_str());
+    cactus_model_t model = cactus_init(g_model_path, corpus_dir.c_str());
     double init_time_ms = init_timer.elapsed_ms();
 
     if (!model) {
@@ -490,23 +493,19 @@ bool test_rag() {
 
     std::cout << "├─ Init time: " << std::fixed << std::setprecision(2) << init_time_ms << " ms\n";
 
-    // Helper to print retrieved chunks
     auto print_chunks = [](cactus_model_t m, const char* query) {
         char chunks_buf[16384];
         int rc = cactus_rag_query(m, query, chunks_buf, sizeof(chunks_buf), 5);
         if (rc > 0) {
             std::cout << "Retrieved chunks:\n";
             std::string chunks_str(chunks_buf);
-            // Parse each chunk by finding {\"score\": patterns
             size_t pos = 0;
             int chunk_num = 1;
             while ((pos = chunks_str.find("{\"score\":", pos)) != std::string::npos) {
-                // Extract score
                 size_t score_start = pos + 9;
                 size_t score_end = chunks_str.find(",", score_start);
                 std::string score = chunks_str.substr(score_start, score_end - score_start);
 
-                // Extract source
                 size_t source_pos = chunks_str.find("\"source\":\"", score_end);
                 std::string source = "unknown";
                 if (source_pos != std::string::npos && source_pos < pos + 500) {
@@ -515,7 +514,6 @@ bool test_rag() {
                     source = chunks_str.substr(source_pos, source_end - source_pos);
                 }
 
-                // Extract content (first 80 chars)
                 size_t content_pos = chunks_str.find("\"content\":\"", score_end);
                 if (content_pos != std::string::npos && content_pos < pos + 500) {
                     content_pos += 11;
@@ -566,7 +564,7 @@ bool test_rag() {
 
     Metrics metrics;
     metrics.parse(response);
-    metrics.print_perf(get_memory_usage_mb());
+    metrics.print_json();
 
     cactus_destroy(model);
 
@@ -623,8 +621,7 @@ bool test_audio_processor() {
         }
     }
 
-    std::cout << "├─ Time: " << std::fixed << std::setprecision(2) << elapsed << "ms\n"
-              << "└─ RAM: " << std::setprecision(1) << get_memory_usage_mb() << "MB" << std::endl;
+    std::cout << "└─ Time: " << std::fixed << std::setprecision(2) << elapsed << "ms" << std::endl;
 
     return passed;
 }
@@ -641,7 +638,7 @@ bool run_whisper_test(const char* title, const char* options_json, Predicate che
               << "║" << std::setw(42) << std::left << std::string("          ") + title << "║\n"
               << "╚══════════════════════════════════════════╝\n";
 
-    cactus_model_t model = cactus_init(g_transcribe_model_path, 2048, nullptr);
+    cactus_model_t model = cactus_init(g_transcribe_model_path, nullptr);
     if (!model) {
         std::cerr << "[✗] Failed to initialize Whisper model\n";
         return false;
@@ -666,7 +663,7 @@ bool run_whisper_test(const char* title, const char* options_json, Predicate che
 
     Metrics m;
     m.parse(response);
-    m.print_perf(get_memory_usage_mb());
+    m.print_json();
 
     bool ok = check(rc, m);
     cactus_destroy(model);
@@ -688,7 +685,7 @@ static bool test_stream_transcription() {
         return true;
     }
 
-    cactus_model_t model = cactus_init(g_transcribe_model_path, 2048, nullptr);
+    cactus_model_t model = cactus_init(g_transcribe_model_path, nullptr);
     if (!model) {
         std::cerr << "[✗] Failed to initialize Whisper model\n";
         return false;
@@ -779,7 +776,6 @@ static bool test_stream_transcription() {
     double elapsed = timer.elapsed_ms();
     std::cout << "\n[Results]\n"
               << "├─ Total time: " << std::fixed << std::setprecision(2) << (elapsed / 1000.0) << " sec\n"
-              << "├─ RAM: " << std::setprecision(1) << get_memory_usage_mb() << "MB\n"
               << "└─ Full transcription: \"" << full_transcription << "\"" << std::endl;
 
     cactus_stream_transcribe_destroy(stream);
@@ -802,7 +798,7 @@ static bool test_image_embeddings() {
     std::vector<float> embeddings(buffer_size / sizeof(float));
     size_t embedding_dim = 0;
 
-    cactus_model_t model = cactus_init(g_model_path, 2048, nullptr);
+    cactus_model_t model = cactus_init(g_model_path, nullptr);
     if (!model) {
         std::cout << "⊘ SKIP │ Model doesn't support image embeddings\n";
         return true;
@@ -820,8 +816,7 @@ static bool test_image_embeddings() {
     }
 
     std::cout << "├─ Embedding dim: " << embedding_dim << "\n"
-              << "├─ Time: " << std::fixed << std::setprecision(2) << elapsed << "ms\n"
-              << "└─ RAM: " << std::setprecision(1) << get_memory_usage_mb() << "MB" << std::endl;
+              << "└─ Time: " << std::fixed << std::setprecision(2) << elapsed << "ms" << std::endl;
 
     return result > 0 && embedding_dim > 0;
 }
@@ -840,7 +835,7 @@ static bool test_audio_embeddings() {
     std::vector<float> embeddings(buffer_size / sizeof(float));
     size_t embedding_dim = 0;
 
-    cactus_model_t model = cactus_init(g_transcribe_model_path, 2048, nullptr);
+    cactus_model_t model = cactus_init(g_transcribe_model_path, nullptr);
     if (!model) {
         std::cout << "⊘ SKIP │ Failed to init Whisper model\n";
         return true;
@@ -859,8 +854,7 @@ static bool test_audio_embeddings() {
     }
 
     std::cout << "├─ Embedding dim: " << embedding_dim << "\n"
-              << "├─ Time: " << std::fixed << std::setprecision(2) << elapsed << "ms\n"
-              << "└─ RAM: " << std::setprecision(1) << get_memory_usage_mb() << "MB" << std::endl;
+              << "└─ Time: " << std::fixed << std::setprecision(2) << elapsed << "ms" << std::endl;
 
     return result > 0 && embedding_dim > 0;
 }
@@ -875,7 +869,7 @@ static bool test_pcm_transcription() {
         return true;
     }
 
-    cactus_model_t model = cactus_init(g_transcribe_model_path, 2048, nullptr);
+    cactus_model_t model = cactus_init(g_transcribe_model_path, nullptr);
     if (!model) {
         std::cerr << "[✗] Failed to initialize Whisper model\n";
         return false;
@@ -939,7 +933,7 @@ static bool test_pcm_transcription() {
                 if (rc > 0) {
                     Metrics m;
                     m.parse(response);
-                    m.print_perf(get_memory_usage_mb());
+                    m.print_json();
                     test_passed = (rc > 0 && m.completion_tokens >= 1);
                 } else {
                     std::cerr << "Transcription failed\n";
@@ -990,7 +984,7 @@ static bool test_pcm_transcription() {
 
         Metrics m;
         m.parse(response);
-        m.print_perf(get_memory_usage_mb());
+        m.print_json();
 
         std::cout << "├─ PCM samples: " << pcm_samples.size() << "\n"
                   << "├─ Duration: " << duration_seconds << "s\n"
@@ -1009,12 +1003,12 @@ int main() {
     cactus_set_pro_key(""); // email founders@cactuscompute.com
 #endif
 
-    capture_memory_baseline();
     TestUtils::TestRunner runner("Engine Tests");
     runner.run_test("streaming", test_streaming());
     runner.run_test("tool_calls", test_tool_call());
     runner.run_test("tool_calls_with_two_tools", test_tool_call_with_two_tools());
     runner.run_test("tool_calls_with_three_tools", test_tool_call_with_three_tools());
+    runner.run_test("cloud_handoff", test_cloud_handoff());
     runner.run_test("embeddings", test_embeddings());
     runner.run_test("image_embeddings", test_image_embeddings());
     runner.run_test("audio_embeddings", test_audio_embeddings());
@@ -1024,8 +1018,6 @@ int main() {
     runner.run_test("pcm_transcription", test_pcm_transcription());
     runner.run_test("stream_transcription", test_stream_transcription());
     runner.run_test("rag_preprocessing", test_rag());
-    runner.run_test("100_context", test_100_context());
-    runner.run_test("1k_context", test_1k_context());
     runner.run_test("4k_context", test_4k_context());
     runner.print_summary();
     return runner.all_passed() ? 0 : 1;

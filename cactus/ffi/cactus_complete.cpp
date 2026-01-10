@@ -7,6 +7,10 @@
 using namespace cactus::engine;
 using namespace cactus::ffi;
 
+static constexpr float CLOUD_HANDOFF_ENTROPY_THRESHOLD = 0.3f;
+static constexpr float ROLLING_ENTROPY_SPIKE_THRESHOLD = 0.3f;
+static constexpr size_t ROLLING_ENTROPY_WINDOW = 10;
+
 extern "C" {
 
 int cactus_complete(
@@ -147,6 +151,7 @@ int cactus_complete(
         std::vector<uint32_t> generated_tokens;
         double time_to_first_token = 0.0;
         uint32_t next_token;
+        float first_token_entropy = 0.0f;
 
         if (tokens_to_process.empty()) {
             if (handle->processed_tokens.empty()) {
@@ -154,10 +159,10 @@ int cactus_complete(
                 return -1;
             }
             std::vector<uint32_t> last_token_vec = { handle->processed_tokens.back() };
-            next_token = handle->model->decode(last_token_vec, temperature, top_p, top_k);
+            next_token = handle->model->decode(last_token_vec, temperature, top_p, top_k, "", &first_token_entropy);
         } else {
             if (!image_paths.empty()) {
-                next_token = handle->model->decode_with_images(tokens_to_process, image_paths, temperature, top_p, top_k);
+                next_token = handle->model->decode_with_images(tokens_to_process, image_paths, temperature, top_p, top_k, "", &first_token_entropy);
             } else {
                 size_t prefill_chunk_size = handle->model->get_prefill_chunk_size();
 
@@ -167,9 +172,9 @@ int cactus_complete(
                     handle->model->prefill(prefill_tokens, prefill_chunk_size);
 
                     std::vector<uint32_t> last_token = {tokens_to_process.back()};
-                    next_token = handle->model->decode(last_token, temperature, top_p, top_k);
+                    next_token = handle->model->decode(last_token, temperature, top_p, top_k, "", &first_token_entropy);
                 } else {
-                    next_token = handle->model->decode(tokens_to_process, temperature, top_p, top_k);
+                    next_token = handle->model->decode(tokens_to_process, temperature, top_p, top_k, "", &first_token_entropy);
                 }
             }
         }
@@ -179,12 +184,43 @@ int cactus_complete(
         auto token_end = std::chrono::high_resolution_clock::now();
         time_to_first_token = std::chrono::duration_cast<std::chrono::microseconds>(token_end - start_time).count() / 1000.0;
 
+        float confidence = 1.0f - first_token_entropy;
+
+        if (first_token_entropy > CLOUD_HANDOFF_ENTROPY_THRESHOLD) {
+            double prefill_tps = time_to_first_token > 0 ? (prompt_tokens * 1000.0) / time_to_first_token : 0.0;
+            std::string result = construct_cloud_handoff_json(confidence, time_to_first_token, prefill_tps, prompt_tokens);
+            if (result.length() >= buffer_size) {
+                handle_error_response("Response buffer too small", response_buffer, buffer_size);
+                return -1;
+            }
+            std::strcpy(response_buffer, result.c_str());
+
+            CactusTelemetry::getInstance().recordCompletion(
+                handle->model_name,
+                true,
+                time_to_first_token,
+                0.0,
+                time_to_first_token,
+                static_cast<int>(prompt_tokens),
+                ""
+            );
+
+            return static_cast<int>(result.length());
+        }
+
         generated_tokens.push_back(next_token);
         handle->processed_tokens.push_back(next_token);
 
         if (force_tools && !tools.empty()) {
             handle->model->update_tool_constraints(next_token);
         }
+
+        std::vector<float> entropy_window;
+        entropy_window.push_back(first_token_entropy);
+        float entropy_sum = first_token_entropy;
+        float total_entropy_sum = first_token_entropy;
+        size_t total_entropy_count = 1;
+        bool entropy_spike_handoff = false;
 
         if (!matches_stop_sequence(generated_tokens, stop_token_sequences)) {
             if (callback) {
@@ -195,9 +231,26 @@ int cactus_complete(
             for (size_t i = 1; i < max_tokens; i++) {
                 if (handle->should_stop) break;
 
-                next_token = handle->model->decode({next_token}, temperature, top_p, top_k);
+                float token_entropy = 0.0f;
+                next_token = handle->model->decode({next_token}, temperature, top_p, top_k, "", &token_entropy);
                 generated_tokens.push_back(next_token);
                 handle->processed_tokens.push_back(next_token);
+
+                total_entropy_sum += token_entropy;
+                total_entropy_count++;
+
+                entropy_window.push_back(token_entropy);
+                entropy_sum += token_entropy;
+                if (entropy_window.size() > ROLLING_ENTROPY_WINDOW) {
+                    entropy_sum -= entropy_window.front();
+                    entropy_window.erase(entropy_window.begin());
+                }
+
+                float rolling_mean = entropy_sum / entropy_window.size();
+                if (rolling_mean > ROLLING_ENTROPY_SPIKE_THRESHOLD) {
+                    entropy_spike_handoff = true;
+                    break;
+                }
 
                 if (force_tools && !tools.empty()) {
                     handle->model->update_tool_constraints(next_token);
@@ -212,6 +265,9 @@ int cactus_complete(
             }
         }
 
+        float mean_entropy = total_entropy_sum / static_cast<float>(total_entropy_count);
+        confidence = 1.0f - mean_entropy;
+
         if (force_tools && !tools.empty()) {
             handle->model->clear_tool_constraints();
         }
@@ -221,7 +277,8 @@ int cactus_complete(
 
         size_t completion_tokens = generated_tokens.size();
         double decode_time_ms = total_time_ms - time_to_first_token;
-        double tokens_per_second = completion_tokens > 1 ? ((completion_tokens - 1) * 1000.0) / decode_time_ms : 0.0;
+        double prefill_tps = time_to_first_token > 0 ? (prompt_tokens * 1000.0) / time_to_first_token : 0.0;
+        double decode_tps = (completion_tokens > 1 && decode_time_ms > 0) ? ((completion_tokens - 1) * 1000.0) / decode_time_ms : 0.0;
 
         std::string response_text = tokenizer->decode(generated_tokens);
 
@@ -230,8 +287,8 @@ int cactus_complete(
         parse_function_calls_from_response(response_text, regular_response, function_calls);
 
         std::string result = construct_response_json(regular_response, function_calls, time_to_first_token,
-                                                     total_time_ms, tokens_per_second, prompt_tokens,
-                                                     completion_tokens);
+                                                     total_time_ms, prefill_tps, decode_tps, prompt_tokens,
+                                                     completion_tokens, confidence, entropy_spike_handoff);
 
         if (result.length() >= buffer_size) {
             handle_error_response("Response buffer too small", response_buffer, buffer_size);
@@ -244,7 +301,7 @@ int cactus_complete(
             handle->model_name,
             true,
             time_to_first_token,
-            tokens_per_second,
+            decode_tps,
             total_time_ms,
             static_cast<int>(prompt_tokens + completion_tokens),
             ""

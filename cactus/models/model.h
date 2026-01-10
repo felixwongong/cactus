@@ -413,7 +413,7 @@ protected:
     size_t build_conv1d(CactusGraph* gb, size_t input);
 
     uint32_t decode_with_audio(const std::vector<uint32_t>& tokens, const std::vector<float>& mel_bins,
-                                    float temperature = 0.0f, float top_p = 0.0f, size_t top_k = 0, const std::string& profile_file = "") override;
+                                    float temperature = 0.0f, float top_p = 0.0f, size_t top_k = 0, const std::string& profile_file = "", float* out_entropy = nullptr) override;
 
     std::vector<float> get_audio_embeddings(const std::vector<float>& mel_bins) override;
     
@@ -642,7 +642,8 @@ public:
                       float temperature = -1.0f,
                       float top_p = -1.0f,
                       size_t top_k = 0,
-                      const std::string& profile_file = "") override;
+                      const std::string& profile_file = "",
+                      float* out_entropy = nullptr) override;
 
     void prefill(const std::vector<uint32_t>& tokens, size_t chunk_size = 256, const std::string& profile_file = "") override;
 
@@ -652,7 +653,8 @@ public:
         float temperature = -1.0f,
         float top_p = -1.0f,
         size_t top_k = 0,
-        const std::string& profile_file = "") override;
+        const std::string& profile_file = "",
+        float* out_entropy = nullptr) override;
 
     void reset_cache() override;
     std::vector<float> get_image_embeddings(const std::string& image_path) override;

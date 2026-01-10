@@ -344,9 +344,11 @@ const char* cactus_get_last_error() {
     return last_error_message.c_str();
 }
 
-cactus_model_t cactus_init(const char* model_path, size_t context_size, const char* corpus_dir) {
+cactus_model_t cactus_init(const char* model_path, const char* corpus_dir) {
     CactusTelemetry::getInstance().ensureInitialized();
-    
+
+    constexpr size_t DEFAULT_CONTEXT_SIZE = 512;  // matches default sliding window size
+
     std::string model_path_str = model_path ? std::string(model_path) : "unknown";
 
     std::string model_name = model_path_str;
@@ -374,7 +376,7 @@ cactus_model_t cactus_init(const char* model_path, size_t context_size, const ch
             return nullptr;
         }
 
-        if (!handle->model->init(model_path, context_size)) {
+        if (!handle->model->init(model_path, DEFAULT_CONTEXT_SIZE)) {
             last_error_message = "Failed to initialize model - check weight files at: " + model_path_str;
             CACTUS_LOG_ERROR("init", last_error_message);
 

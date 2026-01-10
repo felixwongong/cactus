@@ -13,15 +13,6 @@
 #include <atomic>
 #include <mutex>
 
-#ifdef __APPLE__
-#include <mach/mach.h>
-#elif defined(_WIN32)
-#include <windows.h>
-#include <psapi.h>
-#elif defined(__linux__) || defined(__ANDROID__)
-#include <fstream>
-#include <unistd.h>
-#endif
 
 namespace TestUtils {
 
@@ -134,11 +125,6 @@ bool test_scalar_operation(const std::string& op_name,
 
 namespace EngineTestUtils {
 
-size_t get_memory_footprint_bytes();
-void capture_memory_baseline();
-double get_memory_usage_mb();
-double get_peak_model_memory_mb();
-
 struct Timer {
     std::chrono::high_resolution_clock::time_point start;
     Timer();
@@ -160,16 +146,23 @@ struct StreamingData {
 void stream_callback(const char* token, uint32_t token_id, void* user_data);
 
 struct Metrics {
+    bool success = false;
+    std::string error;
+    bool cloud_handoff = false;
+    std::string response;
+    std::string function_calls;
+    double confidence = -1.0;
     double ttft = 0.0;
-    double tps = 0.0;
     double total_ms = 0.0;
-    double prompt_tokens = 0.0;
+    double prefill_tps = 0.0;
+    double decode_tps = 0.0;
+    double ram_mb = 0.0;
+    double prefill_tokens = 0.0;
     double completion_tokens = 0.0;
+    double total_tokens = 0.0;
 
-    void parse(const std::string& response);
-    void print() const;
-    void print_full() const;
-    void print_perf(double ram_mb = 0.0) const;
+    void parse(const std::string& json);
+    void print_json() const;
 };
 
 template<typename TestFunc>
@@ -185,7 +178,7 @@ bool run_test(const char* title, const char* model_path, const char* messages,
         std::cout << "├─ User prompt: " << user_prompt << "\n";
     }
 
-    cactus_model_t model = cactus_init(model_path, 2048, nullptr);
+    cactus_model_t model = cactus_init(model_path, nullptr);
     if (!model) {
         std::cerr << "[✗] Failed to initialize model\n";
         return false;

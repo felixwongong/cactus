@@ -95,7 +95,7 @@ import Foundation
 
 // Load model from app bundle
 let modelPath = Bundle.main.path(forResource: "my-model", ofType: nil)!
-let model = cactus_init(modelPath, 2048, nil)
+let model = cactus_init(modelPath, nil)
 
 // Run completion
 let messages = "[{\"role\":\"user\",\"content\":\"Hello!\"}]"

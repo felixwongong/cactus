@@ -219,7 +219,7 @@ void Model::prefill(const std::vector<uint32_t>& tokens, size_t chunk_size, cons
 }
 
 uint32_t Model::decode(const std::vector<uint32_t>& tokens, float temperature, float top_p,
-                        size_t top_k, const std::string& profile_file) {
+                        size_t top_k, const std::string& profile_file, float* out_entropy) {
 
     if (temperature < 0) {
         temperature = config_.default_temperature;
@@ -252,6 +252,43 @@ uint32_t Model::decode(const std::vector<uint32_t>& tokens, float temperature, f
         gb->execute();
     }
 
+    if (out_entropy) {
+        const auto& logits_buf = gb->get_output_buffer(logits_node_id);
+        void* logits_ptr = gb->get_output(logits_node_id);
+        size_t vocab_size = logits_buf.shape.back();
+
+        std::vector<float> logits(vocab_size);
+        if (logits_buf.precision == Precision::FP32) {
+            float* src = static_cast<float*>(logits_ptr);
+            std::copy(src, src + vocab_size, logits.begin());
+        } else if (logits_buf.precision == Precision::FP16) {
+            __fp16* src = static_cast<__fp16*>(logits_ptr);
+            Quantization::fp16_to_fp32(src, logits.data(), vocab_size);
+        } else {
+            int8_t* src = static_cast<int8_t*>(logits_ptr);
+            Quantization::int8_to_fp32(src, logits.data(), vocab_size, 1.0f);
+        }
+
+        float max_logit = *std::max_element(logits.begin(), logits.end());
+        double sum_exp = 0.0;
+        for (size_t i = 0; i < vocab_size; ++i) {
+            sum_exp += std::exp(static_cast<double>(logits[i] - max_logit));
+        }
+        double log_sum_exp = static_cast<double>(max_logit) + std::log(sum_exp);
+
+        double entropy = 0.0;
+        for (size_t i = 0; i < vocab_size; ++i) {
+            double log_prob = static_cast<double>(logits[i]) - log_sum_exp;
+            double prob = std::exp(log_prob);
+            if (prob > 1e-10) {
+                entropy -= prob * log_prob;
+            }
+        }
+
+        double max_entropy = std::log(static_cast<double>(vocab_size));
+        *out_entropy = static_cast<float>(entropy / max_entropy);
+    }
+
     post_execute_updates(gb, tokens.size());
     update_kv_cache(gb, tokens.size());
 
@@ -259,14 +296,14 @@ uint32_t Model::decode(const std::vector<uint32_t>& tokens, float temperature, f
     return *static_cast<uint32_t*>(output_ptr);
 }
 
-uint32_t Model::decode_with_audio(const std::vector<uint32_t>& tokens, const std::vector<float>& /*mel_bins*/, float temperature, float top_p, size_t top_k, const std::string& profile_file){
-    return decode(tokens, temperature, top_p, top_k, profile_file);
+uint32_t Model::decode_with_audio(const std::vector<uint32_t>& tokens, const std::vector<float>& /*mel_bins*/, float temperature, float top_p, size_t top_k, const std::string& profile_file, float* out_entropy){
+    return decode(tokens, temperature, top_p, top_k, profile_file, out_entropy);
 }
 
 uint32_t Model::decode_with_images(const std::vector<uint32_t>& tokens, const std::vector<std::string>& image_paths,
-                                     float temperature, float top_p, size_t top_k, const std::string& profile_file) {
+                                     float temperature, float top_p, size_t top_k, const std::string& profile_file, float* out_entropy) {
     (void)image_paths;
-    return decode(tokens, temperature, top_p, top_k, profile_file);
+    return decode(tokens, temperature, top_p, top_k, profile_file, out_entropy);
 }
 
 std::vector<float> Model::get_image_embeddings(const std::string& /*image_path*/) {

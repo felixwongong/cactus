@@ -19,7 +19,38 @@
 
 #ifdef __APPLE__
 #include <uuid/uuid.h>
+#include <mach/mach.h>
+#elif defined(_WIN32)
+#include <windows.h>
+#include <psapi.h>
+#elif defined(__linux__) || defined(__ANDROID__)
+#include <unistd.h>
 #endif
+
+inline size_t get_memory_footprint_bytes() {
+#ifdef __APPLE__
+    task_vm_info_data_t vm_info;
+    mach_msg_type_number_t count = TASK_VM_INFO_COUNT;
+    if (task_info(mach_task_self(), TASK_VM_INFO, (task_info_t)&vm_info, &count) == KERN_SUCCESS)
+        return vm_info.phys_footprint;
+#elif defined(_WIN32)
+    PROCESS_MEMORY_COUNTERS_EX pmc;
+    if (GetProcessMemoryInfo(GetCurrentProcess(), (PROCESS_MEMORY_COUNTERS*)&pmc, sizeof(pmc)))
+        return pmc.PrivateUsage;
+#elif defined(__linux__) || defined(__ANDROID__)
+    std::ifstream statm("/proc/self/statm");
+    if (statm.is_open()) {
+        size_t size, resident;
+        statm >> size >> resident;
+        return resident * sysconf(_SC_PAGESIZE);
+    }
+#endif
+    return 0;
+}
+
+inline double get_ram_usage_mb() {
+    return get_memory_footprint_bytes() / (1024.0 * 1024.0);
+}
 
 struct CactusModelHandle {
     std::unique_ptr<cactus::engine::Model> model;
@@ -76,13 +107,38 @@ struct ToolFunction {
 namespace cactus {
 namespace ffi {
 
-inline void handle_error_response(const std::string& error_message, char* response_buffer, size_t buffer_size) {
-    std::string sanitized_msg = error_message;
-    for (auto& c : sanitized_msg) {
-        if (c == '"') c = '\'';
-        if (c == '\n') c = ' ';
+inline std::string escape_json_string(const std::string& s) {
+    std::ostringstream o;
+    for (char c : s) {
+        if (c == '"') o << "\\\"";
+        else if (c == '\n') o << "\\n";
+        else if (c == '\r') o << "\\r";
+        else if (c == '\t') o << "\\t";
+        else if (c == '\\') o << "\\\\";
+        else o << c;
     }
-    std::string error_json = "{\"success\":false,\"error\":\"" + sanitized_msg + "\"}";
+    return o.str();
+}
+
+inline void handle_error_response(const std::string& error_message, char* response_buffer, size_t buffer_size) {
+    std::ostringstream json;
+    json << "{";
+    json << "\"success\":false,";
+    json << "\"error\":\"" << escape_json_string(error_message) << "\",";
+    json << "\"cloud_handoff\":false,";
+    json << "\"response\":null,";
+    json << "\"function_calls\":[],";
+    json << "\"confidence\":0.0,";
+    json << "\"time_to_first_token_ms\":0.0,";
+    json << "\"total_time_ms\":0.0,";
+    json << "\"prefill_tps\":0.0,";
+    json << "\"decode_tps\":0.0,";
+    json << "\"ram_usage_mb\":" << std::fixed << std::setprecision(2) << get_ram_usage_mb() << ",";
+    json << "\"prefill_tokens\":0,";
+    json << "\"decode_tokens\":0,";
+    json << "\"total_tokens\":0";
+    json << "}";
+    std::string error_json = json.str();
     if (response_buffer && error_json.length() < buffer_size) {
         std::strcpy(response_buffer, error_json.c_str());
     }
@@ -456,38 +512,59 @@ inline std::string construct_response_json(const std::string& regular_response,
                                            const std::vector<std::string>& function_calls,
                                            double time_to_first_token,
                                            double total_time_ms,
-                                           double tokens_per_second,
+                                           double prefill_tps,
+                                           double decode_tps,
                                            size_t prompt_tokens,
-                                           size_t completion_tokens) {
-    std::ostringstream json_response;
-    json_response << "{";
-    json_response << "\"success\":true,";
-    json_response << "\"response\":\"";
-    for (char c : regular_response) {
-        if (c == '"') json_response << "\\\"";
-        else if (c == '\n') json_response << "\\n";
-        else if (c == '\r') json_response << "\\r";
-        else if (c == '\t') json_response << "\\t";
-        else if (c == '\\') json_response << "\\\\";
-        else json_response << c;
+                                           size_t completion_tokens,
+                                           float confidence = 0.0f,
+                                           bool cloud_handoff = false) {
+    std::ostringstream json;
+    json << "{";
+    json << "\"success\":" << (cloud_handoff ? "false" : "true") << ",";
+    json << "\"error\":null,";
+    json << "\"cloud_handoff\":" << (cloud_handoff ? "true" : "false") << ",";
+    json << "\"response\":\"" << escape_json_string(regular_response) << "\",";
+    json << "\"function_calls\":[";
+    for (size_t i = 0; i < function_calls.size(); ++i) {
+        if (i > 0) json << ",";
+        json << function_calls[i];
     }
-    json_response << "\",";
-    if (!function_calls.empty()) {
-        json_response << "\"function_calls\":[";
-        for (size_t i = 0; i < function_calls.size(); ++i) {
-            if (i > 0) json_response << ",";
-            json_response << function_calls[i];
-        }
-        json_response << "],";
-    }
-    json_response << "\"time_to_first_token_ms\":" << std::fixed << std::setprecision(2) << time_to_first_token << ",";
-    json_response << "\"total_time_ms\":" << std::fixed << std::setprecision(2) << total_time_ms << ",";
-    json_response << "\"tokens_per_second\":" << std::fixed << std::setprecision(2) << tokens_per_second << ",";
-    json_response << "\"prefill_tokens\":" << prompt_tokens << ",";
-    json_response << "\"decode_tokens\":" << completion_tokens << ",";
-    json_response << "\"total_tokens\":" << (prompt_tokens + completion_tokens);
-    json_response << "}";
-    return json_response.str();
+    json << "],";
+    json << "\"confidence\":" << std::fixed << std::setprecision(4) << confidence << ",";
+    json << "\"time_to_first_token_ms\":" << std::fixed << std::setprecision(2) << time_to_first_token << ",";
+    json << "\"total_time_ms\":" << std::fixed << std::setprecision(2) << total_time_ms << ",";
+    json << "\"prefill_tps\":" << std::fixed << std::setprecision(2) << prefill_tps << ",";
+    json << "\"decode_tps\":" << std::fixed << std::setprecision(2) << decode_tps << ",";
+    json << "\"ram_usage_mb\":" << std::fixed << std::setprecision(2) << get_ram_usage_mb() << ",";
+    json << "\"prefill_tokens\":" << prompt_tokens << ",";
+    json << "\"decode_tokens\":" << completion_tokens << ",";
+    json << "\"total_tokens\":" << (prompt_tokens + completion_tokens);
+    json << "}";
+    return json.str();
+}
+
+inline std::string construct_cloud_handoff_json(float confidence,
+                                                 double time_to_first_token,
+                                                 double prefill_tps,
+                                                 size_t prompt_tokens) {
+    std::ostringstream json;
+    json << "{";
+    json << "\"success\":false,";
+    json << "\"error\":null,";
+    json << "\"cloud_handoff\":true,";
+    json << "\"response\":null,";
+    json << "\"function_calls\":[],";
+    json << "\"confidence\":" << std::fixed << std::setprecision(4) << confidence << ",";
+    json << "\"time_to_first_token_ms\":" << std::fixed << std::setprecision(2) << time_to_first_token << ",";
+    json << "\"total_time_ms\":" << std::fixed << std::setprecision(2) << time_to_first_token << ",";
+    json << "\"prefill_tps\":" << std::fixed << std::setprecision(2) << prefill_tps << ",";
+    json << "\"decode_tps\":0.0,";
+    json << "\"ram_usage_mb\":" << std::fixed << std::setprecision(2) << get_ram_usage_mb() << ",";
+    json << "\"prefill_tokens\":" << prompt_tokens << ",";
+    json << "\"decode_tokens\":0,";
+    json << "\"total_tokens\":" << prompt_tokens;
+    json << "}";
+    return json.str();
 }
 
 } // namespace ffi

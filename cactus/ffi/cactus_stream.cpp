@@ -5,20 +5,6 @@
 
 using namespace cactus::ffi;
 
-static std::string escape_json_string(const std::string& s) {
-    std::string escaped;
-    escaped.reserve(s.length());
-    for (char c : s) {
-        if (c == '"') escaped += "\\\"";
-        else if (c == '\n') escaped += "\\n";
-        else if (c == '\r') escaped += "\\r";
-        else if (c == '\t') escaped += "\\t";
-        else if (c == '\\') escaped += "\\\\";
-        else escaped += c;
-    }
-    return escaped;
-}
-
 static std::string extract_json_string_value(const std::string& json, const std::string& key) {
     std::string pattern = "\"" + key + "\":";
     size_t pos = json.find(pattern);

@@ -43,7 +43,6 @@ Initializes a model from disk and prepares it for inference.
 ```c
 cactus_model_t cactus_init(
     const char* model_path,   // Path to the model directory
-    size_t context_size,      // Maximum context size (e.g., 2048)
     const char* corpus_dir    // Optional path to corpus directory for RAG (can be NULL)
 );
 ```
@@ -52,14 +51,14 @@ cactus_model_t cactus_init(
 
 **Example:**
 ```c
-cactus_model_t model = cactus_init("../../weights/qwen3-600m", 2048, NULL);
+cactus_model_t model = cactus_init("../../weights/qwen3-600m", NULL);
 if (!model) {
     fprintf(stderr, "Failed to initialize model\n");
     return -1;
 }
 
 // with RAG corpus
-cactus_model_t rag_model = cactus_init("../../weights/lfm2-rag", 512, "./documents");
+cactus_model_t rag_model = cactus_init("../../weights/lfm2-rag", "./documents");
 ```
 
 ### `cactus_complete`
@@ -106,16 +105,65 @@ int cactus_complete(
 }
 ```
 
-**Response Format:**
+**Response Format** (all fields always present):
 ```json
 {
     "success": true,
+    "error": null,
+    "cloud_handoff": false,
     "response": "I am an AI assistant.",
+    "function_calls": [],
+    "confidence": 0.85,
     "time_to_first_token_ms": 150.5,
     "total_time_ms": 1250.3,
-    "tokens_per_second": 45.2,
-    "prompt_tokens": 25,
-    "completion_tokens": 8
+    "prefill_tps": 166.1,
+    "decode_tps": 45.2,
+    "ram_usage_mb": 245.67,
+    "prefill_tokens": 25,
+    "decode_tokens": 8,
+    "total_tokens": 33
+}
+```
+
+**Cloud Handoff Response** (when model detects low confidence):
+```json
+{
+    "success": false,
+    "error": null,
+    "cloud_handoff": true,
+    "response": null,
+    "function_calls": [],
+    "confidence": 0.18,
+    "time_to_first_token_ms": 45.2,
+    "total_time_ms": 45.2,
+    "prefill_tps": 619.5,
+    "decode_tps": 0.0,
+    "ram_usage_mb": 245.67,
+    "prefill_tokens": 28,
+    "decode_tokens": 0,
+    "total_tokens": 28
+}
+```
+
+When `cloud_handoff` is true, the model determined that output uncertainty is too high (entropy > 0.23). The application should defer to a cloud-based model for better results.
+
+**Error Response:**
+```json
+{
+    "success": false,
+    "error": "Error message here",
+    "cloud_handoff": false,
+    "response": null,
+    "function_calls": [],
+    "confidence": 0.0,
+    "time_to_first_token_ms": 0.0,
+    "total_time_ms": 0.0,
+    "prefill_tps": 0.0,
+    "decode_tps": 0.0,
+    "ram_usage_mb": 0.0,
+    "prefill_tokens": 0,
+    "decode_tokens": 0,
+    "total_tokens": 0
 }
 ```
 
@@ -123,6 +171,8 @@ int cactus_complete(
 ```json
 {
     "success": true,
+    "error": null,
+    "cloud_handoff": false,
     "response": "",
     "function_calls": [
         {
@@ -130,11 +180,15 @@ int cactus_complete(
             "arguments": "{\"location\": \"San Francisco, CA, USA\"}"
         }
     ],
+    "confidence": 0.92,
     "time_to_first_token_ms": 120.0,
     "total_time_ms": 450.5,
-    "tokens_per_second": 38.5,
-    "prompt_tokens": 45,
-    "completion_tokens": 15
+    "prefill_tps": 375.0,
+    "decode_tps": 38.5,
+    "ram_usage_mb": 245.67,
+    "prefill_tokens": 45,
+    "decode_tokens": 15,
+    "total_tokens": 60
 }
 ```
 
@@ -237,7 +291,7 @@ int cactus_transcribe(
 
 **Example (file-based):**
 ```c
-cactus_model_t whisper = cactus_init("../../weights/whisper-small", 448, NULL);
+cactus_model_t whisper = cactus_init("../../weights/whisper-small", NULL);
 
 char response[16384];
 int result = cactus_transcribe(whisper, "audio.wav", NULL,
@@ -278,7 +332,7 @@ cactus_stream_transcribe_t cactus_stream_transcribe_init(
 
 **Example:**
 ```c
-cactus_model_t whisper = cactus_init("../../weights/whisper-small", 448, NULL);
+cactus_model_t whisper = cactus_init("../../weights/whisper-small", NULL);
 
 cactus_stream_transcribe_t stream = cactus_stream_transcribe_init(whisper);
 if (!stream) {
@@ -550,7 +604,7 @@ int cactus_rag_query(
 **Example:**
 ```c
 // Initialize model with corpus
-cactus_model_t model = cactus_init("path/to/model", 2048, "./documents");
+cactus_model_t model = cactus_init("path/to/model", "./documents");
 
 // Query for relevant chunks
 char response[65536];
@@ -583,7 +637,7 @@ const char* cactus_get_last_error(void);
 
 **Example:**
 ```c
-cactus_model_t model = cactus_init("invalid/path", 2048, NULL);
+cactus_model_t model = cactus_init("invalid/path", NULL);
 if (!model) {
     const char* error = cactus_get_last_error();
     fprintf(stderr, "Error: %s\n", error);
@@ -614,7 +668,7 @@ void cactus_set_pro_key(const char* pro_key);
 ```c
 cactus_set_pro_key("your-pro-key");
 
-cactus_model_t model = cactus_init("path/to/model", 2048, NULL);
+cactus_model_t model = cactus_init("path/to/model", NULL);
 ```
 
 **Note:** The pro key should be set before initializing any models to ensure NPU acceleration is enabled.
@@ -787,7 +841,7 @@ void cactus_index_destroy(cactus_index_t index);
 #include "cactus_ffi.h"
 
 int main() {
-    cactus_model_t embed_model = cactus_init("path/to/embed-model", 512, NULL);
+    cactus_model_t embed_model = cactus_init("path/to/embed-model", NULL);
     cactus_index_t index = cactus_index_init("./rag_index", 768);
 
     const char* docs[] = {
@@ -836,7 +890,7 @@ int main() {
 #include <stdio.h>
 
 int main() {
-    cactus_model_t model = cactus_init("path/to/model", 2048, NULL);
+    cactus_model_t model = cactus_init("path/to/model", NULL);
     if (!model) return -1;
 
     const char* messages =
@@ -862,7 +916,7 @@ int main() {
 #include "cactus_ffi.h"
 
 int main() {
-    cactus_model_t vlm = cactus_init("path/to/lfm2-vlm", 4096, NULL);
+    cactus_model_t vlm = cactus_init("path/to/lfm2-vlm", NULL);
     if (!vlm) return -1;
 
     const char* messages =
@@ -938,7 +992,7 @@ void transcription_callback(const char* token, uint32_t token_id, void* user_dat
 }
 
 int main() {
-    cactus_model_t whisper = cactus_init("path/to/whisper-small", 448, NULL);
+    cactus_model_t whisper = cactus_init("path/to/whisper-small", NULL);
     if (!whisper) return -1;
 
     char response[32768];
@@ -1040,8 +1094,7 @@ Common error scenarios:
 ## Performance Tips
 
 1. **Reuse Model Instances**: Initialize once, use multiple times
-2. **Appropriate Context Size**: Use the minimum context size needed for your use case
-3. **Streaming for UX**: Use callbacks for responsive user interfaces
-4. **Early Stopping**: Use `cactus_stop()` to avoid unnecessary generation
-5. **Batch Embeddings**: When possible, process multiple texts in sequence without resetting
-6. **KV Cache Tuning**: Adjust `CACTUS_KV_WINDOW_SIZE` based on your context needs
+2. **Streaming for UX**: Use callbacks for responsive user interfaces
+3. **Early Stopping**: Use `cactus_stop()` to avoid unnecessary generation
+4. **Batch Embeddings**: When possible, process multiple texts in sequence without resetting
+5. **KV Cache Tuning**: Adjust `CACTUS_KV_WINDOW_SIZE` based on your context needs

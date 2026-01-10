@@ -36,7 +36,7 @@ ASSETS_DIR = PROJECT_ROOT / "tests" / "assets"
 
 # Load model
 print("Loading LFM2-VL-450M...")
-vlm = cactus_init(str(WEIGHTS_DIR / "lfm2-vl-450m"), context_size=2048)
+vlm = cactus_init(str(WEIGHTS_DIR / "lfm2-vl-450m"))
 
 # Text completion
 messages = json.dumps([{"role": "user", "content": "What is 2+2?"}])
@@ -63,7 +63,7 @@ cactus_destroy(vlm)
 
 # Transcription
 print("\nLoading whisper-small...")
-whisper = cactus_init(str(WEIGHTS_DIR / "whisper-small"), context_size=448)
+whisper = cactus_init(str(WEIGHTS_DIR / "whisper-small"))
 whisper_prompt = "<|startoftranscript|><|en|><|transcribe|><|notimestamps|>"
 response = cactus_transcribe(whisper, str(ASSETS_DIR / "test.wav"), prompt=whisper_prompt)
 print("Transcription:")

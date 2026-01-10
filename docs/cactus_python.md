@@ -20,7 +20,7 @@ cactus download openai/whisper-small
 from cactus_ffi import cactus_init, cactus_complete, cactus_destroy
 import json
 
-model = cactus_init("weights/lfm2-vl-450m", context_size=2048)
+model = cactus_init("weights/lfm2-vl-450m")
 
 messages = [{"role": "user", "content": "What is 2+2?"}]
 response = json.loads(cactus_complete(model, messages))
@@ -31,19 +31,18 @@ cactus_destroy(model)
 
 ## API Reference
 
-### `cactus_init(model_path, context_size=2048, corpus_dir=None)`
+### `cactus_init(model_path, corpus_dir=None)`
 
 Initialize a model and return its handle.
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
 | `model_path` | `str` | Path to model weights directory |
-| `context_size` | `int` | Maximum context size (default: 2048) |
-| `corpus_dir` | `str` | Optional path to RAG corpus directory |
+| `corpus_dir` | `str` | Optional path to RAG corpus directory for document Q&A |
 
 ```python
-model = cactus_init("weights/lfm2-vl-450m", context_size=2048)
-rag_model = cactus_init("weights/lfm2-rag", context_size=512, corpus_dir="./documents")
+model = cactus_init("weights/lfm2-vl-450m")
+rag_model = cactus_init("weights/lfm2-rag", corpus_dir="./documents")
 ```
 
 ### `cactus_complete(model, messages, **options)`
@@ -88,19 +87,55 @@ def on_token(token, token_id, user_data):
 cactus_complete(model, messages, callback=on_token)
 ```
 
-**Response format:**
+**Response format** (all fields always present):
 ```json
 {
     "success": true,
+    "error": null,
+    "cloud_handoff": false,
     "response": "Hello! How can I help?",
     "function_calls": [],
+    "confidence": 0.85,
     "time_to_first_token_ms": 45.2,
     "total_time_ms": 163.7,
-    "tokens_per_second": 168.4,
+    "prefill_tps": 619.5,
+    "decode_tps": 168.4,
+    "ram_usage_mb": 245.67,
     "prefill_tokens": 28,
     "decode_tokens": 50,
     "total_tokens": 78
 }
+```
+
+**Cloud handoff response** (when model detects low confidence):
+```json
+{
+    "success": false,
+    "error": null,
+    "cloud_handoff": true,
+    "response": null,
+    "function_calls": [],
+    "confidence": 0.18,
+    "time_to_first_token_ms": 45.2,
+    "total_time_ms": 45.2,
+    "prefill_tps": 619.5,
+    "decode_tps": 0.0,
+    "ram_usage_mb": 245.67,
+    "prefill_tokens": 28,
+    "decode_tokens": 0,
+    "total_tokens": 28
+}
+```
+
+When `cloud_handoff` is `True`, the model detected high uncertainty (entropy > 0.23) and recommends deferring to a cloud-based model for better results. Handle this in your application:
+
+```python
+result = json.loads(cactus_complete(model, messages))
+if result["cloud_handoff"]:
+    # Defer to cloud API (e.g., OpenAI, Anthropic)
+    response = call_cloud_api(messages)
+else:
+    response = result["response"]
 ```
 
 ### `cactus_transcribe(model, audio_path, prompt="")`
@@ -114,7 +149,7 @@ Transcribe audio using a Whisper model. Returns JSON string.
 | `prompt` | `str` | Whisper prompt for language/task |
 
 ```python
-whisper = cactus_init("weights/whisper-small", context_size=448)
+whisper = cactus_init("weights/whisper-small")
 prompt = "<|startoftranscript|><|en|><|transcribe|><|notimestamps|>"
 response = cactus_transcribe(whisper, "audio.wav", prompt=prompt)
 print(json.loads(response)["response"])
@@ -225,7 +260,7 @@ for chunk in chunks:
 Pass images in the messages for vision-language models:
 
 ```python
-vlm = cactus_init("weights/lfm2-vl-450m", context_size=2048)
+vlm = cactus_init("weights/lfm2-vl-450m")
 
 messages = [{
     "role": "user",

@@ -184,47 +184,6 @@ bool test_scalar_operation(const std::string& op_name,
 
 namespace EngineTestUtils {
 
-static size_t baseline_memory_ = 0;
-static size_t peak_memory_ = 0;
-
-size_t get_memory_footprint_bytes() {
-#ifdef __APPLE__
-    task_vm_info_data_t vm_info;
-    mach_msg_type_number_t count = TASK_VM_INFO_COUNT;
-    if (task_info(mach_task_self(), TASK_VM_INFO, (task_info_t)&vm_info, &count) == KERN_SUCCESS)
-        return vm_info.phys_footprint;
-#elif defined(_WIN32)
-    PROCESS_MEMORY_COUNTERS_EX pmc;
-    if (GetProcessMemoryInfo(GetCurrentProcess(), (PROCESS_MEMORY_COUNTERS*)&pmc, sizeof(pmc)))
-        return pmc.PrivateUsage;
-#elif defined(__linux__) || defined(__ANDROID__)
-    std::ifstream statm("/proc/self/statm");
-    if (statm.is_open()) {
-        size_t size, resident;
-        statm >> size >> resident;
-        return resident * sysconf(_SC_PAGESIZE);
-    }
-#endif
-    return 0;
-}
-
-void capture_memory_baseline() {
-    baseline_memory_ = get_memory_footprint_bytes();
-    peak_memory_ = baseline_memory_;
-}
-
-double get_memory_usage_mb() {
-    size_t current = get_memory_footprint_bytes();
-    if (current > peak_memory_) peak_memory_ = current;
-    size_t model_mem = (current > baseline_memory_) ? (current - baseline_memory_) : 0;
-    return model_mem / (1024.0 * 1024.0);
-}
-
-double get_peak_model_memory_mb() {
-    size_t model_peak = (peak_memory_ > baseline_memory_) ? (peak_memory_ - baseline_memory_) : 0;
-    return model_peak / (1024.0 * 1024.0);
-}
-
 Timer::Timer() : start(std::chrono::high_resolution_clock::now()) {}
 
 double Timer::elapsed_ms() const {
@@ -248,8 +207,11 @@ std::string json_string(const std::string& json, const std::string& key) {
     std::string pattern = "\"" + key + "\":";
     size_t pos = json.find(pattern);
     if (pos == std::string::npos) return {};
-    size_t q1 = json.find('"', pos + pattern.size());
-    if (q1 == std::string::npos) return {};
+    size_t start = pos + pattern.size();
+
+    while (start < json.size() && (json[start] == ' ' || json[start] == '\t')) ++start;
+    if (start >= json.size() || json[start] != '"') return {};
+    size_t q1 = start;
     size_t q2 = json.find('"', q1 + 1);
     if (q2 == std::string::npos) return {};
     return json.substr(q1 + 1, q2 - q1 - 1);
@@ -285,34 +247,66 @@ void stream_callback(const char* token, uint32_t token_id, void* user_data) {
     }
 }
 
-void Metrics::parse(const std::string& response) {
-    ttft = json_number(response, "time_to_first_token_ms");
-    tps = json_number(response, "tokens_per_second");
-    total_ms = json_number(response, "total_time_ms");
-    prompt_tokens = json_number(response, "prompt_tokens", json_number(response, "prefill_tokens"));
-    completion_tokens = json_number(response, "completion_tokens", json_number(response, "decode_tokens"));
+bool json_bool(const std::string& json, const std::string& key, bool def = false) {
+    std::string pattern = "\"" + key + "\":";
+    size_t pos = json.find(pattern);
+    if (pos == std::string::npos) return def;
+    size_t start = pos + pattern.size();
+    while (start < json.size() && (json[start] == ' ' || json[start] == '\t')) ++start;
+    if (start + 4 <= json.size() && json.substr(start, 4) == "true") return true;
+    if (start + 5 <= json.size() && json.substr(start, 5) == "false") return false;
+    return def;
 }
 
-void Metrics::print() const {
-    std::cout << "├─ Time to first token: " << std::fixed << std::setprecision(2) << ttft << " ms\n"
-              << "├─ Tokens per second: " << tps << std::endl;
+std::string json_array(const std::string& json, const std::string& key) {
+    std::string pattern = "\"" + key + "\":";
+    size_t pos = json.find(pattern);
+    if (pos == std::string::npos) return "[]";
+    size_t start = pos + pattern.size();
+    while (start < json.size() && (json[start] == ' ' || json[start] == '\t')) ++start;
+    if (start >= json.size() || json[start] != '[') return "[]";
+    int depth = 1;
+    size_t end = start + 1;
+    while (end < json.size() && depth > 0) {
+        if (json[end] == '[') depth++;
+        else if (json[end] == ']') depth--;
+        end++;
+    }
+    return json.substr(start, end - start);
 }
 
-void Metrics::print_full() const {
-    std::cout << "├─ Time to first token: " << std::fixed << std::setprecision(2) << ttft << " ms\n"
-              << "├─ Tokens per second:  " << tps << "\n"
-              << "├─ Total time:         " << total_ms << " ms\n"
-              << "├─ Prompt tokens:      " << prompt_tokens << "\n"
-              << "├─ Completion tokens:  " << completion_tokens << std::endl;
+void Metrics::parse(const std::string& json) {
+    success = json_bool(json, "success", false);
+    error = json_string(json, "error");
+    cloud_handoff = json_bool(json, "cloud_handoff", false);
+    response = json_string(json, "response");
+    function_calls = json_array(json, "function_calls");
+    confidence = json_number(json, "confidence", -1.0);
+    ttft = json_number(json, "time_to_first_token_ms");
+    total_ms = json_number(json, "total_time_ms");
+    prefill_tps = json_number(json, "prefill_tps");
+    decode_tps = json_number(json, "decode_tps");
+    ram_mb = json_number(json, "ram_usage_mb");
+    prefill_tokens = json_number(json, "prefill_tokens");
+    completion_tokens = json_number(json, "decode_tokens");
+    total_tokens = json_number(json, "total_tokens");
 }
 
-void Metrics::print_perf(double ram_mb) const {
-    double prefill_tps = (prompt_tokens > 0 && ttft > 0) ? (prompt_tokens * 1000.0 / ttft) : 0.0;
-    double ttft_sec = ttft / 1000.0;
-    std::cout << "├─ TTFT: " << std::fixed << std::setprecision(2) << ttft_sec << " sec\n"
-              << "├─ Prefill: " << std::setprecision(1) << prefill_tps << " toks/sec\n"
-              << "├─ Decode: " << tps << " toks/sec\n"
-              << "└─ RAM: " << std::setprecision(1) << ram_mb << " MB" << std::endl;
+void Metrics::print_json() const {
+    std::cout << "  \"success\": " << (success ? "true" : "false") << ",\n"
+              << "  \"error\": " << (error.empty() ? "null" : "\"" + error + "\"") << ",\n"
+              << "  \"cloud_handoff\": " << (cloud_handoff ? "true" : "false") << ",\n"
+              << "  \"response\": \"" << response << "\",\n"
+              << "  \"function_calls\": " << function_calls << ",\n"
+              << "  \"confidence\": " << std::fixed << std::setprecision(4) << confidence << ",\n"
+              << "  \"time_to_first_token_ms\": " << std::setprecision(2) << ttft << ",\n"
+              << "  \"total_time_ms\": " << total_ms << ",\n"
+              << "  \"prefill_tps\": " << prefill_tps << ",\n"
+              << "  \"decode_tps\": " << decode_tps << ",\n"
+              << "  \"ram_usage_mb\": " << ram_mb << ",\n"
+              << "  \"prefill_tokens\": " << std::setprecision(0) << prefill_tokens << ",\n"
+              << "  \"decode_tokens\": " << completion_tokens << ",\n"
+              << "  \"total_tokens\": " << total_tokens << std::endl;
 }
 
 }

@@ -35,9 +35,12 @@ Cactus Engine is an AI inference engine with OpenAI-compatible APIs built on top
 ```cpp
 #include cactus.h
 
-cactus_set_pro_key(""); // email founders@cactuscompute.com for optional key
+cactus_set_pro_key("");                  // email founders@cactuscompute.com for optional key
 
-cactus_model_t model = cactus_init("path/to/weight/folder", 2048);
+cactus_model_t model = cactus_init(
+    "path/to/weight/folder",             // section to generate weigths below
+    "txt/or/md/file/or/dir/with/many",   // nullptr if none, cactus does automatic fast RAG
+);
 
 const char* messages = R"([
     {"role": "system", "content": "You are a helpful assistant."},
@@ -49,17 +52,32 @@ const char* options = R"({
     "stop_sequences": ["<|im_end|>"]
 })";
 
-char response[1024];
-int result = cactus_complete(model, messages, response, sizeof(response), options, nullptr, nullptr, nullptr);
+char response[4096];
+int result = cactus_complete(
+    model,                               // model handle from cactus_init
+    messages,                            // JSON array of chat messages
+    response,                            // buffer to store response JSON
+    sizeof(response),                    // size of response buffer
+    options,                             // optional: generation options (nullptr for defaults)
+    nullptr,                             // optional: tools JSON for function calling 
+    nullptr,                             // optional: streaming callback fn(token, id, user_data)
+    nullptr                              // optional: user data passed to callback
+);
 ```
-Example response from Gemma3-270m-INT8
+Example response from Gemma3-270m
 ```json
 {
-    "success": true,
-    "response": "Hi there! I'm just a friendly assistant.",
-    "time_to_first_token_ms": 45.23,
-    "total_time_ms": 163.67,
-    "tokens_per_second": 168.42,
+    "success": true,                    // when successfully generated locally
+    "error": null,                      // returns specific errors if success = false
+    "cloud_handoff": false,             // true when model is unconfident, simply route to cloud
+    "response": "Hi there!",            // null when error is not null or cloud_handoff = true
+    "function_calls": [],               // parsed to [{"name":"set_alarm","arguments":{"hour":"10","minute":"0"}}]
+    "confidence": 0.8193,               // how confident the model is with its response
+    "time_to_first_token_ms": 45.23,    // latency (time to first token)
+    "total_time_ms": 163.67,            // total execution time
+    "prefill_tps": 1621.89,             // prefill tokens per second
+    "decode_tps": 168.42,               // decode tokens per second
+    "ram_usage_mb": 245.67,             // current process RAM usage in MB
     "prefill_tokens": 28,
     "decode_tokens": 50,
     "total_tokens": 78
@@ -138,10 +156,10 @@ Cactus python package is auto installed for researchers and testing.
 ```python
 from cactus_ffi import cactus_init, cactus_complete, cactus_destroy
 
-model = cactus_init("weights/lfm2-vl-450m", context_size=2048)
+model = cactus_init("weights/lfm2-vl-450m")
+rag_model = cactus_init("weights/lfm2-rag", corpus_dir="./documents")
 
-messages = json.dumps([{"role": "user", "content": "What is 2+2?"}])
-response = cactus_complete(model, messages) # returns JSON
+response = cactus_complete(model, [{"role": "user", "content": "What is 2+2?"}])
 
 cactus_destroy(model)
 ```

@@ -1,3 +1,30 @@
+"""
+Cactus FFI Python Bindings
+
+Python bindings for Cactus Engine via FFI. Provides access to:
+- Text completion with LLMs (including cloud handoff detection)
+- Audio transcription with Whisper models
+- Text, image, and audio embeddings
+- RAG (Retrieval-Augmented Generation) queries
+- Streaming transcription
+
+Response Format:
+All completion responses use a unified JSON format with all fields always present:
+{
+    "success": bool,        # True if generation succeeded
+    "error": str|null,      # Error message if failed, null otherwise
+    "cloud_handoff": bool,  # True if model recommends deferring to cloud
+    "response": str|null,   # Generated text, null if cloud_handoff or error
+    "function_calls": [],   # List of function calls if tools were used
+    "confidence": float,    # Model confidence (1.0 - normalized_entropy)
+    "time_to_first_token_ms": float,
+    "total_time_ms": float,
+    "tokens_per_second": float,
+    "prefill_tokens": int,
+    "decode_tokens": int,
+    "total_tokens": int
+}
+"""
 import ctypes
 import json
 import platform
@@ -15,7 +42,7 @@ _lib = None
 if _LIB_PATH.exists():
     _lib = ctypes.CDLL(str(_LIB_PATH))
 
-    _lib.cactus_init.argtypes = [ctypes.c_char_p, ctypes.c_size_t, ctypes.c_char_p]
+    _lib.cactus_init.argtypes = [ctypes.c_char_p, ctypes.c_char_p]
     _lib.cactus_init.restype = ctypes.c_void_p
 
     _lib.cactus_complete.argtypes = [
@@ -116,10 +143,20 @@ if _LIB_PATH.exists():
     _lib.cactus_stream_transcribe_destroy.restype = None
 
 
-def cactus_init(model_path, context_size=2048, corpus_dir=None):
+def cactus_init(model_path, corpus_dir=None):
+    """
+    Initialize a model and return its handle.
+
+    Args:
+        model_path: Path to model weights directory
+        corpus_dir: Optional path to RAG corpus directory for document Q&A
+
+    Returns:
+        Model handle (opaque pointer) or None if initialization failed.
+        Use cactus_get_last_error() to get error details.
+    """
     return _lib.cactus_init(
         model_path.encode() if isinstance(model_path, str) else model_path,
-        context_size,
         corpus_dir.encode() if corpus_dir else None
     )
 
@@ -136,6 +173,41 @@ def cactus_complete(
     force_tools=False,
     callback=None
 ):
+    """
+    Run chat completion on a model.
+
+    Args:
+        model: Model handle from cactus_init
+        messages: List of message dicts or JSON string
+        tools: Optional list of tool definitions for function calling
+        temperature: Sampling temperature
+        top_p: Top-p sampling
+        top_k: Top-k sampling
+        max_tokens: Maximum tokens to generate
+        stop_sequences: List of stop sequences
+        force_tools: Constrain output to tool call format
+        callback: Streaming callback fn(token, token_id, user_data)
+
+    Returns:
+        JSON string with unified response format (all fields always present):
+        {
+            "success": bool,        # True if generation succeeded
+            "error": str|null,      # Error message if failed, null otherwise
+            "cloud_handoff": bool,  # True if model confidence too low, should defer to cloud
+            "response": str|null,   # Generated text, null if cloud_handoff or error
+            "function_calls": [],   # List of function calls if tools were used
+            "confidence": float,    # Model confidence (1.0 - normalized_entropy)
+            "time_to_first_token_ms": float,
+            "total_time_ms": float,
+            "tokens_per_second": float,
+            "prefill_tokens": int,
+            "decode_tokens": int,
+            "total_tokens": int
+        }
+
+        When cloud_handoff is True, the model detected high uncertainty (entropy > 0.5)
+        and recommends deferring to a cloud-based model for better results.
+    """
     if isinstance(messages, list):
         messages_json = json.dumps(messages)
     else:
@@ -178,6 +250,18 @@ def cactus_complete(
 
 
 def cactus_transcribe(model, audio_path, prompt="", callback=None):
+    """
+    Transcribe audio using a Whisper model.
+
+    Args:
+        model: Whisper model handle from cactus_init
+        audio_path: Path to audio file (WAV format)
+        prompt: Whisper prompt for language/task (e.g., "<|startoftranscript|><|en|><|transcribe|><|notimestamps|>")
+        callback: Optional streaming callback fn(token, token_id, user_data)
+
+    Returns:
+        JSON string with response: {"success": bool, "response": str, ...}
+    """
     buf = ctypes.create_string_buffer(65536)
     cb = TokenCallback(callback) if callback else TokenCallback()
     _lib.cactus_transcribe(
@@ -191,6 +275,17 @@ def cactus_transcribe(model, audio_path, prompt="", callback=None):
 
 
 def cactus_embed(model, text, normalize=False):
+    """
+    Get text embeddings.
+
+    Args:
+        model: Model handle from cactus_init
+        text: Text to embed
+        normalize: L2-normalize embeddings (default: False)
+
+    Returns:
+        List of floats representing the embedding vector.
+    """
     buf = (ctypes.c_float * 4096)()
     dim = ctypes.c_size_t()
     _lib.cactus_embed(
@@ -202,6 +297,16 @@ def cactus_embed(model, text, normalize=False):
 
 
 def cactus_image_embed(model, image_path):
+    """
+    Get image embeddings from a VLM.
+
+    Args:
+        model: Model handle from cactus_init
+        image_path: Path to image file
+
+    Returns:
+        List of floats representing the image embedding vector.
+    """
     buf = (ctypes.c_float * 4096)()
     dim = ctypes.c_size_t()
     _lib.cactus_image_embed(
@@ -213,6 +318,16 @@ def cactus_image_embed(model, image_path):
 
 
 def cactus_audio_embed(model, audio_path):
+    """
+    Get audio embeddings from a Whisper model.
+
+    Args:
+        model: Whisper model handle from cactus_init
+        audio_path: Path to audio file (WAV format)
+
+    Returns:
+        List of floats representing the audio embedding vector.
+    """
     buf = (ctypes.c_float * 4096)()
     dim = ctypes.c_size_t()
     _lib.cactus_audio_embed(
@@ -224,35 +339,51 @@ def cactus_audio_embed(model, audio_path):
 
 
 def cactus_reset(model):
+    """Reset model state (clear KV cache). Call between unrelated conversations."""
     _lib.cactus_reset(model)
 
 
 def cactus_stop(model):
+    """Stop an ongoing generation (useful with streaming callbacks)."""
     _lib.cactus_stop(model)
 
 
 def cactus_destroy(model):
+    """Free model memory. Always call when done."""
     _lib.cactus_destroy(model)
 
 
 def cactus_get_last_error():
+    """Get the last error message, or None if no error."""
     result = _lib.cactus_get_last_error()
     return result.decode() if result else None
 
 
 def cactus_set_telemetry_token(token):
+    """Set telemetry token for usage tracking."""
     _lib.cactus_set_telemetry_token(
         token.encode() if isinstance(token, str) else token
     )
 
 
 def cactus_set_pro_key(pro_key):
+    """Set Cactus Pro key for NPU acceleration (Apple devices)."""
     _lib.cactus_set_pro_key(
         pro_key.encode() if isinstance(pro_key, str) else pro_key
     )
 
 
 def cactus_tokenize(model, text: str):
+    """
+    Tokenize text.
+
+    Args:
+        model: Model handle from cactus_init
+        text: Text to tokenize
+
+    Returns:
+        List of token IDs.
+    """
     needed = ctypes.c_size_t(0)
     rc = _lib.cactus_tokenize(
         model,
@@ -281,6 +412,19 @@ def cactus_tokenize(model, text: str):
 
 
 def cactus_score_window(model, tokens, start, end, context):
+    """
+    Score a window of tokens for perplexity/log probability.
+
+    Args:
+        model: Model handle from cactus_init
+        tokens: List of token IDs
+        start: Start index of window to score
+        end: End index of window to score
+        context: Context size for scoring
+
+    Returns:
+        Dict with "success", "logprob", and "tokens" keys.
+    """
     buf = ctypes.create_string_buffer(4096)
     n = len(tokens)
     arr = (ctypes.c_uint32 * n)(*tokens)
@@ -299,6 +443,17 @@ def cactus_score_window(model, tokens, start, end, context):
 
 
 def cactus_rag_query(model, query, top_k=5):
+    """
+    Query RAG corpus for relevant text chunks.
+
+    Args:
+        model: Model handle (must have been initialized with corpus_dir)
+        query: Query text
+        top_k: Number of chunks to retrieve (default: 5)
+
+    Returns:
+        List of dicts with "score" and "text" keys, or empty list on error.
+    """
     buf = ctypes.create_string_buffer(65536)
     result = _lib.cactus_rag_query(
         model,
@@ -311,10 +466,29 @@ def cactus_rag_query(model, query, top_k=5):
 
 
 def cactus_stream_transcribe_init(model):
+    """
+    Initialize streaming transcription session.
+
+    Args:
+        model: Whisper model handle from cactus_init
+
+    Returns:
+        Stream handle for use with other stream_transcribe functions.
+    """
     return _lib.cactus_stream_transcribe_init(model)
 
 
 def cactus_stream_transcribe_insert(stream, pcm_data):
+    """
+    Insert audio data into streaming transcription buffer.
+
+    Args:
+        stream: Stream handle from cactus_stream_transcribe_init
+        pcm_data: PCM audio data as bytes or list of uint8
+
+    Returns:
+        0 on success, -1 on error.
+    """
     if isinstance(pcm_data, bytes):
         arr = (ctypes.c_uint8 * len(pcm_data)).from_buffer_copy(pcm_data)
     else:
@@ -323,6 +497,16 @@ def cactus_stream_transcribe_insert(stream, pcm_data):
 
 
 def cactus_stream_transcribe_process(stream, options=None):
+    """
+    Process buffered audio and return transcription.
+
+    Args:
+        stream: Stream handle from cactus_stream_transcribe_init
+        options: Optional JSON string with options (e.g., {"confirmation_threshold": 0.95})
+
+    Returns:
+        JSON string with "success", "confirmed", and "pending" keys.
+    """
     buf = ctypes.create_string_buffer(65536)
     _lib.cactus_stream_transcribe_process(
         stream, buf, len(buf),
@@ -332,10 +516,20 @@ def cactus_stream_transcribe_process(stream, options=None):
 
 
 def cactus_stream_transcribe_finalize(stream):
+    """
+    Finalize streaming transcription and get final result.
+
+    Args:
+        stream: Stream handle from cactus_stream_transcribe_init
+
+    Returns:
+        JSON string with "success" and "confirmed" keys.
+    """
     buf = ctypes.create_string_buffer(65536)
     _lib.cactus_stream_transcribe_finalize(stream, buf, len(buf))
     return buf.value.decode("utf-8", errors="ignore")
 
 
 def cactus_stream_transcribe_destroy(stream):
+    """Free streaming transcription resources."""
     _lib.cactus_stream_transcribe_destroy(stream)

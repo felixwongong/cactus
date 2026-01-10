@@ -225,11 +225,13 @@ int cactus_transcribe(
         auto end_time = std::chrono::high_resolution_clock::now();
         double total_time_ms = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time).count() / 1000.0;
         double decode_time_ms = std::max(0.0, total_time_ms - time_to_first_token);
-        double tokens_per_second = (completion_tokens > 1 && decode_time_ms > 0.0) ? ((completion_tokens - 1) * 1000.0) / decode_time_ms : 0.0;
 
         size_t prompt_tokens = 0;
         if (!tokens.empty() && completion_tokens <= tokens.size())
             prompt_tokens = tokens.size() - completion_tokens;
+
+        double prefill_tps = time_to_first_token > 0 ? (prompt_tokens * 1000.0) / time_to_first_token : 0.0;
+        double decode_tps = (completion_tokens > 1 && decode_time_ms > 0.0) ? ((completion_tokens - 1) * 1000.0) / decode_time_ms : 0.0;
 
         std::string cleaned_text = final_text;
         const std::string token_to_remove = "<|startoftranscript|>";
@@ -238,7 +240,7 @@ int cactus_transcribe(
             cleaned_text.erase(pos, token_to_remove.length());
         }
 
-        std::string json = construct_response_json(cleaned_text, {}, time_to_first_token, total_time_ms, tokens_per_second, prompt_tokens, completion_tokens);
+        std::string json = construct_response_json(cleaned_text, {}, time_to_first_token, total_time_ms, prefill_tps, decode_tps, prompt_tokens, completion_tokens);
 
         if (json.size() >= buffer_size) {
             handle_error_response("Response buffer too small", response_buffer, buffer_size);
@@ -251,7 +253,7 @@ int cactus_transcribe(
             handle->model_name,
             true,
             time_to_first_token,
-            tokens_per_second,
+            decode_tps,
             total_time_ms,
             completion_tokens,
             ""

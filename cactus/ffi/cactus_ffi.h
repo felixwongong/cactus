@@ -5,34 +5,63 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+// ----------------------------------------------------------------------------
+// Export Macros
+// ----------------------------------------------------------------------------
+
 #if __GNUC__ >= 4
-  #define CACTUS_FFI_EXPORT __attribute__ ((visibility ("default")))
-  #define CACTUS_FFI_LOCAL  __attribute__ ((visibility ("hidden")))
+    #define CACTUS_FFI_EXPORT __attribute__((visibility("default")))
+    #define CACTUS_FFI_LOCAL  __attribute__((visibility("hidden")))
 #else
-  #define CACTUS_FFI_EXPORT
-  #define CACTUS_FFI_LOCAL
+    #define CACTUS_FFI_EXPORT
+    #define CACTUS_FFI_LOCAL
 #endif
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
+// ----------------------------------------------------------------------------
+// Types
+// ----------------------------------------------------------------------------
+
 typedef void* cactus_model_t;
+typedef void* cactus_index_t;
+typedef void* cactus_stream_transcribe_t;
 
 typedef void (*cactus_token_callback)(const char* token, uint32_t token_id, void* user_data);
 
-CACTUS_FFI_EXPORT cactus_model_t cactus_init(const char* model_path, size_t context_size, const char* corpus_dir);
+// ----------------------------------------------------------------------------
+// Model Lifecycle
+// ----------------------------------------------------------------------------
+
+CACTUS_FFI_EXPORT cactus_model_t cactus_init(
+    const char* model_path,
+    const char* corpus_dir                  // optional: NULL if no RAG corpus
+);
+
+CACTUS_FFI_EXPORT void cactus_destroy(cactus_model_t model);
+CACTUS_FFI_EXPORT void cactus_reset(cactus_model_t model);
+CACTUS_FFI_EXPORT void cactus_stop(cactus_model_t model);
+
+// ----------------------------------------------------------------------------
+// Text Completion
+// ----------------------------------------------------------------------------
 
 CACTUS_FFI_EXPORT int cactus_complete(
     cactus_model_t model,
     const char* messages_json,
     char* response_buffer,
     size_t buffer_size,
-    const char* options_json,
-    const char* tools_json,
-    cactus_token_callback callback,
-    void* user_data
+    const char* options_json,               // optional
+    const char* tools_json,                 // optional
+    cactus_token_callback callback,         // optional
+    void* user_data                         // optional
 );
+
+// ----------------------------------------------------------------------------
+// Tokenization
+// ----------------------------------------------------------------------------
 
 CACTUS_FFI_EXPORT int cactus_tokenize(
     cactus_model_t model,
@@ -53,23 +82,30 @@ CACTUS_FFI_EXPORT int cactus_score_window(
     size_t buffer_size
 );
 
+// ----------------------------------------------------------------------------
+// Audio Transcription
+// ----------------------------------------------------------------------------
 
 CACTUS_FFI_EXPORT int cactus_transcribe(
     cactus_model_t model,
-    const char* audio_file_path,
+    const char* audio_file_path,            // NULL if using pcm_buffer
     const char* prompt,
     char* response_buffer,
     size_t buffer_size,
-    const char* options_json,
-    cactus_token_callback callback,
-    void* user_data,
-    const uint8_t* pcm_buffer,
+    const char* options_json,               // optional
+    cactus_token_callback callback,         // optional
+    void* user_data,                        // optional
+    const uint8_t* pcm_buffer,              // NULL if using audio_file_path
     size_t pcm_buffer_size
 );
 
-typedef void* cactus_stream_transcribe_t;
+// ----------------------------------------------------------------------------
+// Streaming Transcription
+// ----------------------------------------------------------------------------
 
-CACTUS_FFI_EXPORT cactus_stream_transcribe_t cactus_stream_transcribe_init(cactus_model_t model);
+CACTUS_FFI_EXPORT cactus_stream_transcribe_t cactus_stream_transcribe_init(
+    cactus_model_t model
+);
 
 CACTUS_FFI_EXPORT int cactus_stream_transcribe_insert(
     cactus_stream_transcribe_t stream,
@@ -81,7 +117,7 @@ CACTUS_FFI_EXPORT int cactus_stream_transcribe_process(
     cactus_stream_transcribe_t stream,
     char* response_buffer,
     size_t buffer_size,
-    const char* options_json
+    const char* options_json                // optional
 );
 
 CACTUS_FFI_EXPORT int cactus_stream_transcribe_finalize(
@@ -90,7 +126,13 @@ CACTUS_FFI_EXPORT int cactus_stream_transcribe_finalize(
     size_t buffer_size
 );
 
-CACTUS_FFI_EXPORT void cactus_stream_transcribe_destroy(cactus_stream_transcribe_t stream);
+CACTUS_FFI_EXPORT void cactus_stream_transcribe_destroy(
+    cactus_stream_transcribe_t stream
+);
+
+// ----------------------------------------------------------------------------
+// Embeddings
+// ----------------------------------------------------------------------------
 
 CACTUS_FFI_EXPORT int cactus_embed(
     cactus_model_t model,
@@ -117,9 +159,9 @@ CACTUS_FFI_EXPORT int cactus_audio_embed(
     size_t* embedding_dim
 );
 
-CACTUS_FFI_EXPORT void cactus_reset(cactus_model_t model);
-
-CACTUS_FFI_EXPORT void cactus_stop(cactus_model_t model);
+// ----------------------------------------------------------------------------
+// RAG (Retrieval-Augmented Generation)
+// ----------------------------------------------------------------------------
 
 CACTUS_FFI_EXPORT int cactus_rag_query(
     cactus_model_t model,
@@ -129,15 +171,9 @@ CACTUS_FFI_EXPORT int cactus_rag_query(
     size_t top_k
 );
 
-CACTUS_FFI_EXPORT void cactus_destroy(cactus_model_t model);
-
-CACTUS_FFI_EXPORT const char* cactus_get_last_error(void);
-
-CACTUS_FFI_EXPORT void cactus_set_telemetry_token(const char* token);
-
-CACTUS_FFI_EXPORT void cactus_set_pro_key(const char* pro_key);
-
-typedef void* cactus_index_t;
+// ----------------------------------------------------------------------------
+// Vector Index
+// ----------------------------------------------------------------------------
 
 CACTUS_FFI_EXPORT cactus_index_t cactus_index_init(
     const char* index_dir,
@@ -148,7 +184,7 @@ CACTUS_FFI_EXPORT int cactus_index_add(
     cactus_index_t index,
     const int* ids,
     const char** documents,
-    const char** metadatas,
+    const char** metadatas,                 // optional: can be NULL
     const float** embeddings,
     size_t count,
     size_t embedding_dim
@@ -177,7 +213,7 @@ CACTUS_FFI_EXPORT int cactus_index_query(
     const float** embeddings,
     size_t embeddings_count,
     size_t embedding_dim,
-    const char* options_json,
+    const char* options_json,               // optional
     int** id_buffers,
     size_t* id_buffer_sizes,
     float** score_buffers,
@@ -185,11 +221,18 @@ CACTUS_FFI_EXPORT int cactus_index_query(
 );
 
 CACTUS_FFI_EXPORT int cactus_index_compact(cactus_index_t index);
-
 CACTUS_FFI_EXPORT void cactus_index_destroy(cactus_index_t index);
+
+// ----------------------------------------------------------------------------
+// Utilities
+// ----------------------------------------------------------------------------
+
+CACTUS_FFI_EXPORT const char* cactus_get_last_error(void);
+CACTUS_FFI_EXPORT void cactus_set_telemetry_token(const char* token);
+CACTUS_FFI_EXPORT void cactus_set_pro_key(const char* pro_key);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif 
+#endif // CACTUS_FFI_H

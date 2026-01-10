@@ -491,16 +491,16 @@ public:
               const std::string& system_prompt = "", bool do_warmup = true);
 
     virtual uint32_t decode(const std::vector<uint32_t>& tokens, float temperature = -1.0f, float top_p = -1.0f,
-                      size_t top_k = 0, const std::string& profile_file = "");
+                      size_t top_k = 0, const std::string& profile_file = "", float* out_entropy = nullptr);
 
     virtual void prefill(const std::vector<uint32_t>& tokens, size_t chunk_size = 256, const std::string& profile_file = "");
 
     virtual uint32_t decode_with_images(const std::vector<uint32_t>& tokens, const std::vector<std::string>& image_paths,
                                           float temperature = -1.0f, float top_p = -1.0f,
-                                          size_t top_k = 0, const std::string& profile_file = "");
+                                          size_t top_k = 0, const std::string& profile_file = "", float* out_entropy = nullptr);
 
     virtual uint32_t decode_with_audio(const std::vector<uint32_t>& tokens, const std::vector<float>& mel_bins, float temperature = 0.0f, float top_p = 0.0f,
-                      size_t top_k = 0, const std::string& profile_file = "");
+                      size_t top_k = 0, const std::string& profile_file = "", float* out_entropy = nullptr);
 
     std::vector<float> get_embeddings(const std::vector<uint32_t>& tokens, bool pooled = true, bool normalize = false, const std::string& profile_file = "");
     

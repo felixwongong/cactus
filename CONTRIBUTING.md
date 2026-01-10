@@ -149,7 +149,7 @@ import json
 from cactus_ffi import cactus_init, cactus_complete, cactus_destroy
 
 # Load model
-model = cactus_init("../weights/lfm2-vl-450m", context_size=2048)
+model = cactus_init("../weights/lfm2-vl-450m")
 
 # Text completion
 messages = json.dumps([{"role": "user", "content": "What is 2+2?"}])
@@ -168,7 +168,7 @@ cactus_destroy(model)
 ```python
 from cactus_ffi import cactus_init, cactus_transcribe, cactus_destroy
 
-whisper = cactus_init("../weights/whisper-small", context_size=448)
+whisper = cactus_init("../weights/whisper-small")
 prompt = "<|startoftranscript|><|en|><|transcribe|><|notimestamps|>"
 response = cactus_transcribe(whisper, "audio.wav", prompt=prompt)
 
