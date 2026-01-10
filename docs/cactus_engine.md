@@ -7,16 +7,9 @@ The Cactus Engine provides a clean C FFI (Foreign Function Interface) for integr
 Before using the Cactus Engine, you need to download model weights:
 
 ```bash
-# Setup the environment
 ./setup
-
-# Download model weights (converts HuggingFace models to Cactus format)
 cactus download LiquidAI/LFM2-1.2B
-
-# Or download a vision-language model
 cactus download LiquidAI/LFM2-VL-450M
-
-# Or download a whisper model for transcription
 cactus download openai/whisper-small
 ```
 
@@ -59,14 +52,13 @@ cactus_model_t cactus_init(
 
 **Example:**
 ```c
-// Basic initialization
 cactus_model_t model = cactus_init("../../weights/qwen3-600m", 2048, NULL);
 if (!model) {
     fprintf(stderr, "Failed to initialize model\n");
     return -1;
 }
 
-// With RAG corpus (only works om LFM2 RAG version for now)
+// with RAG corpus
 cactus_model_t rag_model = cactus_init("../../weights/lfm2-rag", 512, "./documents");
 ```
 
@@ -211,12 +203,10 @@ int cactus_score_window(
 
 **Example:**
 ```c
-// First tokenize the text
 uint32_t tokens[256];
 size_t num_tokens;
 cactus_tokenize(model, "The quick brown fox", tokens, 256, &num_tokens);
 
-// Score a window of tokens
 char response[4096];
 int result = cactus_score_window(model, tokens, num_tokens, 0, num_tokens, 512,
                                   response, sizeof(response));
@@ -252,7 +242,7 @@ cactus_model_t whisper = cactus_init("../../weights/whisper-small", 448, NULL);
 char response[16384];
 int result = cactus_transcribe(whisper, "audio.wav", NULL,
                                 response, sizeof(response), NULL, NULL, NULL,
-                                NULL, 0);  // No PCM buffer
+                                NULL, 0);
 if (result > 0) {
     printf("Transcription: %s\n", response);
 }
@@ -260,8 +250,7 @@ if (result > 0) {
 
 **Example (buffer-based):**
 ```c
-// Load PCM audio data (16kHz, mono, 16-bit)
-uint8_t* pcm_data = load_audio_buffer("audio.wav", &pcm_size);
+uint8_t* pcm_data = load_audio_buffer("audio.wav", &pcm_size); // 16kHz, mono, 16-bit
 
 char response[16384];
 int result = cactus_transcribe(whisper, NULL, NULL,
@@ -313,8 +302,7 @@ int cactus_stream_transcribe_insert(
 
 **Example:**
 ```c
-// Insert 1 second of audio (16kHz * 2 bytes per sample)
-uint8_t audio_chunk[32000];
+uint8_t audio_chunk[32000]; // 1 second at 16kHz * 2 bytes
 
 int result = cactus_stream_transcribe_insert(stream, audio_chunk, sizeof(audio_chunk));
 if (result < 0) {
@@ -390,10 +378,8 @@ int cactus_stream_transcribe_finalize(
 
 **Example:**
 ```c
-// After processing audio chunks
 char final_response[32768];
 int result = cactus_stream_transcribe_finalize(stream, final_response, sizeof(final_response));
-
 if (result > 0) {
     printf("Final: %s\n", final_response);
 }
@@ -538,6 +524,43 @@ void cactus_reset(cactus_model_t model);
 - Recovering from errors
 - Freeing memory after long conversations
 
+### `cactus_rag_query`
+Queries the RAG corpus and returns relevant text chunks. Requires model to be initialized with a corpus directory.
+
+```c
+int cactus_rag_query(
+    cactus_model_t model,        // Model handle (must have corpus_dir set)
+    const char* query,           // Query text
+    char* response_buffer,       // Buffer for response JSON
+    size_t buffer_size,          // Size of response buffer
+    size_t top_k                 // Number of chunks to retrieve
+);
+```
+
+**Returns:** 0 on success, negative value on error
+
+**Response Format:**
+```json
+[
+    {"text": "Relevant chunk 1...", "score": 0.85},
+    {"text": "Relevant chunk 2...", "score": 0.72}
+]
+```
+
+**Example:**
+```c
+// Initialize model with corpus
+cactus_model_t model = cactus_init("path/to/model", 2048, "./documents");
+
+// Query for relevant chunks
+char response[65536];
+int result = cactus_rag_query(model, "What is machine learning?",
+                               response, sizeof(response), 5);
+if (result == 0) {
+    printf("Retrieved chunks: %s\n", response);
+}
+```
+
 ### `cactus_destroy`
 Releases all resources associated with the model.
 
@@ -577,8 +600,7 @@ void cactus_set_telemetry_token(const char* token);
 **Example:**
 ```c
 cactus_set_telemetry_token("your-telemetry-token");
-
-cactus_set_telemetry_token(NULL);
+cactus_set_telemetry_token(NULL); // disable
 ```
 
 ### `cactus_set_pro_key`
@@ -622,7 +644,6 @@ cactus_index_t cactus_index_init(
 
 **Example:**
 ```c
-// Create or open an index for 768-dimensional embeddings
 cactus_index_t index = cactus_index_init("./my_index", 768);
 if (!index) {
     fprintf(stderr, "Failed to initialize index\n");
@@ -649,13 +670,11 @@ int cactus_index_add(
 
 **Example:**
 ```c
-// Add documents with embeddings
 int ids[] = {1, 2, 3};
 const char* docs[] = {"Hello world", "Foo bar", "Test document"};
 const char* metas[] = {"{\"source\":\"a\"}", "{\"source\":\"b\"}", NULL};
 
 float emb1[768], emb2[768], emb3[768];
-// ... populate embeddings using cactus_embed() ...
 const float* embeddings[] = {emb1, emb2, emb3};
 
 int result = cactus_index_add(index, ids, docs, metas, embeddings, 3, 768);
@@ -720,7 +739,6 @@ int cactus_index_query(
 
 **Example:**
 ```c
-// Query for similar documents
 float query_emb[768];
 cactus_embed(model, "search query", query_emb, sizeof(query_emb), &dim, true);
 
@@ -751,7 +769,6 @@ int cactus_index_compact(cactus_index_t index);
 
 **Example:**
 ```c
-// Compact after bulk deletions
 cactus_index_compact(index);
 ```
 
@@ -770,13 +787,9 @@ void cactus_index_destroy(cactus_index_t index);
 #include "cactus_ffi.h"
 
 int main() {
-    // Initialize embedding model
     cactus_model_t embed_model = cactus_init("path/to/embed-model", 512, NULL);
-
-    // Initialize vector index
     cactus_index_t index = cactus_index_init("./rag_index", 768);
 
-    // Add documents
     const char* docs[] = {
         "The capital of France is Paris.",
         "Python is a programming language.",
@@ -793,7 +806,6 @@ int main() {
     const float* embeddings[] = {emb1, emb2, emb3};
     cactus_index_add(index, ids, docs, NULL, embeddings, 3, 768);
 
-    // Query similar documents
     float query_emb[768];
     cactus_embed(embed_model, "What is the capital of France?", query_emb, sizeof(query_emb), &dim, true);
 
@@ -810,7 +822,6 @@ int main() {
 
     printf("Top result ID: %d (score: %.4f)\n", result_ids[0], result_scores[0]);
 
-    // Cleanup
     cactus_index_destroy(index);
     cactus_destroy(embed_model);
     return 0;
@@ -823,25 +834,20 @@ int main() {
 ```c
 #include "cactus_ffi.h"
 #include <stdio.h>
-#include <string.h>
 
 int main() {
-    // Initialize model
     cactus_model_t model = cactus_init("path/to/model", 2048, NULL);
     if (!model) return -1;
 
-    // Prepare conversation
     const char* messages =
         "[{\"role\": \"system\", \"content\": \"You are a helpful assistant.\"},"
         " {\"role\": \"user\", \"content\": \"Hello!\"},"
         " {\"role\": \"assistant\", \"content\": \"Hello! How can I help you today?\"},"
         " {\"role\": \"user\", \"content\": \"What's 2+2?\"}]";
 
-    // Generate response
     char response[4096];
     int result = cactus_complete(model, messages, response,
                                  sizeof(response), NULL, NULL, NULL, NULL);
-
     if (result > 0) {
         printf("Response: %s\n", response);
     }
@@ -859,7 +865,6 @@ int main() {
     cactus_model_t vlm = cactus_init("path/to/lfm2-vlm", 4096, NULL);
     if (!vlm) return -1;
 
-    // Message with image
     const char* messages =
         "[{\"role\": \"user\","
         "  \"content\": \"What do you see in this image?\","
@@ -868,7 +873,6 @@ int main() {
     char response[8192];
     int result = cactus_complete(vlm, messages, response, sizeof(response),
                                  NULL, NULL, NULL, NULL);
-
     if (result > 0) {
         printf("%s\n", response);
     }
@@ -898,24 +902,19 @@ const char* messages = "[{\"role\": \"user\", \"content\": \"What's the weather 
 char response[4096];
 int result = cactus_complete(model, messages, response, sizeof(response),
                              NULL, tools, NULL, NULL);
-
 printf("Response: %s\n", response);
-// Parse response JSON to check for function_calls array
 ```
 
 ### Computing Similarity with Embeddings
 ```c
-float compute_cosine_similarity(cactus_model_t model,
-                                const char* text1,
-                                const char* text2) {
+float compute_cosine_similarity(cactus_model_t model, const char* text1, const char* text2) {
     float embeddings1[2048], embeddings2[2048];
     size_t dim1, dim2;
 
-    // Use normalize=true for cosine similarity (dot product of normalized vectors)
     cactus_embed(model, text1, embeddings1, sizeof(embeddings1), &dim1, true);
     cactus_embed(model, text2, embeddings2, sizeof(embeddings2), &dim2, true);
 
-    // With normalized embeddings, cosine similarity = dot product
+    // with normalized embeddings, cosine similarity = dot product
     float dot_product = 0.0f;
     for (size_t i = 0; i < dim1; i++) {
         dot_product += embeddings1[i] * embeddings2[i];
@@ -923,10 +922,8 @@ float compute_cosine_similarity(cactus_model_t model,
     return dot_product;
 }
 
-// Usage
 float similarity = compute_cosine_similarity(embed_model,
-    "The cat sat on the mat",
-    "A feline rested on the rug");
+    "The cat sat on the mat", "A feline rested on the rug");
 printf("Similarity: %.4f\n", similarity);
 ```
 
@@ -945,13 +942,9 @@ int main() {
     if (!whisper) return -1;
 
     char response[32768];
-
-    // Transcribe with streaming output
     int result = cactus_transcribe(whisper, "meeting.wav", NULL,
                                     response, sizeof(response), NULL,
-                                    transcription_callback, NULL,
-                                    NULL, 0);  // No PCM buffer
-
+                                    transcription_callback, NULL, NULL, 0);
     printf("\n\nFull response: %s\n", response);
 
     cactus_destroy(whisper);
@@ -964,11 +957,8 @@ int main() {
 #include "cactus_ffi.h"
 #include <math.h>
 
-// Find most similar image to a text query
-int find_similar_image(cactus_model_t model,
-                       const char* query,
-                       const char** image_paths,
-                       int num_images) {
+int find_similar_image(cactus_model_t model, const char* query,
+                       const char** image_paths, int num_images) {
     float query_embed[1024];
     size_t query_dim;
     cactus_embed(model, query, query_embed, sizeof(query_embed), &query_dim, true);
@@ -981,7 +971,6 @@ int find_similar_image(cactus_model_t model,
         size_t img_dim;
         cactus_image_embed(model, image_paths[i], img_embed, sizeof(img_embed), &img_dim);
 
-        // Compute cosine similarity
         float dot = 0, norm_q = 0, norm_i = 0;
         for (size_t j = 0; j < query_dim; j++) {
             dot += query_embed[j] * img_embed[j];
@@ -995,7 +984,6 @@ int find_similar_image(cactus_model_t model,
             best_idx = i;
         }
     }
-
     return best_idx;
 }
 ```

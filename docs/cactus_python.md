@@ -203,6 +203,23 @@ tokens = cactus_tokenize(model, "Hello world")
 print(tokens)  # [1234, 5678, ...]
 ```
 
+### `cactus_rag_query(model, query, top_k=5)`
+
+Query RAG corpus for relevant text chunks. Requires model initialized with `corpus_dir`.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `model` | handle | Model handle (must have corpus_dir set) |
+| `query` | `str` | Query text |
+| `top_k` | `int` | Number of chunks to retrieve (default: 5) |
+
+```python
+model = cactus_init("weights/lfm2-rag", corpus_dir="./documents")
+chunks = cactus_rag_query(model, "What is machine learning?", top_k=3)
+for chunk in chunks:
+    print(f"Score: {chunk['score']:.2f} - {chunk['text'][:100]}...")
+```
+
 ## Vision (VLM)
 
 Pass images in the messages for vision-language models:

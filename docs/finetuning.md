@@ -1,7 +1,8 @@
 # Deploying Unsloth Fine-Tunes to Cactus for Phones
 
-- Cactus is an inference engine for mobile devices, macs and ARM chips like Raspberry Pi. 
-- At INT8, Cactus runs `Qwen3-0.6B` and `LFM2-1.2B `at `60-70 toks/sec` on iPhone 17 Pro, `13-18 toks/sec` on budget Pixel 6a.
+- Cactus is an inference engine for mobile devices, macs and ARM chips like Raspberry Pi.
+- At INT8, Cactus runs `Qwen3-0.6B` and `LFM2-1.2B` at `60-70 toks/sec` on iPhone 17 Pro, `13-18 toks/sec` on budget Pixel 6a.
+- INT4 quantization provides ~50% memory reduction with minimal quality loss.
 - Task-Specific INT8 tunes of `Gemma3-270m` hit `150 toks/sec` on iPhone 17 Pro and `23 toks/sec` on Raspberry Pi. 
 
 ## Quick Start
