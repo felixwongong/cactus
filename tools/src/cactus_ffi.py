@@ -1,17 +1,10 @@
-"""
-Python FFI bindings for Cactus - direct mapping of cactus_ffi.h
-"""
-
 import ctypes
 import json
 import platform
 from pathlib import Path
-import json
 
-# Callback type
 TokenCallback = ctypes.CFUNCTYPE(None, ctypes.c_char_p, ctypes.c_uint32, ctypes.c_void_p)
 
-# Find library
 _DIR = Path(__file__).parent.parent.parent
 if platform.system() == "Darwin":
     _LIB_PATH = _DIR / "cactus" / "build" / "libcactus.dylib"
@@ -22,18 +15,15 @@ _lib = None
 if _LIB_PATH.exists():
     _lib = ctypes.CDLL(str(_LIB_PATH))
 
-    # cactus_init
     _lib.cactus_init.argtypes = [ctypes.c_char_p, ctypes.c_size_t, ctypes.c_char_p]
     _lib.cactus_init.restype = ctypes.c_void_p
 
-    # cactus_complete
     _lib.cactus_complete.argtypes = [
         ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_size_t,
         ctypes.c_char_p, ctypes.c_char_p, TokenCallback, ctypes.c_void_p
     ]
     _lib.cactus_complete.restype = ctypes.c_int
 
-    # cactus_transcribe
     _lib.cactus_transcribe.argtypes = [
         ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p,
         ctypes.c_size_t, ctypes.c_char_p, TokenCallback, ctypes.c_void_p,
@@ -41,57 +31,48 @@ if _LIB_PATH.exists():
     ]
     _lib.cactus_transcribe.restype = ctypes.c_int
 
-    # cactus_embed
     _lib.cactus_embed.argtypes = [
         ctypes.c_void_p, ctypes.c_char_p, ctypes.POINTER(ctypes.c_float),
         ctypes.c_size_t, ctypes.POINTER(ctypes.c_size_t), ctypes.c_bool
     ]
     _lib.cactus_embed.restype = ctypes.c_int
 
-    # cactus_image_embed
     _lib.cactus_image_embed.argtypes = [
         ctypes.c_void_p, ctypes.c_char_p, ctypes.POINTER(ctypes.c_float),
         ctypes.c_size_t, ctypes.POINTER(ctypes.c_size_t)
     ]
     _lib.cactus_image_embed.restype = ctypes.c_int
 
-    # cactus_audio_embed
     _lib.cactus_audio_embed.argtypes = [
         ctypes.c_void_p, ctypes.c_char_p, ctypes.POINTER(ctypes.c_float),
         ctypes.c_size_t, ctypes.POINTER(ctypes.c_size_t)
     ]
     _lib.cactus_audio_embed.restype = ctypes.c_int
 
-    # cactus_reset
     _lib.cactus_reset.argtypes = [ctypes.c_void_p]
     _lib.cactus_reset.restype = None
 
-    # cactus_stop
     _lib.cactus_stop.argtypes = [ctypes.c_void_p]
     _lib.cactus_stop.restype = None
 
-    # cactus_destroy
     _lib.cactus_destroy.argtypes = [ctypes.c_void_p]
     _lib.cactus_destroy.restype = None
 
-    # cactus_get_last_error
     _lib.cactus_get_last_error.argtypes = []
     _lib.cactus_get_last_error.restype = ctypes.c_char_p
 
-    # cactus_set_telemetry_token
     _lib.cactus_set_telemetry_token.argtypes = [ctypes.c_char_p]
     _lib.cactus_set_telemetry_token.restype = None
 
-    # cactus_set_pro_key
     _lib.cactus_set_pro_key.argtypes = [ctypes.c_char_p]
     _lib.cactus_set_pro_key.restype = None
 
     _lib.cactus_tokenize.argtypes = [
-    ctypes.c_void_p,
-    ctypes.c_char_p,
-    ctypes.POINTER(ctypes.c_uint32),
-    ctypes.c_size_t,
-    ctypes.POINTER(ctypes.c_size_t),
+        ctypes.c_void_p,
+        ctypes.c_char_p,
+        ctypes.POINTER(ctypes.c_uint32),
+        ctypes.c_size_t,
+        ctypes.POINTER(ctypes.c_size_t),
     ]
     _lib.cactus_tokenize.restype = ctypes.c_int
 
@@ -99,18 +80,43 @@ if _LIB_PATH.exists():
         ctypes.c_void_p,
         ctypes.POINTER(ctypes.c_uint32),
         ctypes.c_size_t,
-        ctypes.c_size_t,  # start
-        ctypes.c_size_t,  # end
-        ctypes.c_size_t,  # context
+        ctypes.c_size_t,
+        ctypes.c_size_t,
+        ctypes.c_size_t,
         ctypes.c_char_p,
         ctypes.c_size_t,
     ]
     _lib.cactus_score_window.restype = ctypes.c_int
 
+    _lib.cactus_rag_query.argtypes = [
+        ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p,
+        ctypes.c_size_t, ctypes.c_size_t
+    ]
+    _lib.cactus_rag_query.restype = ctypes.c_int
+
+    _lib.cactus_stream_transcribe_init.argtypes = [ctypes.c_void_p]
+    _lib.cactus_stream_transcribe_init.restype = ctypes.c_void_p
+
+    _lib.cactus_stream_transcribe_insert.argtypes = [
+        ctypes.c_void_p, ctypes.POINTER(ctypes.c_uint8), ctypes.c_size_t
+    ]
+    _lib.cactus_stream_transcribe_insert.restype = ctypes.c_int
+
+    _lib.cactus_stream_transcribe_process.argtypes = [
+        ctypes.c_void_p, ctypes.c_char_p, ctypes.c_size_t, ctypes.c_char_p
+    ]
+    _lib.cactus_stream_transcribe_process.restype = ctypes.c_int
+
+    _lib.cactus_stream_transcribe_finalize.argtypes = [
+        ctypes.c_void_p, ctypes.c_char_p, ctypes.c_size_t
+    ]
+    _lib.cactus_stream_transcribe_finalize.restype = ctypes.c_int
+
+    _lib.cactus_stream_transcribe_destroy.argtypes = [ctypes.c_void_p]
+    _lib.cactus_stream_transcribe_destroy.restype = None
 
 
 def cactus_init(model_path, context_size=2048, corpus_dir=None):
-    """Initialize a model. Returns model handle."""
     return _lib.cactus_init(
         model_path.encode() if isinstance(model_path, str) else model_path,
         context_size,
@@ -130,23 +136,6 @@ def cactus_complete(
     force_tools=False,
     callback=None
 ):
-    """Run chat completion with tool support.
-
-    Args:
-        model: Model handle from cactus_init
-        messages: List of message dicts [{"role": "user", "content": "..."}] or JSON string
-        tools: List of tool dicts [{"name": "...", "description": "...", "parameters": {...}}] or JSON string
-        temperature: Sampling temperature (default: model default)
-        top_p: Top-p sampling (default: model default)
-        top_k: Top-k sampling (default: model default)
-        max_tokens: Maximum tokens to generate (default: 256)
-        stop_sequences: List of stop sequences
-        force_tools: If True, constrain output to valid tool call format (default: False)
-        callback: Token callback function(token_str, token_id, user_data)
-
-    Returns:
-        Response JSON string with 'response', 'function_calls', and metrics
-    """
     if isinstance(messages, list):
         messages_json = json.dumps(messages)
     else:
@@ -189,7 +178,6 @@ def cactus_complete(
 
 
 def cactus_transcribe(model, audio_path, prompt="", callback=None):
-    """Transcribe audio. Returns response JSON string."""
     buf = ctypes.create_string_buffer(65536)
     cb = TokenCallback(callback) if callback else TokenCallback()
     _lib.cactus_transcribe(
@@ -203,13 +191,6 @@ def cactus_transcribe(model, audio_path, prompt="", callback=None):
 
 
 def cactus_embed(model, text, normalize=False):
-    """Get text embeddings. Returns list of floats.
-
-    Args:
-        model: Model handle from cactus_init
-        text: Text to embed
-        normalize: If True, L2-normalize the embeddings (default: False)
-    """
     buf = (ctypes.c_float * 4096)()
     dim = ctypes.c_size_t()
     _lib.cactus_embed(
@@ -221,7 +202,6 @@ def cactus_embed(model, text, normalize=False):
 
 
 def cactus_image_embed(model, image_path):
-    """Get image embeddings. Returns list of floats."""
     buf = (ctypes.c_float * 4096)()
     dim = ctypes.c_size_t()
     _lib.cactus_image_embed(
@@ -233,7 +213,6 @@ def cactus_image_embed(model, image_path):
 
 
 def cactus_audio_embed(model, audio_path):
-    """Get audio embeddings. Returns list of floats."""
     buf = (ctypes.c_float * 4096)()
     dim = ctypes.c_size_t()
     _lib.cactus_audio_embed(
@@ -245,35 +224,29 @@ def cactus_audio_embed(model, audio_path):
 
 
 def cactus_reset(model):
-    """Reset model state."""
     _lib.cactus_reset(model)
 
 
 def cactus_stop(model):
-    """Stop generation."""
     _lib.cactus_stop(model)
 
 
 def cactus_destroy(model):
-    """Destroy model and free memory."""
     _lib.cactus_destroy(model)
 
 
 def cactus_get_last_error():
-    """Get the last error message."""
     result = _lib.cactus_get_last_error()
     return result.decode() if result else None
 
 
 def cactus_set_telemetry_token(token):
-    """Set telemetry token. Pass None or empty string to disable."""
     _lib.cactus_set_telemetry_token(
         token.encode() if isinstance(token, str) else token
     )
 
 
 def cactus_set_pro_key(pro_key):
-    """Set pro key for NPU acceleration."""
     _lib.cactus_set_pro_key(
         pro_key.encode() if isinstance(pro_key, str) else pro_key
     )
@@ -281,8 +254,6 @@ def cactus_set_pro_key(pro_key):
 
 def cactus_tokenize(model, text: str):
     needed = ctypes.c_size_t(0)
-
-    # pass 1: query length
     rc = _lib.cactus_tokenize(
         model,
         text.encode("utf-8"),
@@ -296,7 +267,6 @@ def cactus_tokenize(model, text: str):
     n = needed.value
     arr = (ctypes.c_uint32 * n)()
 
-    # pass 2: fetch tokens
     rc = _lib.cactus_tokenize(
         model,
         text.encode("utf-8"),
@@ -328,4 +298,44 @@ def cactus_score_window(model, tokens, start, end, context):
     return json.loads(buf.value.decode("utf-8", errors="ignore"))
 
 
+def cactus_rag_query(model, query, top_k=5):
+    buf = ctypes.create_string_buffer(65536)
+    result = _lib.cactus_rag_query(
+        model,
+        query.encode() if isinstance(query, str) else query,
+        buf, len(buf), top_k
+    )
+    if result != 0:
+        return []
+    return json.loads(buf.value.decode("utf-8", errors="ignore"))
 
+
+def cactus_stream_transcribe_init(model):
+    return _lib.cactus_stream_transcribe_init(model)
+
+
+def cactus_stream_transcribe_insert(stream, pcm_data):
+    if isinstance(pcm_data, bytes):
+        arr = (ctypes.c_uint8 * len(pcm_data)).from_buffer_copy(pcm_data)
+    else:
+        arr = (ctypes.c_uint8 * len(pcm_data))(*pcm_data)
+    return _lib.cactus_stream_transcribe_insert(stream, arr, len(arr))
+
+
+def cactus_stream_transcribe_process(stream, options=None):
+    buf = ctypes.create_string_buffer(65536)
+    _lib.cactus_stream_transcribe_process(
+        stream, buf, len(buf),
+        options.encode() if options else None
+    )
+    return buf.value.decode("utf-8", errors="ignore")
+
+
+def cactus_stream_transcribe_finalize(stream):
+    buf = ctypes.create_string_buffer(65536)
+    _lib.cactus_stream_transcribe_finalize(stream, buf, len(buf))
+    return buf.value.decode("utf-8", errors="ignore")
+
+
+def cactus_stream_transcribe_destroy(stream):
+    _lib.cactus_stream_transcribe_destroy(stream)
