@@ -87,6 +87,7 @@ Example response from Gemma3-270m
 # Performance
 
 - <sub>**Models:** LFM2-VL-450m & Whisper-Small</sub>
+- <sub>**Precision:** Cactus smartly blends INT4, INT8 and F16 for all weights.</sub>
 - <sub>**Decode** = toks/sec, **P/D** = prefill/decode, **VLM** = 256×256 image, **STT** = 30s audio</sub>
 - <sub>**Cactus Pro**: Uses NPU for realtime and large context (Apple for now), scores are marked with *</sub>
 
@@ -107,27 +108,27 @@ Example response from Gemma3-270m
 
 # Supported models
 
-| Model | Zipped INT4/INT8 | Recommended | Completion | Tools | Vision | Embed | Speech | Pro |
-|-------|------------------|-------------|------------|-------|--------|-------|--------|-----|
-| google/gemma-3-270m-it | 115MB/172MB | INT8 | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ |
-| google/functiongemma-270m-it | 115MB/172MB | INT8 | ✓ | ✓ | ✗ | ✗ | ✗ | ✗ |
-| openai/whisper-small | 104MB/282MB | INT4 | ✗ | ✗ | ✗ | ✓ | ✓ | Apple |
-| LiquidAI/LFM2-350M | 153MB/233MB | INT8 | ✓ | ✓ | ✗ | ✓ | ✗ | ✗ |
-| HuggingFaceTB/SmolLM2-360m-Instruct | 140MB/227MB | INT8 | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ |
-| LiquidAI/LFM2-VL-450M | 318MB/480MB | INT8 | ✓ | ✗ | ✓ | ✓ | ✗ | Apple |
-| nomic-ai/nomic-embed-text-v2-moe | 211MB/456MB | INT4 | ✗ | ✗ | ✗ | ✓ | ✗ | ✗ |
-| Qwen/Qwen3-0.6B | 234MB/394MB | INT4 | ✓ | ✓ | ✗ | ✓ | ✗ | ✗ |
-| Qwen/Qwen3-Embedding-0.6B | 234MB/394MB | INT4 | ✗ | ✗ | ✗ | ✓ | ✗ | ✗ |
-| LiquidAI/LFM2-700M | 300MB/467MB | INT4 | ✓ | ✓ | ✗ | ✓ | ✗ | ✗ |
-| google/gemma-3-1b-it | 320MB/642MB | INT4 | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ |
-| openai/whisper-medium | 320MB/646MB | INT4 | ✗ | ✗ | ✗ | ✓ | ✓ | Apple |
-| LiquidAI/LFM2.5-1.2B-Instruct | 474MB/722MB | INT4 | ✓ | ✓ | ✗ | ✓ | ✗ | ✗ |
-| LiquidAI/LFM2-1.2B-RAG | 474MB/722MB | INT4 | ✓ | ✓ | ✗ | ✓ | ✗ | ✗ |
-| LiquidAI/LFM2-1.2B-Tool | 474MB/722MB | INT4 | ✓ | ✓ | ✗ | ✓ | ✗ | ✗ |
-| LiquidAI/LFM2.5-VL-1.6B | 954MB/1440MB | INT4 | ✓ | ✗ | ✓ | ✓ | ✗ | Apple |
-| Qwen/Qwen3-1.7B | 749MB/1161MB | INT4 | ✓ | ✓ | ✗ | ✓ | ✗ | ✗ |
-| HuggingFaceTB/SmolLM2-1.7B-Instruct | 801MB/1161MB | INT4 | ✓ | ✗ | ✗ | ✓ | ✗ | ✗ |
+- <sub>Cactus smartly and compactly blends INT4, INT8 and F16 for all weights.</sub>
+- <sub>You can still quantize everything with one precision, but mixed is optimal</sub>
 
+| Model | Zipped Size | Completion | Tools | Vision | Embed | Speech | Pro |
+|-------|------------------|------------|-------|--------|-------|--------|-----|
+| google/gemma-3-270m-it | 252MB | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ |
+| google/functiongemma-270m-it | 252MB | ✓ | ✓ | ✗ | ✗ | ✗ | ✗ |
+| openai/whisper-small | 283MB | ✗ | ✗ | ✗ | ✓ | ✓ | Apple |
+| LiquidAI/LFM2-350M | 244MB | ✓ | ✓ | ✗ | ✓ | ✗ | ✗ |
+| LiquidAI/LFM2-VL-450M | 448MB | ✓ | ✗ | ✓ | ✓ | ✗ | Apple |
+| nomic-ai/nomic-embed-text-v2-moe | 451MB | ✗ | ✗ | ✗ | ✓ | ✗ | ✗ |
+| Qwen/Qwen3-0.6B | 514MB | ✓ | ✓ | ✗ | ✓ | ✗ | ✗ |
+| Qwen/Qwen3-Embedding-0.6B | 514MB | ✗ | ✗ | ✗ | ✓ | ✗ | ✗ |
+| LiquidAI/LFM2-700M | 498MB | ✓ | ✓ | ✗ | ✓ | ✗ | ✗ |
+| google/gemma-3-1b-it | 642MB | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ |
+| LiquidAI/LFM2.5-1.2B-Instruct | 474MB | ✓ | ✓ | ✗ | ✓ | ✗ | ✗ |
+| LiquidAI/LFM2-1.2B-RAG | 474MB | ✓ | ✓ | ✗ | ✓ | ✗ | ✗ |
+| LiquidAI/LFM2-1.2B-Tool | 474MB | ✓ | ✓ | ✗ | ✓ | ✗ | ✗ |
+| openai/whisper-medium | 658MB | ✗ | ✗ | ✗ | ✓ | ✓ | Apple |
+| LiquidAI/LFM2.5-VL-1.6B | 954MB | ✓ | ✗ | ✓ | ✓ | ✗ | Apple |
+| Qwen/Qwen3-1.7B | 749MB | ✓ | ✓ | ✗ | ✓ | ✗ | ✗ |
 
 # Using this repo on a Mac
 
@@ -145,7 +146,7 @@ git clone https://github.com/cactus-compute/cactus && cd cactus && source ./setu
 | `cactus download [model]` | Downloads model to `./weights` |
 | `cactus convert [model] [dir]` | Converts model, supports LoRA merging (`--lora <path>`) |
 | `cactus build` | Builds for ARM (`--apple` or `--android`) |
-| `cactus test` | Runs tests (`--ios` / `--android` for device testing) |
+| `cactus test` | Runs tests (`--ios` / `--android`, `--model [name/path]`) |
 | `cactus clean` | Removes build artifacts |
 | `cactus --help` | Shows all commands and flags |
 

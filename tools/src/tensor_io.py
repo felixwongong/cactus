@@ -8,6 +8,8 @@ try:
 except ImportError:
     torch = None
 
+from .precision_config import determine_precision, MixedPrecisionConfig
+
 
 GROUP_SIZE = 128
 
@@ -35,8 +37,21 @@ def compute_padding(current_offset: int, alignment: int) -> bytes:
     return b'\x00' * padding_size
 
 
-def save_tensor_with_header(tensor, output_path, precision='FP16', transpose=False, stats_tracker=None, args=None, model_type=None):
-    """Save a tensor to binary format with header metadata and group-wise INT8/INT4 quantization."""
+def save_tensor_with_header(tensor, output_path, precision='FP16', transpose=False, stats_tracker=None, args=None, model_type=None, layer_idx=None, num_layers=None, mixed_config=None):
+    """Save a tensor to binary format with header metadata and group-wise INT8/INT4 quantization.
+
+    Args:
+        tensor: The tensor to save (PyTorch or NumPy)
+        output_path: Path to save the tensor
+        precision: Quantization precision ('MIXED', 'INT4', 'INT8', 'FP16')
+        transpose: Whether to transpose 2D tensors
+        stats_tracker: Optional dict to track quantization statistics
+        args: Optional args object with additional settings
+        model_type: Model type string (e.g., 'gemma', 'llama')
+        layer_idx: Layer index for mixed precision (None for non-layer weights)
+        num_layers: Total number of layers for mixed precision calculation
+        mixed_config: MixedPrecisionConfig for controlling quantization behavior
+    """
     if torch is not None and isinstance(tensor, torch.Tensor):
         data = tensor.detach().cpu().numpy()
     else:
@@ -47,6 +62,11 @@ def save_tensor_with_header(tensor, output_path, precision='FP16', transpose=Fal
     if model_type == 'gemma' and 'norm' in str(output_path):
         data = data + 1.0
         original_data = data.copy()
+
+    # Determine actual precision for MIXED mode
+    output_name = str(output_path.name) if hasattr(output_path, 'name') else str(output_path)
+    if precision == 'MIXED':
+        precision = determine_precision(output_name, 'MIXED', layer_idx, num_layers, mixed_config)
 
     if precision in ('INT8', 'INT4'):
         filename = output_path.name
@@ -132,11 +152,13 @@ def save_tensor_with_header(tensor, output_path, precision='FP16', transpose=Fal
 
     if precision == 'INT8':
         if stats_tracker:
-            stats_tracker['quantized_tensors'] += 1
+            stats_tracker['int8_tensors'] += 1
             stats_tracker['quantized_parameters'] += original_data.size
             stats_tracker['mse_values'].append(mse_error)
             stats_tracker['snr_values'].append(snr_db)
             stats_tracker['cos_sim_values'].append(cos_sim)
+            stats_tracker['total_tensors'] += 1
+            stats_tracker['total_parameters'] += original_data.size
 
         with open(output_path, 'wb') as f:
             ndim = len(shape)
@@ -171,10 +193,6 @@ def save_tensor_with_header(tensor, output_path, precision='FP16', transpose=Fal
             f.write(compute_padding(scales_end, CACTUS_ALIGNMENT))
 
             f.write(quantized_flat.tobytes())
-
-        if stats_tracker:
-            stats_tracker['total_tensors'] += 1
-            stats_tracker['total_parameters'] += original_data.size
 
         return
 
@@ -220,11 +238,13 @@ def save_tensor_with_header(tensor, output_path, precision='FP16', transpose=Fal
             scales_fp16 = scales.astype(np.float16)
 
             if stats_tracker:
-                stats_tracker['quantized_tensors'] += 1
+                stats_tracker['int4_tensors'] += 1
                 stats_tracker['quantized_parameters'] += original_data.size
                 stats_tracker['mse_values'].append(mse_error)
                 stats_tracker['snr_values'].append(snr_db)
                 stats_tracker['cos_sim_values'].append(cos_sim)
+                stats_tracker['total_tensors'] += 1
+                stats_tracker['total_parameters'] += original_data.size
 
             with open(output_path, 'wb') as f:
                 ndim = len(shape)
@@ -259,10 +279,6 @@ def save_tensor_with_header(tensor, output_path, precision='FP16', transpose=Fal
 
                 f.write(packed.tobytes())
 
-            if stats_tracker:
-                stats_tracker['total_tensors'] += 1
-                stats_tracker['total_parameters'] += original_data.size
-
             return
         else:
             precision = 'FP16'
@@ -270,6 +286,7 @@ def save_tensor_with_header(tensor, output_path, precision='FP16', transpose=Fal
     data = data.astype(np.float16)
 
     if stats_tracker:
+        stats_tracker['fp16_tensors'] += 1
         stats_tracker['total_tensors'] += 1
         stats_tracker['total_parameters'] += original_data.size
 
@@ -317,7 +334,9 @@ def create_quantization_stats():
     """Create an empty stats tracker dictionary for quantization metrics."""
     return {
         'total_tensors': 0,
-        'quantized_tensors': 0,
+        'int8_tensors': 0,
+        'int4_tensors': 0,
+        'fp16_tensors': 0,
         'total_parameters': 0,
         'quantized_parameters': 0,
         'mse_values': [],
@@ -329,7 +348,12 @@ def create_quantization_stats():
 
 def print_quantization_summary(quantization_stats, args=None):
     """Print a summary of quantization statistics."""
-    if quantization_stats['quantized_tensors'] > 0:
+    int8_count = quantization_stats.get('int8_tensors', 0)
+    int4_count = quantization_stats.get('int4_tensors', 0)
+    fp16_count = quantization_stats.get('fp16_tensors', 0)
+    quantized_count = int8_count + int4_count
+
+    if quantized_count > 0:
         mse_values = np.array(quantization_stats['mse_values'])
         snr_values = np.array(quantization_stats['snr_values'])
         cos_sim_values = np.array(quantization_stats['cos_sim_values'])
@@ -337,8 +361,5 @@ def print_quantization_summary(quantization_stats, args=None):
         print("\nQuantization Summary:")
         print(f"MSE - Mean: {np.mean(mse_values):.2e}, Max: {np.max(mse_values):.2e}, Median: {np.median(mse_values):.2e}, Min: {np.min(mse_values):.2e}")
         print(f"SNR - Mean: {np.mean(snr_values):.1f}dB, Max: {np.max(snr_values):.1f}dB, Median: {np.median(snr_values):.1f}dB, Min: {np.min(snr_values):.1f}dB")
-        print(f"CosSim - Mean: {np.mean(cos_sim_values):.6f}, Max: {np.mean(cos_sim_values):.6f}, Median: {np.median(cos_sim_values):.6f}, Min: {np.min(cos_sim_values):.6f}")
-        fp16_tensors = quantization_stats['total_tensors'] - quantization_stats['quantized_tensors']
-        low_snr_fallbacks = quantization_stats.get('low_snr_fallbacks', 0)
-        snr_threshold = getattr(args, 'snr_threshold', 30.0) if args else 30.0
-        print(f"Processed {quantization_stats['quantized_tensors']} INT8 tensors, {fp16_tensors} FP16 tensors ({low_snr_fallbacks} SNR<{snr_threshold}dB fallbacks)")
+        print(f"CosSim - Mean: {np.mean(cos_sim_values):.6f}, Max: {np.max(cos_sim_values):.6f}, Median: {np.median(cos_sim_values):.6f}, Min: {np.min(cos_sim_values):.6f}")
+        print(f"Processed {int8_count} INT8 tensors, {int4_count} INT4 tensors, {fp16_count} FP16 tensors")

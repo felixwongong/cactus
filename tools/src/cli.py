@@ -79,7 +79,7 @@ def cmd_download(args):
 
     weights_dir.mkdir(parents=True, exist_ok=True)
 
-    precision = getattr(args, 'precision', 'INT4')
+    precision = getattr(args, 'precision', 'MIXED')
     cache_dir = getattr(args, 'cache_dir', None)
     token = getattr(args, 'token', None)
 
@@ -178,7 +178,7 @@ def cmd_download(args):
             config.setdefault('model_variant', 'default')
 
         # Config precision stores the compute precision (weights are quantized, activations stay FP16)
-        if precision in ('INT8', 'INT4'):
+        if precision in ('INT8', 'INT4', 'MIXED'):
             config['precision'] = "FP16"
         else:
             config['precision'] = precision
@@ -375,7 +375,7 @@ def cmd_eval(args):
 
     dlargs = DownloadArgs()
     dlargs.model_id = model_id
-    dlargs.precision = getattr(args, 'precision', 'INT4')
+    dlargs.precision = getattr(args, 'precision', 'MIXED')
     dlargs.cache_dir = getattr(args, 'cache_dir', None)
     dlargs.token = getattr(args, 'token', None)
 
@@ -563,6 +563,12 @@ def cmd_clean(args):
         a_count += 1
     print(f"Removed {a_count} .a files" if a_count else "No .a files found")
 
+    bin_count = 0
+    for bin_file in PROJECT_ROOT.rglob("*.bin"):
+        bin_file.unlink()
+        bin_count += 1
+    print(f"Removed {bin_count} .bin files" if bin_count else "No .bin files found")
+
     xcf_count = 0
     for xcf_dir in PROJECT_ROOT.rglob("*.xcframework"):
         if xcf_dir.is_dir():
@@ -718,7 +724,7 @@ def create_parser():
                                        auto downloads and spins up
 
     Optional flags:
-    --precision INT4|INT8|FP16         default: INT4
+    --precision MIXED|INT4|INT8|FP16   default: MIXED
     --token <token>                    HF token (for gated models)
 
    -----------------------------------------------------------------
@@ -727,7 +733,7 @@ def create_parser():
                                        see supported weights on ReadMe
 
     Optional flags:
-    --precision INT4|INT8|FP16         quantization (default: INT4)
+    --precision MIXED|INT4|INT8|FP16   quantization (default: MIXED)
     --token <token>                    HuggingFace API token
 
   -----------------------------------------------------------------
@@ -736,7 +742,7 @@ def create_parser():
                                        supports LoRA adapter merging
 
     Optional flags:
-    --precision INT4|INT8|FP16         quantization (default: INT4)
+    --precision MIXED|INT4|INT8|FP16   quantization (default: MIXED)
     --lora <path>                      LoRA adapter path to merge
     --token <token>                    HuggingFace API token
 
@@ -799,8 +805,8 @@ def create_parser():
     download_parser = subparsers.add_parser('download', help='Download and convert model weights')
     download_parser.add_argument('model_id', nargs='?', default=DEFAULT_MODEL_ID,
                                  help=f'HuggingFace model ID (default: {DEFAULT_MODEL_ID})')
-    download_parser.add_argument('--precision', choices=['INT4', 'INT8', 'FP16'], default='INT4',
-                                 help='Quantization precision (default: INT4)')
+    download_parser.add_argument('--precision', choices=['MIXED', 'INT4', 'INT8', 'FP16'], default='MIXED',
+                                 help='Quantization precision (default: MIXED)')
     download_parser.add_argument('--cache-dir', help='Cache directory for HuggingFace models')
     download_parser.add_argument('--token', help='HuggingFace API token')
 
@@ -813,8 +819,8 @@ def create_parser():
     run_parser = subparsers.add_parser('run', help='Build, download (if needed), and run chat')
     run_parser.add_argument('model_id', nargs='?', default=DEFAULT_MODEL_ID,
                             help=f'HuggingFace model ID (default: {DEFAULT_MODEL_ID})')
-    run_parser.add_argument('--precision', choices=['INT4', 'INT8', 'FP16'], default='INT4',
-                            help='Quantization precision (default: INT4)')
+    run_parser.add_argument('--precision', choices=['MIXED', 'INT4', 'INT8', 'FP16'], default='MIXED',
+                            help='Quantization precision (default: MIXED)')
     run_parser.add_argument('--cache-dir', help='Cache directory for HuggingFace models')
     run_parser.add_argument('--token', help='HuggingFace API token')
     run_parser.add_argument('--no-build', action='store_true', help='Skip building Cactus before running')
@@ -822,8 +828,8 @@ def create_parser():
     eval_parser = subparsers.add_parser('eval', help='Run evaluation scripts located outside the cactus submodule')
     eval_parser.add_argument('model_id', nargs='?', default=DEFAULT_MODEL_ID,
                              help=f'HuggingFace model ID (default: {DEFAULT_MODEL_ID})')
-    eval_parser.add_argument('--precision', choices=['INT4', 'INT8', 'FP16'], default='INT4',
-                             help='Quantization precision (default: INT4)')
+    eval_parser.add_argument('--precision', choices=['MIXED', 'INT4', 'INT8', 'FP16'], default='MIXED',
+                             help='Quantization precision (default: MIXED)')
     eval_parser.add_argument('--cache-dir', help='Cache directory for HuggingFace models')
     eval_parser.add_argument('--token', help='HuggingFace API token')
     eval_parser.add_argument('--no-build', action='store_true', help='Skip building Cactus before running evals')
@@ -838,7 +844,7 @@ def create_parser():
                              help='Model to use for tests')
     test_parser.add_argument('--transcribe_model', default='openai/whisper-small',
                              help='Transcribe model to use')
-    test_parser.add_argument('--precision', choices=['INT4', 'INT8', 'FP16'],
+    test_parser.add_argument('--precision', choices=['MIXED', 'INT4', 'INT8', 'FP16'],
                              help='Regenerate weights with this precision (deletes existing weights)')
     test_parser.add_argument('--no-rebuild', action='store_true',
                              help='Skip building cactus library and tests')
@@ -854,8 +860,8 @@ def create_parser():
     convert_parser.add_argument('model_name', help='HuggingFace model name')
     convert_parser.add_argument('output_dir', nargs='?', default=None,
                                 help='Output directory (default: weights/<model_name>)')
-    convert_parser.add_argument('--precision', choices=['INT4', 'INT8', 'FP16'], default='INT4',
-                                help='Quantization precision (default: INT4)')
+    convert_parser.add_argument('--precision', choices=['MIXED', 'INT4', 'INT8', 'FP16'], default='MIXED',
+                                help='Quantization precision (default: MIXED)')
     convert_parser.add_argument('--cache-dir', help='Cache directory for HuggingFace models')
     convert_parser.add_argument('--token', help='HuggingFace API token')
     convert_parser.add_argument('--lora', help='Path to LoRA adapter (local path or HuggingFace ID) to merge before conversion')

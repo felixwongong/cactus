@@ -774,9 +774,26 @@ static bool test_stream_transcription() {
     }
 
     double elapsed = timer.elapsed_ms();
+
+    size_t word_count = 0;
+    bool in_word = false;
+    for (char c : full_transcription) {
+        if (std::isspace(c)) {
+            in_word = false;
+        } else if (!in_word) {
+            in_word = true;
+            word_count++;
+        }
+    }
+
     std::cout << "\n[Results]\n"
-              << "├─ Total time: " << std::fixed << std::setprecision(2) << (elapsed / 1000.0) << " sec\n"
-              << "└─ Full transcription: \"" << full_transcription << "\"" << std::endl;
+              << "  \"success\": true,\n"
+              << "  \"total_time_ms\": " << std::fixed << std::setprecision(2) << elapsed << ",\n"
+              << "  \"audio_chunks\": " << ((pcm_samples.size() + chunk_size - 1) / chunk_size) << ",\n"
+              << "  \"pcm_samples\": " << pcm_samples.size() << ",\n"
+              << "  \"duration_sec\": " << std::setprecision(2) << (pcm_samples.size() / 16000.0) << ",\n"
+              << "  \"words_transcribed\": " << word_count << "\n"
+              << "├─ Full transcription: \"" << full_transcription << "\"" << std::endl;
 
     cactus_stream_transcribe_destroy(stream);
     cactus_destroy(model);
