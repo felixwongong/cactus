@@ -60,6 +60,8 @@ Run chat completion. Returns JSON string with response and metrics.
 | `max_tokens` | `int` | Maximum tokens to generate |
 | `stop_sequences` | `list` | Stop sequences |
 | `force_tools` | `bool` | Constrain output to tool call format |
+| `tool_rag_top_k` | `int` | Select top-k relevant tools via Tool RAG (default: 2, 0 = use all tools) |
+| `confidence_threshold` | `float` | Minimum confidence for local generation (default: 0.7, triggers cloud_handoff when below) |
 | `callback` | `fn` | Streaming callback `fn(token, token_id, user_data)` |
 
 ```python
@@ -127,7 +129,7 @@ cactus_complete(model, messages, callback=on_token)
 }
 ```
 
-When `cloud_handoff` is `True`, the model detected high uncertainty (entropy > 0.23) and recommends deferring to a cloud-based model for better results. Handle this in your application:
+When `cloud_handoff` is `True`, the model's confidence dropped below `confidence_threshold` (default: 0.7) and recommends deferring to a cloud-based model for better results. Handle this in your application:
 
 ```python
 result = json.loads(cactus_complete(model, messages))

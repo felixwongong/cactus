@@ -61,6 +61,8 @@ struct CactusModelHandle {
     std::unique_ptr<cactus::engine::index::Index> corpus_index;
     std::string corpus_dir;
     size_t corpus_embedding_dim = 0;
+    std::vector<std::vector<float>> tool_embeddings;
+    std::vector<std::string> tool_texts;  
 
     CactusModelHandle() : should_stop(false) {}
 };
@@ -101,6 +103,12 @@ struct ToolFunction {
 
 } // namespace ffi
 } // namespace cactus
+
+std::vector<cactus::ffi::ToolFunction> select_relevant_tools(
+    CactusModelHandle* handle,
+    const std::string& query,
+    const std::vector<cactus::ffi::ToolFunction>& all_tools,
+    size_t top_k);
 
 #include "gemma_tools.h"
 
@@ -289,12 +297,16 @@ inline void parse_options_json(const std::string& json,
                                float& temperature, float& top_p,
                                size_t& top_k, size_t& max_tokens,
                                std::vector<std::string>& stop_sequences,
-                               bool& force_tools) {
+                               bool& force_tools,
+                               size_t& tool_rag_top_k,
+                               float& confidence_threshold) {
     temperature = 0.0f;
     top_p = 0.0f;
     top_k = 0;
     max_tokens = 100;
     force_tools = false;
+    tool_rag_top_k = 2;  // 0 = disabled, N = select top N relevant tools
+    confidence_threshold = 0.7f;  // trigger cloud handoff when confidence < this value
     stop_sequences.clear();
 
     if (json.empty()) return;
@@ -328,6 +340,18 @@ inline void parse_options_json(const std::string& json,
         pos = json.find(':', pos) + 1;
         while (pos < json.length() && std::isspace(json[pos])) pos++;
         force_tools = (json.substr(pos, 4) == "true");
+    }
+
+    pos = json.find("\"tool_rag_top_k\"");
+    if (pos != std::string::npos) {
+        pos = json.find(':', pos) + 1;
+        tool_rag_top_k = std::stoul(json.substr(pos));
+    }
+
+    pos = json.find("\"confidence_threshold\"");
+    if (pos != std::string::npos) {
+        pos = json.find(':', pos) + 1;
+        confidence_threshold = std::stof(json.substr(pos));
     }
 
     pos = json.find("\"stop_sequences\"");

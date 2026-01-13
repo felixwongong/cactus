@@ -101,9 +101,23 @@ int cactus_complete(
     "temperature": 0.7,
     "top_p": 0.95,
     "top_k": 40,
-    "stop_sequences": ["<|im_end|>", "<end_of_turn>"]
+    "stop_sequences": ["<|im_end|>", "<end_of_turn>"],
+    "force_tools": false,
+    "tool_rag_top_k": 2,
+    "confidence_threshold": 0.7
 }
 ```
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `max_tokens` | int | 100 | Maximum tokens to generate |
+| `temperature` | float | 0.0 | Sampling temperature |
+| `top_p` | float | 0.0 | Top-p (nucleus) sampling |
+| `top_k` | int | 0 | Top-k sampling |
+| `stop_sequences` | array | [] | Stop generation on these strings |
+| `force_tools` | bool | false | Constrain output to tool call format |
+| `tool_rag_top_k` | int | 2 | Select top-k relevant tools via Tool RAG (0 = disabled, use all tools) |
+| `confidence_threshold` | float | 0.7 | Minimum confidence for local generation; triggers cloud_handoff when below |
 
 **Response Format** (all fields always present):
 ```json
@@ -145,7 +159,7 @@ int cactus_complete(
 }
 ```
 
-When `cloud_handoff` is true, the model determined that output uncertainty is too high (entropy > 0.23). The application should defer to a cloud-based model for better results.
+When `cloud_handoff` is true, the model's confidence dropped below `confidence_threshold` (default: 0.7). The application should defer to a cloud-based model for better results.
 
 **Error Response:**
 ```json

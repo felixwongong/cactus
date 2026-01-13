@@ -6,6 +6,7 @@ Python bindings for Cactus Engine via FFI. Provides access to:
 - Audio transcription with Whisper models
 - Text, image, and audio embeddings
 - RAG (Retrieval-Augmented Generation) queries
+- Tool RAG (automatic tool selection based on query relevance)
 - Streaming transcription
 
 Response Format:
@@ -19,7 +20,9 @@ All completion responses use a unified JSON format with all fields always presen
     "confidence": float,    # Model confidence (1.0 - normalized_entropy)
     "time_to_first_token_ms": float,
     "total_time_ms": float,
-    "tokens_per_second": float,
+    "prefill_tps": float,
+    "decode_tps": float,
+    "ram_usage_mb": float,
     "prefill_tokens": int,
     "decode_tokens": int,
     "total_tokens": int
@@ -171,6 +174,8 @@ def cactus_complete(
     max_tokens=None,
     stop_sequences=None,
     force_tools=False,
+    tool_rag_top_k=None,
+    confidence_threshold=None,
     callback=None
 ):
     """
@@ -186,6 +191,8 @@ def cactus_complete(
         max_tokens: Maximum tokens to generate
         stop_sequences: List of stop sequences
         force_tools: Constrain output to tool call format
+        tool_rag_top_k: Select top-k relevant tools via Tool RAG (default: 2, 0 = disabled)
+        confidence_threshold: Minimum confidence for local generation (default: 0.7, triggers cloud_handoff when below)
         callback: Streaming callback fn(token, token_id, user_data)
 
     Returns:
@@ -199,13 +206,15 @@ def cactus_complete(
             "confidence": float,    # Model confidence (1.0 - normalized_entropy)
             "time_to_first_token_ms": float,
             "total_time_ms": float,
-            "tokens_per_second": float,
+            "prefill_tps": float,
+            "decode_tps": float,
+            "ram_usage_mb": float,
             "prefill_tokens": int,
             "decode_tokens": int,
             "total_tokens": int
         }
 
-        When cloud_handoff is True, the model detected high uncertainty (entropy > 0.5)
+        When cloud_handoff is True, the model confidence dropped below confidence_threshold
         and recommends deferring to a cloud-based model for better results.
     """
     if isinstance(messages, list):
@@ -233,6 +242,10 @@ def cactus_complete(
         options["stop_sequences"] = stop_sequences
     if force_tools:
         options["force_tools"] = True
+    if tool_rag_top_k is not None:
+        options["tool_rag_top_k"] = tool_rag_top_k
+    if confidence_threshold is not None:
+        options["confidence_threshold"] = confidence_threshold
 
     options_json = json.dumps(options) if options else None
 

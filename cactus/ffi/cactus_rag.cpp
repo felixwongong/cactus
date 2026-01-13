@@ -188,6 +188,158 @@ std::string retrieve_rag_context(CactusModelHandle* handle, const std::string& q
     }
 }
 
+static std::string tool_to_text(const ToolFunction& tool) {
+    return tool.name + " " + tool.description;
+}
+
+static float cosine_similarity(const std::vector<float>& a, const std::vector<float>& b) {
+    if (a.size() != b.size() || a.empty()) return 0.0f;
+
+    float dot = 0.0f, norm_a = 0.0f, norm_b = 0.0f;
+    for (size_t i = 0; i < a.size(); ++i) {
+        dot += a[i] * b[i];
+        norm_a += a[i] * a[i];
+        norm_b += b[i] * b[i];
+    }
+
+    float denom = std::sqrt(norm_a) * std::sqrt(norm_b);
+    return denom > 0.0f ? dot / denom : 0.0f;
+}
+
+std::vector<cactus::ffi::ToolFunction> select_relevant_tools(
+    CactusModelHandle* handle,
+    const std::string& query,
+    const std::vector<cactus::ffi::ToolFunction>& all_tools,
+    size_t top_k
+) {
+    using cactus::ffi::ToolFunction;
+    if (!handle || all_tools.empty() || top_k == 0) return all_tools;
+
+    // If we have fewer tools than top_k, just return all
+    if (all_tools.size() <= top_k) return all_tools;
+
+    auto* tokenizer = handle->model->get_tokenizer();
+    if (!tokenizer) {
+        CACTUS_LOG_WARN("tool_rag", "No tokenizer available, returning all tools");
+        return all_tools;
+    }
+
+    // Build tool texts and embeddings if not cached or tool set changed
+    bool need_recompute = (handle->tool_texts.size() != all_tools.size());
+    if (!need_recompute) {
+        for (size_t i = 0; i < all_tools.size(); ++i) {
+            if (tool_to_text(all_tools[i]) != handle->tool_texts[i]) {
+                need_recompute = true;
+                break;
+            }
+        }
+    }
+
+    if (need_recompute) {
+        CACTUS_LOG_DEBUG("tool_rag", "Computing embeddings for " << all_tools.size() << " tools");
+        handle->tool_texts.clear();
+        handle->tool_embeddings.clear();
+        handle->tool_texts.reserve(all_tools.size());
+        handle->tool_embeddings.reserve(all_tools.size());
+
+        for (const auto& tool : all_tools) {
+            std::string text = tool_to_text(tool);
+            handle->tool_texts.push_back(text);
+
+            std::vector<uint32_t> tokens = tokenizer->encode(text);
+            if (!tokens.empty()) {
+                std::vector<float> emb = handle->model->get_embeddings(tokens, true, true);
+                handle->tool_embeddings.push_back(std::move(emb));
+            } else {
+                handle->tool_embeddings.push_back({});
+            }
+        }
+    }
+
+    // Embed the query
+    std::vector<uint32_t> query_tokens = tokenizer->encode(query);
+    if (query_tokens.empty()) {
+        CACTUS_LOG_WARN("tool_rag", "Empty query, returning all tools");
+        return all_tools;
+    }
+
+    std::vector<float> query_embedding = handle->model->get_embeddings(query_tokens, true, true);
+    if (query_embedding.empty()) {
+        CACTUS_LOG_WARN("tool_rag", "Failed to get query embedding, returning all tools");
+        return all_tools;
+    }
+
+    auto query_words = tokenize_words(query);
+
+    // Compute BM25 stats
+    float total_len = 0.0f;
+    std::unordered_map<std::string, int> doc_freqs;
+    for (const auto& text : handle->tool_texts) {
+        auto words = tokenize_words(text);
+        total_len += words.size();
+        std::unordered_set<std::string> unique_words(words.begin(), words.end());
+        for (const auto& w : unique_words) {
+            doc_freqs[w]++;
+        }
+    }
+    float avg_doc_len = total_len / handle->tool_texts.size();
+
+    // Compute embedding similarity scores
+    std::vector<std::pair<float, size_t>> emb_ranked;
+    for (size_t i = 0; i < handle->tool_embeddings.size(); ++i) {
+        float sim = cosine_similarity(query_embedding, handle->tool_embeddings[i]);
+        emb_ranked.emplace_back(sim, i);
+    }
+
+    // Compute BM25 scores
+    std::vector<std::pair<float, size_t>> bm25_ranked;
+    for (size_t i = 0; i < handle->tool_texts.size(); ++i) {
+        float bm25 = compute_bm25_score(
+            query_words, handle->tool_texts[i], avg_doc_len, doc_freqs, handle->tool_texts.size()
+        );
+        bm25_ranked.emplace_back(bm25, i);
+    }
+
+    // Sort by scores (descending)
+    std::sort(emb_ranked.begin(), emb_ranked.end(),
+        [](const auto& a, const auto& b) { return a.first > b.first; });
+    std::sort(bm25_ranked.begin(), bm25_ranked.end(),
+        [](const auto& a, const auto& b) { return a.first > b.first; });
+
+    // Build rank maps
+    std::unordered_map<size_t, size_t> emb_rank_map, bm25_rank_map;
+    for (size_t r = 0; r < emb_ranked.size(); ++r) {
+        emb_rank_map[emb_ranked[r].second] = r + 1;
+    }
+    for (size_t r = 0; r < bm25_ranked.size(); ++r) {
+        bm25_rank_map[bm25_ranked[r].second] = r + 1;
+    }
+
+    // Compute RRF scores
+    std::vector<std::pair<float, size_t>> rrf_scored;
+    for (size_t i = 0; i < all_tools.size(); ++i) {
+        float rrf = RRF_EMB_WEIGHT / (RRF_K + emb_rank_map[i]) +
+                    RRF_BM25_WEIGHT / (RRF_K + bm25_rank_map[i]);
+        rrf_scored.emplace_back(rrf, i);
+    }
+
+    // Sort by RRF score (descending)
+    std::sort(rrf_scored.begin(), rrf_scored.end(),
+        [](const auto& a, const auto& b) { return a.first > b.first; });
+
+    // Select top-k tools
+    std::vector<ToolFunction> selected;
+    selected.reserve(top_k);
+    for (size_t i = 0; i < top_k && i < rrf_scored.size(); ++i) {
+        size_t idx = rrf_scored[i].second;
+        selected.push_back(all_tools[idx]);
+        CACTUS_LOG_DEBUG("tool_rag", "Selected tool: " << all_tools[idx].name << " (RRF: " << rrf_scored[i].first << ")");
+    }
+
+    CACTUS_LOG_INFO("tool_rag", "Selected " << selected.size() << " of " << all_tools.size() << " tools using hybrid ranking");
+    return selected;
+}
+
 extern "C" {
 
 int cactus_rag_query(

@@ -7,8 +7,6 @@
 using namespace cactus::engine;
 using namespace cactus::ffi;
 
-static constexpr float CLOUD_HANDOFF_ENTROPY_THRESHOLD = 0.3f;
-static constexpr float ROLLING_ENTROPY_SPIKE_THRESHOLD = 0.3f;
 static constexpr size_t ROLLING_ENTROPY_WINDOW = 10;
 
 extern "C" {
@@ -77,16 +75,29 @@ int cactus_complete(
             }
         }
 
-        float temperature, top_p;
-        size_t top_k, max_tokens;
+        float temperature, top_p, confidence_threshold;
+        size_t top_k, max_tokens, tool_rag_top_k;
         std::vector<std::string> stop_sequences;
-        bool force_tools = false;
+        bool force_tools;
         parse_options_json(options_json ? options_json : "",
-                          temperature, top_p, top_k, max_tokens, stop_sequences, force_tools);
+                          temperature, top_p, top_k, max_tokens, stop_sequences, force_tools, tool_rag_top_k, confidence_threshold);
 
         std::vector<ToolFunction> tools;
         if (tools_json && strlen(tools_json) > 0)
             tools = parse_tools_json(tools_json);
+
+        if (tool_rag_top_k > 0 && tools.size() > tool_rag_top_k) {
+            std::string query;
+            for (auto it = messages.rbegin(); it != messages.rend(); ++it) {
+                if (it->role == "user") {
+                    query = it->content;
+                    break;
+                }
+            }
+            if (!query.empty()) {
+                tools = select_relevant_tools(handle, query, tools, tool_rag_top_k);
+            }
+        }
 
         if (force_tools && !tools.empty()) {
             std::vector<std::string> function_names;
@@ -186,7 +197,7 @@ int cactus_complete(
 
         float confidence = 1.0f - first_token_entropy;
 
-        if (first_token_entropy > CLOUD_HANDOFF_ENTROPY_THRESHOLD) {
+        if (confidence < confidence_threshold) {
             double prefill_tps = time_to_first_token > 0 ? (prompt_tokens * 1000.0) / time_to_first_token : 0.0;
             std::string result = construct_cloud_handoff_json(confidence, time_to_first_token, prefill_tps, prompt_tokens);
             if (result.length() >= buffer_size) {
@@ -246,8 +257,9 @@ int cactus_complete(
                     entropy_window.erase(entropy_window.begin());
                 }
 
-                float rolling_mean = entropy_sum / entropy_window.size();
-                if (rolling_mean > ROLLING_ENTROPY_SPIKE_THRESHOLD) {
+                float rolling_mean_entropy = entropy_sum / entropy_window.size();
+                float rolling_confidence = 1.0f - rolling_mean_entropy;
+                if (rolling_confidence < confidence_threshold) {
                     entropy_spike_handoff = true;
                     break;
                 }

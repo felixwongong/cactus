@@ -146,11 +146,11 @@ int cactus_transcribe(
         std::lock_guard<std::mutex> lock(handle->model_mutex);
         handle->should_stop = false;
 
-        float temperature, top_p;
-        size_t top_k, max_tokens;
+        float temperature, top_p, confidence_threshold;
+        size_t top_k, max_tokens, tool_rag_top_k;
         std::vector<std::string> stop_sequences;
-        bool force_tools = false;  
-        parse_options_json(options_json ? options_json : "", temperature, top_p, top_k, max_tokens, stop_sequences, force_tools);
+        bool force_tools;
+        parse_options_json(options_json ? options_json : "", temperature, top_p, top_k, max_tokens, stop_sequences, force_tools, tool_rag_top_k, confidence_threshold);
 
         std::vector<float> mel_bins;
         if (audio_file_path == nullptr) {
