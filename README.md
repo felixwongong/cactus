@@ -4,15 +4,15 @@ Cross-platform & energy-efficient kernels, runtime and AI inference engine for m
 
 ```
 ┌─────────────────┐
-│   Cactus FFI    │ ←── OpenAI compatible C API for integration (tool call, RAG, cloud handoff, etc.)
+│   Cactus FFI    │ ←── OpenAI compatible C API for integration (tools, RAG, cloud handoff)
 └─────────────────┘
          │
 ┌─────────────────┐
-│  Cactus Engine  │ ←── High-level transformer engine (NPU support, INT4/INT8/FP16/MIXED weights)
+│  Cactus Engine  │ ←── High-level transformer engine (NPU support, INT4/INT8/FP16/MIXED)
 └─────────────────┘
          │
 ┌─────────────────┐
-│ Cactus Models   │ ←── Implements SOTA models using Cactus Graphs (Qwen, Gemma, Whisper, LFM)
+│ Cactus Models   │ ←── Implements SOTA models using Cactus Graphs 
 └─────────────────┘
          │
 ┌─────────────────┐  
@@ -20,7 +20,7 @@ Cross-platform & energy-efficient kernels, runtime and AI inference engine for m
 └─────────────────┘
          │
 ┌─────────────────┐
-│ Cactus Kernels  │ ←── Low-level ARM-specific SIMD operations (think CUDA kernels for mobile)
+│ Cactus Kernels  │ ←── Low-level ARM-specific SIMD operations (think CUDA for mobile)
 └─────────────────┘
 ```
 
