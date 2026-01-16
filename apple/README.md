@@ -1,8 +1,6 @@
-# Cactus for iOS & macOS
+# Cactus for Swift Multiplatform
 
-Run AI models on-device with a simple Swift API, 
-for feature-rich Swift package for both iOS and Android, 
-use [Swift Multiplatform SDK](https://github.com/mhayes853/swift-cactus)
+Run AI models on-device with a simple Swift API on iOS, macOS, and Android.
 
 ## Building
 
@@ -20,22 +18,43 @@ Build outputs (in `apple/`):
 | `libcactus-device.a` | Static library for iOS device |
 | `libcactus-simulator.a` | Static library for iOS simulator |
 
+For Android, build `libcactus.so` from the `android/` directory.
+
 ## Integration
 
-### Option A: XCFramework (Recommended)
+### iOS/macOS: XCFramework (Recommended)
 
-1. Drag `apple/cactus-ios.xcframework` (or `cactus-macos.xcframework`) into your Xcode project
+1. Drag `cactus-ios.xcframework` (or `cactus-macos.xcframework`) into your Xcode project
 2. Ensure "Embed & Sign" is selected in "Frameworks, Libraries, and Embedded Content"
-3. Copy `apple/Cactus.swift` into your project
-4. Done - no bridging header needed!
+3. Copy `Cactus.swift` into your project
 
-### Option B: Static Library
+### iOS/macOS: Static Library
 
 1. Add `libcactus-device.a` (or `libcactus-simulator.a`) to "Link Binary With Libraries"
 2. Create a folder with `cactus_ffi.h` and `module.modulemap`, add to Build Settings:
    - "Header Search Paths" → path to folder
    - "Import Paths" (Swift) → path to folder
-3. Copy `apple/Cactus.swift` into your project
+3. Copy `Cactus.swift` into your project
+
+### Android (Swift SDK)
+
+Requires [Swift SDK for Android](https://www.swift.org/documentation/articles/swift-sdk-for-android-getting-started.html).
+
+1. Copy files to your Swift project:
+   - `libcactus.so` → your library path
+   - `cactus_ffi.h` → your include path
+   - `module.android.modulemap` → rename to `module.modulemap` in include path
+   - `Cactus.swift` → your sources
+
+2. Build with Swift SDK for Android:
+```bash
+swift build --swift-sdk aarch64-unknown-linux-android28 \
+    -Xswiftc -I/path/to/include \
+    -Xlinker -L/path/to/lib \
+    -Xlinker -lcactus
+```
+
+3. Bundle `libcactus.so` with your APK in `jniLibs/arm64-v8a/`
 
 ## Usage
 
@@ -46,8 +65,6 @@ import Foundation
 
 let model = try Cactus(modelPath: "/path/to/model")
 let result = try model.complete("What is the capital of France?")
-
-print(result.text)
 ```
 
 ### Chat Messages
@@ -57,9 +74,6 @@ let result = try model.complete(messages: [
     .system("You are a helpful assistant."),
     .user("What is 2 + 2?")
 ])
-
-print(result.text)
-print("Tokens/sec: \(result.decodeTokensPerSecond)")
 ```
 
 ### Completion Options
@@ -193,26 +207,12 @@ struct CompletionOptions {
 
 ## Requirements
 
-- iOS 14.0+ / macOS 13.0+
+**Apple Platforms:**
+- iOS 14.0+ / macOS 13.0+ / tvOS 14.0+ / watchOS 7.0+
 - Xcode 14.0+
 - Swift 5.7+
 
-## Troubleshooting
-
-### "Symbol not found" errors
-
-Make sure the framework is properly linked:
-- Check "Frameworks, Libraries, and Embedded Content" in your target
-- Set "Embed" to "Embed & Sign" for XCFrameworks
-
-### Model not loading
-
-- Verify the model path is accessible at runtime
-- Check that `config.txt` exists in the model directory
-- Ensure the app has file access permissions
-
-### Simulator vs Device
-
-The XCFramework contains both architectures. If using static libraries:
-- Use `libcactus-simulator.a` for simulator builds
-- Use `libcactus-device.a` for device builds
+**Android:**
+- Swift 6.0+ with [Swift SDK for Android](https://www.swift.org/documentation/articles/swift-sdk-for-android-getting-started.html)
+- Android NDK 27d+
+- Android API 28+ / arm64-v8a

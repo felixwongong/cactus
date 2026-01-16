@@ -402,7 +402,9 @@ private func tokenCallbackBridge(token: UnsafePointer<CChar>?, tokenId: UInt32, 
 }
 
 
-@available(iOS 13.0, macOS 10.15, *)
+#if os(iOS) || os(macOS) || os(tvOS) || os(watchOS) || os(visionOS)
+@available(iOS 13.0, macOS 10.15, tvOS 13.0, watchOS 6.0, *)
+#endif
 public extension Cactus {
 
     func complete(
