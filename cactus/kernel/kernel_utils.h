@@ -3,6 +3,8 @@
 
 #include <arm_neon.h>
 #if defined(__APPLE__)
+#include <sys/types.h>
+#include <sys/sysctl.h>
 #include <TargetConditionals.h>
 #endif
 #if defined(__ANDROID__)
@@ -75,7 +77,13 @@ inline int32x4_t accum_matmul(int32x4_t acc, int8x16_t a, int8x16_t b) {
 #elif defined(__APPLE__) && defined(__aarch64__)
 
 inline bool cactus_has_i8mm() {
-    return true;
+    static int8_t supported = -1;
+    if (supported == -1) {
+        int v = 0; 
+        size_t sz = sizeof(v);
+        supported = sysctlbyname("hw.optional.arm.FEAT_I8MM", &v, &sz, nullptr, 0) == 0 && v;
+    }
+    return supported;
 }
 
 __attribute__((target("i8mm")))
