@@ -5,17 +5,19 @@
 
 size_t BufferPool::round_up_size(size_t size) const {
     constexpr size_t ALIGNMENT = 64;
-    constexpr size_t MIN_BUCKET = 1024;
-
-    if (size < MIN_BUCKET) return MIN_BUCKET;
+    constexpr size_t SMALL_STEP = 256; 
+    constexpr size_t SMALL_THRESHOLD = 4096; 
+    constexpr size_t LARGE_STEP = 4096;    
 
     size_t aligned = (size + ALIGNMENT - 1) & ~(ALIGNMENT - 1);
 
-    size_t bucket = MIN_BUCKET;
-    while (bucket < aligned) {
-        bucket *= 2;
+    if (aligned == 0) return SMALL_STEP;
+
+    if (aligned <= SMALL_THRESHOLD) {
+        return ((aligned + SMALL_STEP - 1) / SMALL_STEP) * SMALL_STEP;
     }
-    return bucket;
+
+    return ((aligned + LARGE_STEP - 1) / LARGE_STEP) * LARGE_STEP;
 }
 
 char* BufferPool::acquire(size_t byte_size) {
@@ -162,16 +164,13 @@ void BufferDesc::set_external(void* ptr) {
     pooled_data = nullptr;
 }
 
-// GraphNode implementation
 GraphNode::GraphNode(size_t node_id, OpType type) : id(node_id), op_type(type) {}
 
-// TensorConfig implementation
 TensorConfig& TensorConfig::global() {
     static TensorConfig instance;
     return instance;
 }
 
-// BroadcastInfo implementation
 BroadcastInfo BroadcastInfo::compute(const std::vector<size_t>& lhs, const std::vector<size_t>& rhs) {
     BroadcastInfo info;
     size_t max_dims = std::max(lhs.size(), rhs.size());
@@ -192,7 +191,6 @@ BroadcastInfo BroadcastInfo::compute(const std::vector<size_t>& lhs, const std::
     return info;
 }
 
-// ValidationUtils implementation
 namespace ValidationUtils {
     void validate_tensor_dims(const std::vector<size_t>& shape, size_t required_dims, const std::string& op_name) {
         if (shape.size() != required_dims) {
