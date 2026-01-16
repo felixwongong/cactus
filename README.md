@@ -196,10 +196,10 @@ python tools/example.py
 
 # Using in your apps
 
+- [React Native SDK](https://github.com/cactus-compute/cactus-react-native)
+- [Swift Multiplatform SDK](https://github.com/mhayes853/swift-cactus)
 - [Kotlin Multiplatform SDK](https://github.com/cactus-compute/cactus-kotlin)
 - [Flutter SDK](https://github.com/cactus-compute/cactus-flutter)
-- [React Native SDK](https://github.com/cactus-compute/cactus-react-native)
-- [Swift SDK](https://github.com/mhayes853/swift-cactus)
 - [Rust SDK](https://github.com/mrsarac/cactus-rs)
 
 # Try demo apps
