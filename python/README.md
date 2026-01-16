@@ -275,12 +275,12 @@ print(json.loads(response)["response"])
 
 ## Full Example
 
-See `tools/example.py` for a complete example covering:
+See `python/example.py` for a complete example covering:
 - Text completion
 - Text/image/audio embeddings
 - Vision (VLM)
 - Speech transcription
 
 ```bash
-python tools/example.py
+python python/example.py
 ```

@@ -210,6 +210,8 @@ def cmd_build(args):
         return cmd_build_apple(args)
     if getattr(args, 'android', False):
         return cmd_build_android(args)
+    if getattr(args, 'flutter', False):
+        return cmd_build_flutter(args)
 
     print_color(BLUE, "Building Cactus chat...")
     print("=" * 23)
@@ -323,6 +325,30 @@ def cmd_build_android(args):
         return 1
 
     print_color(GREEN, "Android build complete!")
+    return 0
+
+
+def cmd_build_flutter(args):
+    """Build Cactus for Flutter (iOS, macOS, Android)."""
+    print_color(BLUE, "Building Cactus for Flutter...")
+    print("=" * 32)
+
+    build_script = PROJECT_ROOT / "flutter" / "build.sh"
+    if not build_script.exists():
+        print_color(RED, f"Error: build.sh not found at {build_script}")
+        return 1
+
+    result = run_command(str(build_script), cwd=PROJECT_ROOT / "flutter", check=False)
+    if result.returncode != 0:
+        print_color(RED, "Flutter build failed")
+        return 1
+
+    print_color(GREEN, "Flutter build complete!")
+    print()
+    print("Output:")
+    print(f"  flutter/libcactus.so")
+    print(f"  flutter/cactus-ios.xcframework")
+    print(f"  flutter/cactus-macos.xcframework")
     return 0
 
 
@@ -754,6 +780,7 @@ def create_parser():
     Optional flags:
     --apple                            build for Apple (iOS/macOS)
     --android                          build for Android
+    --flutter                          build for Flutter (all platforms)
 
   -----------------------------------------------------------------
 
@@ -781,11 +808,11 @@ def create_parser():
   Python bindings:
 
   Cactus python package is auto installed for researchers and testing
-  Please see tools/examples.py and run the following instructions.
+  Please see python/example.py and run the following instructions.
 
   1. cactus build
   2. cactus download LiquidAI/LFM2-VL-450M
-  3. python tools/example.py
+  3. python python/example.py
 
   Note: Use any supported model
 
@@ -815,6 +842,8 @@ def create_parser():
                               help='Build for Apple platforms (iOS/macOS)')
     build_parser.add_argument('--android', action='store_true',
                               help='Build for Android')
+    build_parser.add_argument('--flutter', action='store_true',
+                              help='Build for Flutter (iOS, macOS, Android)')
 
     run_parser = subparsers.add_parser('run', help='Build, download (if needed), and run chat')
     run_parser.add_argument('model_id', nargs='?', default=DEFAULT_MODEL_ID,
