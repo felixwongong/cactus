@@ -16,6 +16,8 @@ Build output:
 | `cactus-ios.xcframework` | iOS |
 | `cactus-macos.xcframework` | macOS |
 
+see the main [README.md](../README.md) for how to use CLI & download weight
+
 ## Integration
 
 ### Android

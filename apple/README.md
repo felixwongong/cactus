@@ -5,11 +5,12 @@ Run AI models on-device with a simple Swift API on iOS, macOS, and Android.
 ## Building
 
 ```bash
-cd apple
-./build.sh
+cactus build --apple
 ```
 
 Build outputs (in `apple/`):
+
+see the main [README.md](../README.md) for how to use CLI & download weight
 
 | File | Description |
 |------|-------------|

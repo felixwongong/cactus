@@ -5,9 +5,11 @@ Python bindings for Cactus Engine via FFI. Auto-installed when you run `source .
 ## Getting Started
 
 ```bash
-# Setup environment and build
+# Setup environment
 source ./setup
-cactus build
+
+# Build shared library for Python
+cactus build --python
 
 # Download models
 cactus download LiquidAI/LFM2-VL-450M
@@ -17,7 +19,7 @@ cactus download openai/whisper-small
 ## Quick Example
 
 ```python
-from cactus_ffi import cactus_init, cactus_complete, cactus_destroy
+from cactus import cactus_init, cactus_complete, cactus_destroy
 import json
 
 model = cactus_init("weights/lfm2-vl-450m")

@@ -42,149 +42,153 @@ if platform.system() == "Darwin":
 else:
     _LIB_PATH = _DIR / "cactus" / "build" / "libcactus.so"
 
-_lib = None
-if _LIB_PATH.exists():
-    _lib = ctypes.CDLL(str(_LIB_PATH))
+if not _LIB_PATH.exists():
+    raise RuntimeError(
+        f"Cactus library not found at {_LIB_PATH}\n"
+        f"Please build first: cactus build --python"
+    )
 
-    _lib.cactus_init.argtypes = [ctypes.c_char_p, ctypes.c_char_p]
-    _lib.cactus_init.restype = ctypes.c_void_p
+_lib = ctypes.CDLL(str(_LIB_PATH))
 
-    _lib.cactus_complete.argtypes = [
-        ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_size_t,
-        ctypes.c_char_p, ctypes.c_char_p, TokenCallback, ctypes.c_void_p
-    ]
-    _lib.cactus_complete.restype = ctypes.c_int
+_lib.cactus_init.argtypes = [ctypes.c_char_p, ctypes.c_char_p]
+_lib.cactus_init.restype = ctypes.c_void_p
 
-    _lib.cactus_transcribe.argtypes = [
-        ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p,
-        ctypes.c_size_t, ctypes.c_char_p, TokenCallback, ctypes.c_void_p,
-        ctypes.POINTER(ctypes.c_uint8), ctypes.c_size_t
-    ]
-    _lib.cactus_transcribe.restype = ctypes.c_int
+_lib.cactus_complete.argtypes = [
+    ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_size_t,
+    ctypes.c_char_p, ctypes.c_char_p, TokenCallback, ctypes.c_void_p
+]
+_lib.cactus_complete.restype = ctypes.c_int
 
-    _lib.cactus_embed.argtypes = [
-        ctypes.c_void_p, ctypes.c_char_p, ctypes.POINTER(ctypes.c_float),
-        ctypes.c_size_t, ctypes.POINTER(ctypes.c_size_t), ctypes.c_bool
-    ]
-    _lib.cactus_embed.restype = ctypes.c_int
+_lib.cactus_transcribe.argtypes = [
+    ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p,
+    ctypes.c_size_t, ctypes.c_char_p, TokenCallback, ctypes.c_void_p,
+    ctypes.POINTER(ctypes.c_uint8), ctypes.c_size_t
+]
+_lib.cactus_transcribe.restype = ctypes.c_int
 
-    _lib.cactus_image_embed.argtypes = [
-        ctypes.c_void_p, ctypes.c_char_p, ctypes.POINTER(ctypes.c_float),
-        ctypes.c_size_t, ctypes.POINTER(ctypes.c_size_t)
-    ]
-    _lib.cactus_image_embed.restype = ctypes.c_int
+_lib.cactus_embed.argtypes = [
+    ctypes.c_void_p, ctypes.c_char_p, ctypes.POINTER(ctypes.c_float),
+    ctypes.c_size_t, ctypes.POINTER(ctypes.c_size_t), ctypes.c_bool
+]
+_lib.cactus_embed.restype = ctypes.c_int
 
-    _lib.cactus_audio_embed.argtypes = [
-        ctypes.c_void_p, ctypes.c_char_p, ctypes.POINTER(ctypes.c_float),
-        ctypes.c_size_t, ctypes.POINTER(ctypes.c_size_t)
-    ]
-    _lib.cactus_audio_embed.restype = ctypes.c_int
+_lib.cactus_image_embed.argtypes = [
+    ctypes.c_void_p, ctypes.c_char_p, ctypes.POINTER(ctypes.c_float),
+    ctypes.c_size_t, ctypes.POINTER(ctypes.c_size_t)
+]
+_lib.cactus_image_embed.restype = ctypes.c_int
 
-    _lib.cactus_reset.argtypes = [ctypes.c_void_p]
-    _lib.cactus_reset.restype = None
+_lib.cactus_audio_embed.argtypes = [
+    ctypes.c_void_p, ctypes.c_char_p, ctypes.POINTER(ctypes.c_float),
+    ctypes.c_size_t, ctypes.POINTER(ctypes.c_size_t)
+]
+_lib.cactus_audio_embed.restype = ctypes.c_int
 
-    _lib.cactus_stop.argtypes = [ctypes.c_void_p]
-    _lib.cactus_stop.restype = None
+_lib.cactus_reset.argtypes = [ctypes.c_void_p]
+_lib.cactus_reset.restype = None
 
-    _lib.cactus_destroy.argtypes = [ctypes.c_void_p]
-    _lib.cactus_destroy.restype = None
+_lib.cactus_stop.argtypes = [ctypes.c_void_p]
+_lib.cactus_stop.restype = None
 
-    _lib.cactus_get_last_error.argtypes = []
-    _lib.cactus_get_last_error.restype = ctypes.c_char_p
+_lib.cactus_destroy.argtypes = [ctypes.c_void_p]
+_lib.cactus_destroy.restype = None
 
-    _lib.cactus_set_telemetry_token.argtypes = [ctypes.c_char_p]
-    _lib.cactus_set_telemetry_token.restype = None
+_lib.cactus_get_last_error.argtypes = []
+_lib.cactus_get_last_error.restype = ctypes.c_char_p
 
-    _lib.cactus_set_pro_key.argtypes = [ctypes.c_char_p]
-    _lib.cactus_set_pro_key.restype = None
+_lib.cactus_set_telemetry_token.argtypes = [ctypes.c_char_p]
+_lib.cactus_set_telemetry_token.restype = None
 
-    _lib.cactus_tokenize.argtypes = [
-        ctypes.c_void_p,
-        ctypes.c_char_p,
-        ctypes.POINTER(ctypes.c_uint32),
-        ctypes.c_size_t,
-        ctypes.POINTER(ctypes.c_size_t),
-    ]
-    _lib.cactus_tokenize.restype = ctypes.c_int
+_lib.cactus_set_pro_key.argtypes = [ctypes.c_char_p]
+_lib.cactus_set_pro_key.restype = None
 
-    _lib.cactus_score_window.argtypes = [
-        ctypes.c_void_p,
-        ctypes.POINTER(ctypes.c_uint32),
-        ctypes.c_size_t,
-        ctypes.c_size_t,
-        ctypes.c_size_t,
-        ctypes.c_size_t,
-        ctypes.c_char_p,
-        ctypes.c_size_t,
-    ]
-    _lib.cactus_score_window.restype = ctypes.c_int
+_lib.cactus_tokenize.argtypes = [
+    ctypes.c_void_p,
+    ctypes.c_char_p,
+    ctypes.POINTER(ctypes.c_uint32),
+    ctypes.c_size_t,
+    ctypes.POINTER(ctypes.c_size_t),
+]
+_lib.cactus_tokenize.restype = ctypes.c_int
 
-    _lib.cactus_rag_query.argtypes = [
-        ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p,
-        ctypes.c_size_t, ctypes.c_size_t
-    ]
-    _lib.cactus_rag_query.restype = ctypes.c_int
+_lib.cactus_score_window.argtypes = [
+    ctypes.c_void_p,
+    ctypes.POINTER(ctypes.c_uint32),
+    ctypes.c_size_t,
+    ctypes.c_size_t,
+    ctypes.c_size_t,
+    ctypes.c_size_t,
+    ctypes.c_char_p,
+    ctypes.c_size_t,
+]
+_lib.cactus_score_window.restype = ctypes.c_int
 
-    _lib.cactus_stream_transcribe_init.argtypes = [ctypes.c_void_p]
-    _lib.cactus_stream_transcribe_init.restype = ctypes.c_void_p
+_lib.cactus_rag_query.argtypes = [
+    ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p,
+    ctypes.c_size_t, ctypes.c_size_t
+]
+_lib.cactus_rag_query.restype = ctypes.c_int
 
-    _lib.cactus_stream_transcribe_insert.argtypes = [
-        ctypes.c_void_p, ctypes.POINTER(ctypes.c_uint8), ctypes.c_size_t
-    ]
-    _lib.cactus_stream_transcribe_insert.restype = ctypes.c_int
+_lib.cactus_stream_transcribe_init.argtypes = [ctypes.c_void_p]
+_lib.cactus_stream_transcribe_init.restype = ctypes.c_void_p
 
-    _lib.cactus_stream_transcribe_process.argtypes = [
-        ctypes.c_void_p, ctypes.c_char_p, ctypes.c_size_t, ctypes.c_char_p
-    ]
-    _lib.cactus_stream_transcribe_process.restype = ctypes.c_int
+_lib.cactus_stream_transcribe_insert.argtypes = [
+    ctypes.c_void_p, ctypes.POINTER(ctypes.c_uint8), ctypes.c_size_t
+]
+_lib.cactus_stream_transcribe_insert.restype = ctypes.c_int
 
-    _lib.cactus_stream_transcribe_finalize.argtypes = [
-        ctypes.c_void_p, ctypes.c_char_p, ctypes.c_size_t
-    ]
-    _lib.cactus_stream_transcribe_finalize.restype = ctypes.c_int
+_lib.cactus_stream_transcribe_process.argtypes = [
+    ctypes.c_void_p, ctypes.c_char_p, ctypes.c_size_t, ctypes.c_char_p
+]
+_lib.cactus_stream_transcribe_process.restype = ctypes.c_int
 
-    _lib.cactus_stream_transcribe_destroy.argtypes = [ctypes.c_void_p]
-    _lib.cactus_stream_transcribe_destroy.restype = None
+_lib.cactus_stream_transcribe_finalize.argtypes = [
+    ctypes.c_void_p, ctypes.c_char_p, ctypes.c_size_t
+]
+_lib.cactus_stream_transcribe_finalize.restype = ctypes.c_int
 
-    _lib.cactus_index_init.argtypes = [ctypes.c_char_p, ctypes.c_size_t]
-    _lib.cactus_index_init.restype = ctypes.c_void_p
+_lib.cactus_stream_transcribe_destroy.argtypes = [ctypes.c_void_p]
+_lib.cactus_stream_transcribe_destroy.restype = None
 
-    _lib.cactus_index_add.argtypes = [
-        ctypes.c_void_p,
-        ctypes.POINTER(ctypes.c_int),
-        ctypes.POINTER(ctypes.c_char_p),
-        ctypes.POINTER(ctypes.c_char_p),
-        ctypes.POINTER(ctypes.POINTER(ctypes.c_float)),
-        ctypes.c_size_t,
-        ctypes.c_size_t
-    ]
-    _lib.cactus_index_add.restype = ctypes.c_int
+_lib.cactus_index_init.argtypes = [ctypes.c_char_p, ctypes.c_size_t]
+_lib.cactus_index_init.restype = ctypes.c_void_p
 
-    _lib.cactus_index_delete.argtypes = [
-        ctypes.c_void_p,
-        ctypes.POINTER(ctypes.c_int),
-        ctypes.c_size_t
-    ]
-    _lib.cactus_index_delete.restype = ctypes.c_int
+_lib.cactus_index_add.argtypes = [
+    ctypes.c_void_p,
+    ctypes.POINTER(ctypes.c_int),
+    ctypes.POINTER(ctypes.c_char_p),
+    ctypes.POINTER(ctypes.c_char_p),
+    ctypes.POINTER(ctypes.POINTER(ctypes.c_float)),
+    ctypes.c_size_t,
+    ctypes.c_size_t
+]
+_lib.cactus_index_add.restype = ctypes.c_int
 
-    _lib.cactus_index_query.argtypes = [
-        ctypes.c_void_p,
-        ctypes.POINTER(ctypes.POINTER(ctypes.c_float)),
-        ctypes.c_size_t,
-        ctypes.c_size_t,
-        ctypes.c_char_p,
-        ctypes.POINTER(ctypes.POINTER(ctypes.c_int)),
-        ctypes.POINTER(ctypes.c_size_t),
-        ctypes.POINTER(ctypes.POINTER(ctypes.c_float)),
-        ctypes.POINTER(ctypes.c_size_t)
-    ]
-    _lib.cactus_index_query.restype = ctypes.c_int
+_lib.cactus_index_delete.argtypes = [
+    ctypes.c_void_p,
+    ctypes.POINTER(ctypes.c_int),
+    ctypes.c_size_t
+]
+_lib.cactus_index_delete.restype = ctypes.c_int
 
-    _lib.cactus_index_compact.argtypes = [ctypes.c_void_p]
-    _lib.cactus_index_compact.restype = ctypes.c_int
+_lib.cactus_index_query.argtypes = [
+    ctypes.c_void_p,
+    ctypes.POINTER(ctypes.POINTER(ctypes.c_float)),
+    ctypes.c_size_t,
+    ctypes.c_size_t,
+    ctypes.c_char_p,
+    ctypes.POINTER(ctypes.POINTER(ctypes.c_int)),
+    ctypes.POINTER(ctypes.c_size_t),
+    ctypes.POINTER(ctypes.POINTER(ctypes.c_float)),
+    ctypes.POINTER(ctypes.c_size_t)
+]
+_lib.cactus_index_query.restype = ctypes.c_int
 
-    _lib.cactus_index_destroy.argtypes = [ctypes.c_void_p]
-    _lib.cactus_index_destroy.restype = None
+_lib.cactus_index_compact.argtypes = [ctypes.c_void_p]
+_lib.cactus_index_compact.restype = ctypes.c_int
+
+_lib.cactus_index_destroy.argtypes = [ctypes.c_void_p]
+_lib.cactus_index_destroy.restype = None
 
 
 def cactus_init(model_path, corpus_dir=None):

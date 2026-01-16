@@ -25,9 +25,6 @@ Cross-platform & energy-efficient kernels, runtime and AI inference engine for m
 ```
 
 # Cactus Graph & Kernel
-Cactus Graph is a general numerical computing framework for implementing 
-any model, like PyTorch for mobile devices.
-
 ```cpp
 #include cactus.h
 
@@ -52,8 +49,6 @@ graph.hard_reset();
 ```
 
 # Cactus Engine & FFI
-Cactus Engine is an AI inference engine with OpenAI-compatible APIs built on top of Cactus Graphs.
-
 ```cpp
 #include cactus.h
 
@@ -172,37 +167,16 @@ git clone https://github.com/cactus-compute/cactus && cd cactus && source ./setu
 | `cactus clean` | Removes build artifacts |
 | `cactus --help` | Shows all commands and flags |
 
-# Python Package
+# Using in your apps 
 
-Cactus python package is auto installed for researchers and testing.
-
-```python
-from cactus_ffi import cactus_init, cactus_complete, cactus_destroy
-
-model = cactus_init("weights/lfm2-vl-450m")
-rag_model = cactus_init("weights/lfm2-rag", corpus_dir="./documents")
-
-response = cactus_complete(model, [{"role": "user", "content": "What is 2+2?"}])
-
-cactus_destroy(model)
-```
-
-Setup and full example:
-```bash
-cactus build
-cactus download LiquidAI/LFM2-VL-450M
-python tools/example.py
-```
-
-# Using in your apps
-
+- [Python for Mac](/python/)
 - [React Native SDK](https://github.com/cactus-compute/cactus-react-native)
 - [Swift Multiplatform SDK](https://github.com/mhayes853/swift-cactus)
 - [Kotlin Multiplatform SDK](https://github.com/cactus-compute/cactus-kotlin)
 - [Flutter SDK](https://github.com/cactus-compute/cactus-flutter)
 - [Rust SDK](https://github.com/mrsarac/cactus-rs)
 
-# Try demo apps
+# Try demo apps 
 
 - [iOS Demo](https://apps.apple.com/gb/app/cactus-chat/id6744444212)
 - [Android Demo](https://play.google.com/store/apps/details?id=com.rshemetsubuser.myapp)
