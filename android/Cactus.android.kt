@@ -2,17 +2,15 @@ package com.cactus
 
 import org.json.JSONArray
 import org.json.JSONObject
-import java.io.Closeable
 
-class Cactus private constructor(private var handle: Long) : Closeable {
+actual class Cactus private constructor(private var handle: Long) : AutoCloseable {
 
-    companion object {
+    actual companion object {
         init {
             System.loadLibrary("cactus")
         }
 
-        @JvmStatic
-        fun create(modelPath: String, corpusDir: String? = null): Cactus {
+        actual fun create(modelPath: String, corpusDir: String?): Cactus {
             val handle = nativeInit(modelPath, corpusDir)
             if (handle == 0L) {
                 throw CactusException(nativeGetLastError().ifEmpty { "Failed to initialize model" })
@@ -20,11 +18,8 @@ class Cactus private constructor(private var handle: Long) : Closeable {
             return Cactus(handle)
         }
 
-        @JvmStatic
-        fun setTelemetryToken(token: String) = nativeSetTelemetryToken(token)
-
-        @JvmStatic
-        fun setProKey(key: String) = nativeSetProKey(key)
+        actual fun setTelemetryToken(token: String) = nativeSetTelemetryToken(token)
+        actual fun setProKey(key: String) = nativeSetProKey(key)
 
         @JvmStatic
         private external fun nativeInit(modelPath: String, corpusDir: String?): Long
@@ -36,21 +31,22 @@ class Cactus private constructor(private var handle: Long) : Closeable {
         private external fun nativeSetProKey(key: String)
     }
 
-    fun complete(prompt: String, options: CompletionOptions = CompletionOptions()): CompletionResult {
-        return complete(listOf(Message.user(prompt)), options)
+    actual fun complete(prompt: String, options: CompletionOptions): CompletionResult {
+        return complete(listOf(Message.user(prompt)), options, null, null)
     }
 
-    fun complete(
+    actual fun complete(
         messages: List<Message>,
-        options: CompletionOptions = CompletionOptions(),
-        tools: List<Map<String, Any>>? = null,
-        callback: TokenCallback? = null
+        options: CompletionOptions,
+        tools: List<Map<String, Any>>?,
+        callback: TokenCallback?
     ): CompletionResult {
         checkHandle()
         val messagesJson = JSONArray(messages.map { it.toJson() }).toString()
+        val optionsJson = options.toJson()
         val toolsJson = tools?.let { JSONArray(it.map { t -> JSONObject(t) }).toString() }
 
-        val responseJson = nativeComplete(handle, messagesJson, options.toJson(), toolsJson, callback)
+        val responseJson = nativeComplete(handle, messagesJson, optionsJson, toolsJson, callback)
         val json = JSONObject(responseJson)
 
         if (json.has("error")) {
@@ -60,11 +56,11 @@ class Cactus private constructor(private var handle: Long) : Closeable {
         return json.toCompletionResult()
     }
 
-    fun transcribe(
+    actual fun transcribe(
         audioPath: String,
-        prompt: String? = null,
-        language: String? = null,
-        translate: Boolean = false
+        prompt: String?,
+        language: String?,
+        translate: Boolean
     ): TranscriptionResult {
         checkHandle()
         val optionsJson = JSONObject().apply {
@@ -82,11 +78,11 @@ class Cactus private constructor(private var handle: Long) : Closeable {
         return json.toTranscriptionResult()
     }
 
-    fun transcribe(
+    actual fun transcribe(
         pcmData: ByteArray,
-        prompt: String? = null,
-        language: String? = null,
-        translate: Boolean = false
+        prompt: String?,
+        language: String?,
+        translate: Boolean
     ): TranscriptionResult {
         checkHandle()
         val optionsJson = JSONObject().apply {
@@ -104,13 +100,13 @@ class Cactus private constructor(private var handle: Long) : Closeable {
         return json.toTranscriptionResult()
     }
 
-    fun embed(text: String, normalize: Boolean = true): FloatArray {
+    actual fun embed(text: String, normalize: Boolean): FloatArray {
         checkHandle()
         return nativeEmbed(handle, text, normalize)
             ?: throw CactusException(nativeGetLastError().ifEmpty { "Failed to generate embedding" })
     }
 
-    fun ragQuery(query: String, topK: Int = 5): String {
+    actual fun ragQuery(query: String, topK: Int): String {
         checkHandle()
         val responseJson = nativeRagQuery(handle, query, topK)
         val json = JSONObject(responseJson)
@@ -122,17 +118,17 @@ class Cactus private constructor(private var handle: Long) : Closeable {
         return responseJson
     }
 
-    fun reset() {
+    actual fun reset() {
         checkHandle()
         nativeReset(handle)
     }
 
-    fun stop() {
+    actual fun stop() {
         checkHandle()
         nativeStop(handle)
     }
 
-    override fun close() {
+    actual override fun close() {
         if (handle != 0L) {
             nativeDestroy(handle)
             handle = 0L
@@ -154,61 +150,19 @@ class Cactus private constructor(private var handle: Long) : Closeable {
     private external fun nativeRagQuery(handle: Long, query: String, topK: Int): String
 }
 
-data class Message(val role: String, val content: String) {
-    companion object {
-        fun system(content: String) = Message("system", content)
-        fun user(content: String) = Message("user", content)
-        fun assistant(content: String) = Message("assistant", content)
-    }
-
-    fun toJson(): JSONObject = JSONObject().apply {
-        put("role", role)
-        put("content", content)
-    }
+private fun Message.toJson(): JSONObject = JSONObject().apply {
+    put("role", role)
+    put("content", content)
 }
 
-data class CompletionOptions(
-    val temperature: Float = 0.7f,
-    val topP: Float = 0.9f,
-    val topK: Int = 40,
-    val maxTokens: Int = 512,
-    val stopSequences: List<String> = emptyList(),
-    val confidenceThreshold: Float = 0f
-) {
-    fun toJson(): String = JSONObject().apply {
-        put("temperature", temperature)
-        put("top_p", topP)
-        put("top_k", topK)
-        put("max_tokens", maxTokens)
-        put("stop", JSONArray(stopSequences))
-        put("confidence_threshold", confidenceThreshold)
-    }.toString()
-}
-
-data class CompletionResult(
-    val text: String,
-    val functionCalls: List<Map<String, Any>>?,
-    val promptTokens: Int,
-    val completionTokens: Int,
-    val timeToFirstToken: Double,
-    val totalTime: Double,
-    val prefillTokensPerSecond: Double,
-    val decodeTokensPerSecond: Double,
-    val confidence: Double,
-    val needsCloudHandoff: Boolean
-)
-
-data class TranscriptionResult(
-    val text: String,
-    val segments: List<Map<String, Any>>?,
-    val totalTime: Double
-)
-
-fun interface TokenCallback {
-    fun onToken(token: String, tokenId: Int)
-}
-
-class CactusException(message: String) : Exception(message)
+private fun CompletionOptions.toJson(): String = JSONObject().apply {
+    put("temperature", temperature)
+    put("top_p", topP)
+    put("top_k", topK)
+    put("max_tokens", maxTokens)
+    put("stop", JSONArray(stopSequences))
+    put("confidence_threshold", confidenceThreshold)
+}.toString()
 
 private fun JSONObject.toCompletionResult(): CompletionResult {
     val functionCalls = optJSONArray("function_calls")?.let { arr ->

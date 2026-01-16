@@ -1,37 +1,77 @@
-# Cactus for Android
+# Cactus for Android & Kotlin Multiplatform
 
 Run AI models on-device with a simple Kotlin API.
 
 ## Building
 
 ```bash
-cd android
-./build.sh
+cactus build --android
 ```
 
-Build outputs (in `android/build/lib/`):
+Build output: `android/build/lib/libcactus.so`
 
-| File | Description |
-|------|-------------|
-| `libcactus.so` | Shared library with JNI bindings |
-
-Source file to copy:
-
-| File | Location |
-|------|----------|
-| `Cactus.kt` | `android/Cactus.kt` |
+see the main [README.md](../README.md) for how to use CLI & download weight
 
 ## Integration
 
+### Android-only
+
 1. Copy `libcactus.so` to `app/src/main/jniLibs/arm64-v8a/`
-2. Copy `Cactus.kt` to your project (e.g., `app/src/main/java/com/cactus/`)
+2. Copy `Cactus.kt` to `app/src/main/java/com/cactus/`
+
+### Kotlin Multiplatform
+
+Source files:
+
+| File | Copy to |
+|------|---------|
+| `Cactus.common.kt` | `shared/src/commonMain/kotlin/com/cactus/` |
+| `Cactus.android.kt` | `shared/src/androidMain/kotlin/com/cactus/` |
+| `Cactus.ios.kt` | `shared/src/iosMain/kotlin/com/cactus/` |
+| `cactus.def` | `shared/src/nativeInterop/cinterop/` |
+
+Binary files:
+
+| Platform | Location |
+|----------|----------|
+| Android | `libcactus.so` → `app/src/main/jniLibs/arm64-v8a/` |
+| iOS | `libcactus-device.a` → link via cinterop |
+
+build.gradle.kts:
+
+```kotlin
+kotlin {
+    androidTarget()
+
+    listOf(iosArm64(), iosSimulatorArm64()).forEach {
+        it.compilations.getByName("main") {
+            cinterops {
+                create("cactus") {
+                    defFile("src/nativeInterop/cinterop/cactus.def")
+                    includeDirs("/path/to/cactus/ffi")
+                }
+            }
+        }
+        it.binaries.framework {
+            linkerOpts("-L/path/to/apple", "-lcactus-device")
+        }
+    }
+
+    sourceSets {
+        commonMain.dependencies {
+            implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.0")
+        }
+    }
+}
+```
 
 ## Usage
 
 ### Basic Completion
 
 ```kotlin
-import com.cactus.Cactus
+import com.cactus.*
+
 val model = Cactus.create("/path/to/model")
 val result = model.complete("What is the capital of France?")
 model.close()
@@ -43,17 +83,18 @@ model.close()
 Cactus.create(modelPath).use { model ->
     val result = model.complete(
         messages = listOf(
-            Cactus.Message.system("You are a helpful assistant."),
-            Cactus.Message.user("What is 2 + 2?")
+            Message.system("You are a helpful assistant."),
+            Message.user("What is 2 + 2?")
         )
     )
+    println(result.text)
 }
 ```
 
 ### Completion Options
 
 ```kotlin
-val options = Cactus.CompletionOptions(
+val options = CompletionOptions(
     temperature = 0.7f,
     topP = 0.9f,
     topK = 40,
@@ -68,8 +109,8 @@ val result = model.complete("Write a haiku:", options)
 
 ```kotlin
 val result = model.complete(
-    messages = listOf(Cactus.Message.user("Tell me a story")),
-    callback = Cactus.TokenCallback { token, tokenId ->
+    messages = listOf(Message.user("Tell me a story")),
+    callback = TokenCallback { token, tokenId ->
         print(token)
     }
 )
@@ -79,6 +120,7 @@ val result = model.complete(
 
 ```kotlin
 val result = model.transcribe("/path/to/audio.wav")
+
 val pcmData: ByteArray = ... // 16kHz mono PCM
 val result = model.transcribe(pcmData)
 ```
@@ -96,7 +138,6 @@ val model = Cactus.create(
     modelPath = "/path/to/model",
     corpusDir = "/path/to/documents"
 )
-
 val result = model.complete("What does the documentation say about X?")
 ```
 
@@ -105,7 +146,7 @@ val result = model.complete("What does the documentation say about X?")
 ### Cactus
 
 ```kotlin
-companion object {
+object Cactus {
     fun create(modelPath: String, corpusDir: String? = null): Cactus
     fun setTelemetryToken(token: String)
     fun setProKey(key: String)
@@ -113,33 +154,13 @@ companion object {
 
 fun complete(prompt: String, options: CompletionOptions = CompletionOptions()): CompletionResult
 fun complete(messages: List<Message>, options: CompletionOptions = CompletionOptions(), tools: List<Map<String, Any>>? = null, callback: TokenCallback? = null): CompletionResult
-
 fun transcribe(audioPath: String, prompt: String? = null, language: String? = null, translate: Boolean = false): TranscriptionResult
 fun transcribe(pcmData: ByteArray, prompt: String? = null, language: String? = null, translate: Boolean = false): TranscriptionResult
-
 fun embed(text: String, normalize: Boolean = true): FloatArray
 fun ragQuery(query: String, topK: Int = 5): String
-
 fun reset()
 fun stop()
 fun close()
-```
-
-### CompletionResult
-
-```kotlin
-data class CompletionResult(
-    val text: String,
-    val functionCalls: List<Map<String, Any>>?,
-    val promptTokens: Int,
-    val completionTokens: Int,
-    val timeToFirstToken: Double,
-    val totalTime: Double,
-    val prefillTokensPerSecond: Double,
-    val decodeTokensPerSecond: Double,
-    val confidence: Double,
-    val needsCloudHandoff: Boolean
-)
 ```
 
 ### Message
@@ -167,7 +188,42 @@ data class CompletionOptions(
 )
 ```
 
+### CompletionResult
+
+```kotlin
+data class CompletionResult(
+    val text: String,
+    val functionCalls: List<Map<String, Any>>?,
+    val promptTokens: Int,
+    val completionTokens: Int,
+    val timeToFirstToken: Double,
+    val totalTime: Double,
+    val prefillTokensPerSecond: Double,
+    val decodeTokensPerSecond: Double,
+    val confidence: Double,
+    val needsCloudHandoff: Boolean
+)
+```
+
+### TranscriptionResult
+
+```kotlin
+data class TranscriptionResult(
+    val text: String,
+    val segments: List<Map<String, Any>>?,
+    val totalTime: Double
+)
+```
+
+### TokenCallback
+
+```kotlin
+fun interface TokenCallback {
+    fun onToken(token: String, tokenId: Int)
+}
+```
+
 ## Requirements
 
-- Android API 24+
-- arm64-v8a architecture only
+- Android API 24+ / arm64-v8a
+- iOS 14+ / arm64 (KMP only)
