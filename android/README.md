@@ -129,6 +129,28 @@ val result = model.transcribe(pcmData)
 
 ```kotlin
 val embedding = model.embed("Hello, world!")
+val imageEmbedding = model.imageEmbed("/path/to/image.jpg")
+val audioEmbedding = model.audioEmbed("/path/to/audio.wav")
+```
+
+### Tokenization
+
+```kotlin
+val tokens = model.tokenize("Hello, world!")
+val scores = model.scoreWindow(tokens, start = 0, end = tokens.size, context = 512)
+```
+
+### Streaming Transcription
+
+```kotlin
+model.createStreamTranscriber().use { stream ->
+    stream.insert(audioChunk1)
+    stream.insert(audioChunk2)
+    val partial = stream.process()
+    println("Partial: ${partial.text}")
+    val final = stream.finalize()
+    println("Final: ${final.text}")
+}
 ```
 
 ### RAG
@@ -139,6 +161,21 @@ val model = Cactus.create(
     corpusDir = "/path/to/documents"
 )
 val result = model.complete("What does the documentation say about X?")
+```
+
+### Vector Index
+
+```kotlin
+CactusIndex.create("/path/to/index", embeddingDim = 384).use { index ->
+    val embeddings = arrayOf(model.embed("doc1"), model.embed("doc2"))
+    index.add(
+        ids = intArrayOf(1, 2),
+        documents = arrayOf("Document 1", "Document 2"),
+        embeddings = embeddings
+    )
+    val results = index.query(model.embed("search query"), topK = 5)
+    results.forEach { println("ID: ${it.id}, Score: ${it.score}") }
+}
 ```
 
 ## API Reference
@@ -157,7 +194,12 @@ fun complete(messages: List<Message>, options: CompletionOptions = CompletionOpt
 fun transcribe(audioPath: String, prompt: String? = null, language: String? = null, translate: Boolean = false): TranscriptionResult
 fun transcribe(pcmData: ByteArray, prompt: String? = null, language: String? = null, translate: Boolean = false): TranscriptionResult
 fun embed(text: String, normalize: Boolean = true): FloatArray
+fun imageEmbed(imagePath: String): FloatArray
+fun audioEmbed(audioPath: String): FloatArray
 fun ragQuery(query: String, topK: Int = 5): String
+fun tokenize(text: String): IntArray
+fun scoreWindow(tokens: IntArray, start: Int, end: Int, context: Int): String
+fun createStreamTranscriber(): StreamTranscriber
 fun reset()
 fun stop()
 fun close()
@@ -221,6 +263,35 @@ data class TranscriptionResult(
 fun interface TokenCallback {
     fun onToken(token: String, tokenId: Int)
 }
+```
+
+### StreamTranscriber
+
+```kotlin
+class StreamTranscriber : Closeable {
+    fun insert(pcmData: ByteArray)
+    fun process(language: String? = null): TranscriptionResult
+    fun finalize(): TranscriptionResult
+    fun close()
+}
+```
+
+### CactusIndex
+
+```kotlin
+class CactusIndex : Closeable {
+    companion object {
+        fun create(indexDir: String, embeddingDim: Int): CactusIndex
+    }
+
+    fun add(ids: IntArray, documents: Array<String>, embeddings: Array<FloatArray>, metadatas: Array<String>? = null)
+    fun delete(ids: IntArray)
+    fun query(embedding: FloatArray, topK: Int = 5): List<IndexResult>
+    fun compact()
+    fun close()
+}
+
+data class IndexResult(val id: Int, val score: Float)
 ```
 
 ## Requirements

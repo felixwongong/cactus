@@ -341,6 +341,106 @@ public final class Cactus: @unchecked Sendable {
         return String(cString: buffer)
     }
 
+    public func tokenize(_ text: String) throws -> [UInt32] {
+        var tokenBuffer = [UInt32](repeating: 0, count: 8192)
+        var tokenLen: Int = 0
+
+        let result = tokenBuffer.withUnsafeMutableBufferPointer { bufferPtr in
+            cactus_tokenize(
+                handle,
+                text,
+                bufferPtr.baseAddress,
+                bufferPtr.count,
+                &tokenLen
+            )
+        }
+
+        if result < 0 {
+            let error = String(cString: cactus_get_last_error())
+            throw CactusError.completionFailed(error.isEmpty ? "Unknown error" : error)
+        }
+
+        return Array(tokenBuffer.prefix(tokenLen))
+    }
+
+    public func scoreWindow(tokens: [UInt32], start: Int, end: Int, context: Int) throws -> String {
+        var buffer = [CChar](repeating: 0, count: Self.defaultBufferSize)
+
+        let result = tokens.withUnsafeBufferPointer { tokenPtr in
+            buffer.withUnsafeMutableBufferPointer { bufferPtr in
+                cactus_score_window(
+                    handle,
+                    tokenPtr.baseAddress,
+                    tokenPtr.count,
+                    start,
+                    end,
+                    context,
+                    bufferPtr.baseAddress,
+                    bufferPtr.count
+                )
+            }
+        }
+
+        if result < 0 {
+            let error = String(cString: cactus_get_last_error())
+            throw CactusError.completionFailed(error.isEmpty ? "Unknown error" : error)
+        }
+
+        return String(cString: buffer)
+    }
+
+    public func imageEmbed(_ imagePath: String) throws -> [Float] {
+        var embeddingBuffer = [Float](repeating: 0, count: 4096)
+        var embeddingDim: Int = 0
+
+        let result = embeddingBuffer.withUnsafeMutableBufferPointer { bufferPtr in
+            cactus_image_embed(
+                handle,
+                imagePath,
+                bufferPtr.baseAddress,
+                bufferPtr.count,
+                &embeddingDim
+            )
+        }
+
+        if result < 0 {
+            let error = String(cString: cactus_get_last_error())
+            throw CactusError.embeddingFailed(error.isEmpty ? "Unknown error" : error)
+        }
+
+        return Array(embeddingBuffer.prefix(embeddingDim))
+    }
+
+    public func audioEmbed(_ audioPath: String) throws -> [Float] {
+        var embeddingBuffer = [Float](repeating: 0, count: 4096)
+        var embeddingDim: Int = 0
+
+        let result = embeddingBuffer.withUnsafeMutableBufferPointer { bufferPtr in
+            cactus_audio_embed(
+                handle,
+                audioPath,
+                bufferPtr.baseAddress,
+                bufferPtr.count,
+                &embeddingDim
+            )
+        }
+
+        if result < 0 {
+            let error = String(cString: cactus_get_last_error())
+            throw CactusError.embeddingFailed(error.isEmpty ? "Unknown error" : error)
+        }
+
+        return Array(embeddingBuffer.prefix(embeddingDim))
+    }
+
+    public func createStreamTranscriber() throws -> StreamTranscriber {
+        guard let streamHandle = cactus_stream_transcribe_init(handle) else {
+            let error = String(cString: cactus_get_last_error())
+            throw CactusError.transcriptionFailed(error.isEmpty ? "Unknown error" : error)
+        }
+        return StreamTranscriber(handle: streamHandle)
+    }
+
     public func reset() {
         cactus_reset(handle)
     }
@@ -469,6 +569,300 @@ public extension Cactus {
                     continuation.resume(throwing: error)
                 }
             }
+        }
+    }
+}
+
+
+public final class StreamTranscriber: @unchecked Sendable {
+
+    private var handle: OpaquePointer?
+    private static let defaultBufferSize = 65536
+
+    init(handle: OpaquePointer) {
+        self.handle = handle
+    }
+
+    deinit {
+        close()
+    }
+
+    public func insert(pcmData: Data) throws {
+        guard let handle = handle else {
+            throw Cactus.CactusError.transcriptionFailed("Stream transcriber has been closed")
+        }
+
+        let result = pcmData.withUnsafeBytes { pcmPtr in
+            cactus_stream_transcribe_insert(
+                handle,
+                pcmPtr.baseAddress?.assumingMemoryBound(to: UInt8.self),
+                pcmData.count
+            )
+        }
+
+        if result < 0 {
+            throw Cactus.CactusError.transcriptionFailed("Failed to insert audio data")
+        }
+    }
+
+    public func process(language: String? = nil) throws -> Cactus.TranscriptionResult {
+        guard let handle = handle else {
+            throw Cactus.CactusError.transcriptionFailed("Stream transcriber has been closed")
+        }
+
+        var buffer = [CChar](repeating: 0, count: Self.defaultBufferSize)
+        var optionsJSON: String? = nil
+        if let lang = language {
+            let dict: [String: Any] = ["language": lang]
+            if let data = try? JSONSerialization.data(withJSONObject: dict),
+               let json = String(data: data, encoding: .utf8) {
+                optionsJSON = json
+            }
+        }
+
+        let result = buffer.withUnsafeMutableBufferPointer { bufferPtr in
+            cactus_stream_transcribe_process(
+                handle,
+                bufferPtr.baseAddress,
+                bufferPtr.count,
+                optionsJSON
+            )
+        }
+
+        if result < 0 {
+            let error = String(cString: cactus_get_last_error())
+            throw Cactus.CactusError.transcriptionFailed(error.isEmpty ? "Unknown error" : error)
+        }
+
+        let responseString = String(cString: buffer)
+        guard let data = responseString.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw Cactus.CactusError.invalidResponse
+        }
+
+        return Cactus.TranscriptionResult(json: json)
+    }
+
+    public func finalize() throws -> Cactus.TranscriptionResult {
+        guard let handle = handle else {
+            throw Cactus.CactusError.transcriptionFailed("Stream transcriber has been closed")
+        }
+
+        var buffer = [CChar](repeating: 0, count: Self.defaultBufferSize)
+
+        let result = buffer.withUnsafeMutableBufferPointer { bufferPtr in
+            cactus_stream_transcribe_finalize(
+                handle,
+                bufferPtr.baseAddress,
+                bufferPtr.count
+            )
+        }
+
+        if result < 0 {
+            let error = String(cString: cactus_get_last_error())
+            throw Cactus.CactusError.transcriptionFailed(error.isEmpty ? "Unknown error" : error)
+        }
+
+        let responseString = String(cString: buffer)
+        guard let data = responseString.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw Cactus.CactusError.invalidResponse
+        }
+
+        return Cactus.TranscriptionResult(json: json)
+    }
+
+    public func close() {
+        if let handle = handle {
+            cactus_stream_transcribe_destroy(handle)
+            self.handle = nil
+        }
+    }
+}
+
+
+public final class CactusIndex: @unchecked Sendable {
+
+    public struct IndexResult {
+        public let id: Int
+        public let score: Float
+    }
+
+    public enum IndexError: Error, LocalizedError {
+        case initializationFailed(String)
+        case operationFailed(String)
+
+        public var errorDescription: String? {
+            switch self {
+            case .initializationFailed(let msg): return "Index initialization failed: \(msg)"
+            case .operationFailed(let msg): return "Index operation failed: \(msg)"
+            }
+        }
+    }
+
+    private var handle: OpaquePointer?
+
+    public init(indexDir: String, embeddingDim: Int) throws {
+        guard let h = cactus_index_init(indexDir, embeddingDim) else {
+            throw IndexError.initializationFailed("Failed to initialize index")
+        }
+        self.handle = h
+    }
+
+    deinit {
+        close()
+    }
+
+    public func add(
+        ids: [Int],
+        documents: [String],
+        embeddings: [[Float]],
+        metadatas: [String]? = nil
+    ) throws {
+        guard let handle = handle else {
+            throw IndexError.operationFailed("Index has been closed")
+        }
+
+        let count = ids.count
+        let embeddingDim = embeddings[0].count
+
+        var idArray = ids.map { Int32($0) }
+        var docPtrs = documents.map { strdup($0) }
+        var metaPtrs: [UnsafeMutablePointer<CChar>?]? = metadatas?.map { strdup($0) }
+        var embPtrs = embeddings.map { emb -> UnsafePointer<Float>? in
+            let ptr = UnsafeMutablePointer<Float>.allocate(capacity: emb.count)
+            ptr.initialize(from: emb, count: emb.count)
+            return UnsafePointer(ptr)
+        }
+
+        let result = idArray.withUnsafeMutableBufferPointer { idPtr in
+            docPtrs.withUnsafeMutableBufferPointer { docPtr in
+                embPtrs.withUnsafeMutableBufferPointer { embPtr in
+                    if let metaPtrs = metaPtrs {
+                        var metaPtrsCopy = metaPtrs
+                        return metaPtrsCopy.withUnsafeMutableBufferPointer { metaPtr in
+                            cactus_index_add(
+                                handle,
+                                idPtr.baseAddress,
+                                docPtr.baseAddress,
+                                metaPtr.baseAddress,
+                                embPtr.baseAddress,
+                                count,
+                                embeddingDim
+                            )
+                        }
+                    } else {
+                        return cactus_index_add(
+                            handle,
+                            idPtr.baseAddress,
+                            docPtr.baseAddress,
+                            nil,
+                            embPtr.baseAddress,
+                            count,
+                            embeddingDim
+                        )
+                    }
+                }
+            }
+        }
+
+        docPtrs.forEach { free($0) }
+        metaPtrs?.forEach { free($0) }
+        embPtrs.forEach { ptr in
+            if let ptr = ptr {
+                UnsafeMutablePointer(mutating: ptr).deallocate()
+            }
+        }
+
+        if result < 0 {
+            throw IndexError.operationFailed("Failed to add documents to index")
+        }
+    }
+
+    public func delete(ids: [Int]) throws {
+        guard let handle = handle else {
+            throw IndexError.operationFailed("Index has been closed")
+        }
+
+        var idArray = ids.map { Int32($0) }
+
+        let result = idArray.withUnsafeMutableBufferPointer { idPtr in
+            cactus_index_delete(handle, idPtr.baseAddress, ids.count)
+        }
+
+        if result < 0 {
+            throw IndexError.operationFailed("Failed to delete documents from index")
+        }
+    }
+
+    public func query(embedding: [Float], topK: Int = 5) throws -> [IndexResult] {
+        guard let handle = handle else {
+            throw IndexError.operationFailed("Index has been closed")
+        }
+
+        var embeddingCopy = embedding
+        var idBuffer = [Int32](repeating: 0, count: topK)
+        var scoreBuffer = [Float](repeating: 0, count: topK)
+        var idBufferSize = topK
+        var scoreBufferSize = topK
+
+        let result = embeddingCopy.withUnsafeMutableBufferPointer { embPtr in
+            idBuffer.withUnsafeMutableBufferPointer { idPtr in
+                scoreBuffer.withUnsafeMutableBufferPointer { scorePtr in
+                    var embPtrPtr: UnsafePointer<Float>? = embPtr.baseAddress
+                    var idPtrPtr: UnsafeMutablePointer<Int32>? = idPtr.baseAddress
+                    var scorePtrPtr: UnsafeMutablePointer<Float>? = scorePtr.baseAddress
+
+                    return withUnsafeMutablePointer(to: &embPtrPtr) { embPtrPtrPtr in
+                        withUnsafeMutablePointer(to: &idPtrPtr) { idPtrPtrPtr in
+                            withUnsafeMutablePointer(to: &scorePtrPtr) { scorePtrPtrPtr in
+                                withUnsafeMutablePointer(to: &idBufferSize) { idSizePtr in
+                                    withUnsafeMutablePointer(to: &scoreBufferSize) { scoreSizePtr in
+                                        cactus_index_query(
+                                            handle,
+                                            embPtrPtrPtr,
+                                            1,
+                                            embedding.count,
+                                            nil,
+                                            idPtrPtrPtr,
+                                            idSizePtr,
+                                            scorePtrPtrPtr,
+                                            scoreSizePtr
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if result < 0 {
+            let error = String(cString: cactus_get_last_error())
+            throw IndexError.operationFailed(error.isEmpty ? "Unknown error" : error)
+        }
+
+        return (0..<idBufferSize).map { i in
+            IndexResult(id: Int(idBuffer[i]), score: scoreBuffer[i])
+        }
+    }
+
+    public func compact() throws {
+        guard let handle = handle else {
+            throw IndexError.operationFailed("Index has been closed")
+        }
+
+        let result = cactus_index_compact(handle)
+        if result < 0 {
+            throw IndexError.operationFailed("Failed to compact index")
+        }
+    }
+
+    public func close() {
+        if let handle = handle {
+            cactus_index_destroy(handle)
+            self.handle = nil
         }
     }
 }

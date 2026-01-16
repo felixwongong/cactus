@@ -30,9 +30,33 @@ expect class Cactus : AutoCloseable {
     ): TranscriptionResult
 
     fun embed(text: String, normalize: Boolean = true): FloatArray
+    fun imageEmbed(imagePath: String): FloatArray
+    fun audioEmbed(audioPath: String): FloatArray
     fun ragQuery(query: String, topK: Int = 5): String
+    fun tokenize(text: String): IntArray
+    fun scoreWindow(tokens: IntArray, start: Int, end: Int, context: Int): String
+    fun createStreamTranscriber(): StreamTranscriber
     fun reset()
     fun stop()
+    override fun close()
+}
+
+expect class StreamTranscriber : AutoCloseable {
+    fun insert(pcmData: ByteArray)
+    fun process(language: String? = null): TranscriptionResult
+    fun finalize(): TranscriptionResult
+    override fun close()
+}
+
+expect class CactusIndex : AutoCloseable {
+    companion object {
+        fun create(indexDir: String, embeddingDim: Int): CactusIndex
+    }
+
+    fun add(ids: IntArray, documents: Array<String>, embeddings: Array<FloatArray>, metadatas: Array<String>? = null)
+    fun delete(ids: IntArray)
+    fun query(embedding: FloatArray, topK: Int = 5): List<IndexResult>
+    fun compact()
     override fun close()
 }
 
@@ -75,5 +99,7 @@ data class TranscriptionResult(
 fun interface TokenCallback {
     fun onToken(token: String, tokenId: Int)
 }
+
+data class IndexResult(val id: Int, val score: Float)
 
 class CactusException(message: String) : Exception(message)

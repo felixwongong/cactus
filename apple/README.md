@@ -127,6 +127,28 @@ let result = try model.transcribe(pcmData: pcmData)
 
 ```swift
 let embedding = try model.embed(text: "Hello, world!")
+let imageEmbedding = try model.imageEmbed("/path/to/image.jpg")
+let audioEmbedding = try model.audioEmbed("/path/to/audio.wav")
+```
+
+### Tokenization
+
+```swift
+let tokens = try model.tokenize("Hello, world!")
+let scores = try model.scoreWindow(tokens: tokens, start: 0, end: tokens.count, context: 512)
+```
+
+### Streaming Transcription
+
+```swift
+let stream = try model.createStreamTranscriber()
+try stream.insert(pcmData: audioChunk1)
+try stream.insert(pcmData: audioChunk2)
+let partial = try stream.process()
+print("Partial: \(partial.text)")
+let final = try stream.finalize()
+print("Final: \(final.text)")
+stream.close()
 ```
 
 ### RAG (Retrieval-Augmented Generation)
@@ -138,6 +160,21 @@ let model = try Cactus(
 )
 
 let result = try model.complete("What does the documentation say about X?")
+```
+
+### Vector Index
+
+```swift
+let index = try CactusIndex(indexDir: "/path/to/index", embeddingDim: 384)
+let embeddings = [try model.embed(text: "doc1"), try model.embed(text: "doc2")]
+try index.add(
+    ids: [1, 2],
+    documents: ["Document 1", "Document 2"],
+    embeddings: embeddings
+)
+let results = try index.query(embedding: try model.embed(text: "search query"), topK: 5)
+results.forEach { print("ID: \($0.id), Score: \($0.score)") }
+index.close()
 ```
 
 ## API Reference
@@ -154,7 +191,13 @@ func transcribe(audioPath: String, prompt: String? = nil, options: Transcription
 func transcribe(pcmData: Data, prompt: String? = nil, options: TranscriptionOptions = .default) throws -> TranscriptionResult
 
 func embed(text: String, normalize: Bool = true) throws -> [Float]
+func imageEmbed(_ imagePath: String) throws -> [Float]
+func audioEmbed(_ audioPath: String) throws -> [Float]
 func ragQuery(_ query: String, topK: Int = 5) throws -> String
+
+func tokenize(_ text: String) throws -> [UInt32]
+func scoreWindow(tokens: [UInt32], start: Int, end: Int, context: Int) throws -> String
+func createStreamTranscriber() throws -> StreamTranscriber
 
 func reset()  // Clear KV cache
 func stop()   // Stop generation
@@ -202,6 +245,36 @@ struct CompletionOptions {
     var confidenceThreshold: Float = 0.0
 
     static let `default` = CompletionOptions()
+}
+```
+
+### StreamTranscriber
+
+```swift
+class StreamTranscriber {
+    func insert(pcmData: Data) throws
+    func process(language: String? = nil) throws -> TranscriptionResult
+    func finalize() throws -> TranscriptionResult
+    func close()
+}
+```
+
+### CactusIndex
+
+```swift
+class CactusIndex {
+    init(indexDir: String, embeddingDim: Int) throws
+
+    func add(ids: [Int], documents: [String], embeddings: [[Float]], metadatas: [String]? = nil) throws
+    func delete(ids: [Int]) throws
+    func query(embedding: [Float], topK: Int = 5) throws -> [IndexResult]
+    func compact() throws
+    func close()
+}
+
+struct IndexResult {
+    let id: Int
+    let score: Float
 }
 ```
 

@@ -118,6 +118,43 @@ actual class Cactus private constructor(private var handle: Long) : AutoCloseabl
         return responseJson
     }
 
+    actual fun tokenize(text: String): IntArray {
+        checkHandle()
+        return nativeTokenize(handle, text)
+            ?: throw CactusException(nativeGetLastError().ifEmpty { "Failed to tokenize" })
+    }
+
+    actual fun scoreWindow(tokens: IntArray, start: Int, end: Int, context: Int): String {
+        checkHandle()
+        val responseJson = nativeScoreWindow(handle, tokens, start, end, context)
+        val json = JSONObject(responseJson)
+        if (json.has("error")) {
+            throw CactusException(json.getString("error"))
+        }
+        return responseJson
+    }
+
+    actual fun imageEmbed(imagePath: String): FloatArray {
+        checkHandle()
+        return nativeImageEmbed(handle, imagePath)
+            ?: throw CactusException(nativeGetLastError().ifEmpty { "Failed to generate image embedding" })
+    }
+
+    actual fun audioEmbed(audioPath: String): FloatArray {
+        checkHandle()
+        return nativeAudioEmbed(handle, audioPath)
+            ?: throw CactusException(nativeGetLastError().ifEmpty { "Failed to generate audio embedding" })
+    }
+
+    actual fun createStreamTranscriber(): StreamTranscriber {
+        checkHandle()
+        val streamHandle = nativeStreamTranscribeInit(handle)
+        if (streamHandle == 0L) {
+            throw CactusException(nativeGetLastError().ifEmpty { "Failed to create stream transcriber" })
+        }
+        return StreamTranscriber(streamHandle)
+    }
+
     actual fun reset() {
         checkHandle()
         nativeReset(handle)
@@ -148,6 +185,138 @@ actual class Cactus private constructor(private var handle: Long) : AutoCloseabl
     private external fun nativeTranscribe(handle: Long, audioPath: String?, prompt: String?, optionsJson: String?, pcmData: ByteArray?): String
     private external fun nativeEmbed(handle: Long, text: String, normalize: Boolean): FloatArray?
     private external fun nativeRagQuery(handle: Long, query: String, topK: Int): String
+    private external fun nativeTokenize(handle: Long, text: String): IntArray?
+    private external fun nativeScoreWindow(handle: Long, tokens: IntArray, start: Int, end: Int, context: Int): String
+    private external fun nativeImageEmbed(handle: Long, imagePath: String): FloatArray?
+    private external fun nativeAudioEmbed(handle: Long, audioPath: String): FloatArray?
+    private external fun nativeStreamTranscribeInit(handle: Long): Long
+}
+
+actual class StreamTranscriber internal constructor(private var handle: Long) : AutoCloseable {
+
+    actual fun insert(pcmData: ByteArray) {
+        checkHandle()
+        val result = nativeStreamTranscribeInsert(handle, pcmData)
+        if (result < 0) {
+            throw CactusException("Failed to insert audio data")
+        }
+    }
+
+    actual fun process(language: String?): TranscriptionResult {
+        checkHandle()
+        val optionsJson = language?.let { JSONObject().put("language", it).toString() }
+        val responseJson = nativeStreamTranscribeProcess(handle, optionsJson)
+        val json = JSONObject(responseJson)
+        if (json.has("error")) {
+            throw CactusException(json.getString("error"))
+        }
+        return json.toTranscriptionResult()
+    }
+
+    actual fun finalize(): TranscriptionResult {
+        checkHandle()
+        val responseJson = nativeStreamTranscribeFinalize(handle)
+        val json = JSONObject(responseJson)
+        if (json.has("error")) {
+            throw CactusException(json.getString("error"))
+        }
+        return json.toTranscriptionResult()
+    }
+
+    actual override fun close() {
+        if (handle != 0L) {
+            nativeStreamTranscribeDestroy(handle)
+            handle = 0L
+        }
+    }
+
+    private fun checkHandle() {
+        if (handle == 0L) {
+            throw CactusException("Stream transcriber has been closed")
+        }
+    }
+
+    private external fun nativeStreamTranscribeInsert(handle: Long, pcmData: ByteArray): Int
+    private external fun nativeStreamTranscribeProcess(handle: Long, optionsJson: String?): String
+    private external fun nativeStreamTranscribeFinalize(handle: Long): String
+    private external fun nativeStreamTranscribeDestroy(handle: Long)
+}
+
+actual class CactusIndex private constructor(private var handle: Long) : AutoCloseable {
+
+    actual companion object {
+        init {
+            System.loadLibrary("cactus")
+        }
+
+        actual fun create(indexDir: String, embeddingDim: Int): CactusIndex {
+            val handle = nativeIndexInit(indexDir, embeddingDim)
+            if (handle == 0L) {
+                throw CactusException("Failed to initialize index")
+            }
+            return CactusIndex(handle)
+        }
+
+        @JvmStatic
+        private external fun nativeIndexInit(indexDir: String, embeddingDim: Int): Long
+    }
+
+    actual fun add(ids: IntArray, documents: Array<String>, embeddings: Array<FloatArray>, metadatas: Array<String>?) {
+        checkHandle()
+        val result = nativeIndexAdd(handle, ids, documents, metadatas, embeddings, embeddings[0].size)
+        if (result < 0) {
+            throw CactusException("Failed to add documents to index")
+        }
+    }
+
+    actual fun delete(ids: IntArray) {
+        checkHandle()
+        val result = nativeIndexDelete(handle, ids)
+        if (result < 0) {
+            throw CactusException("Failed to delete documents from index")
+        }
+    }
+
+    actual fun query(embedding: FloatArray, topK: Int): List<IndexResult> {
+        checkHandle()
+        val responseJson = nativeIndexQuery(handle, embedding, topK, null)
+        val json = JSONObject(responseJson)
+        if (json.has("error")) {
+            throw CactusException(json.getString("error"))
+        }
+        val results = json.getJSONArray("results")
+        return (0 until results.length()).map { i ->
+            val obj = results.getJSONObject(i)
+            IndexResult(obj.getInt("id"), obj.getDouble("score").toFloat())
+        }
+    }
+
+    actual fun compact() {
+        checkHandle()
+        val result = nativeIndexCompact(handle)
+        if (result < 0) {
+            throw CactusException("Failed to compact index")
+        }
+    }
+
+    actual override fun close() {
+        if (handle != 0L) {
+            nativeIndexDestroy(handle)
+            handle = 0L
+        }
+    }
+
+    private fun checkHandle() {
+        if (handle == 0L) {
+            throw CactusException("Index has been closed")
+        }
+    }
+
+    private external fun nativeIndexAdd(handle: Long, ids: IntArray, documents: Array<String>, metadatas: Array<String>?, embeddings: Array<FloatArray>, embeddingDim: Int): Int
+    private external fun nativeIndexDelete(handle: Long, ids: IntArray): Int
+    private external fun nativeIndexQuery(handle: Long, embedding: FloatArray, topK: Int, optionsJson: String?): String
+    private external fun nativeIndexCompact(handle: Long): Int
+    private external fun nativeIndexDestroy(handle: Long)
 }
 
 private fun Message.toJson(): JSONObject = JSONObject().apply {
