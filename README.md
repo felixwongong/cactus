@@ -38,6 +38,7 @@ auto result = graph.matmul(b, x2, true);
 
 float a_data[6] = {1.1f, 2.3f, 3.4f, 4.2f, 5.7f, 6.8f};
 float b_data[12] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12};
+
 graph.set_input(a, a_data, Precision::FP16);
 graph.set_input(b, b_data, Precision::INT8);
 
@@ -110,7 +111,7 @@ Example response from Gemma3-270m
 
 | Device | Short Decode | 4k-P/D | VLM-TTFT | VLM-Dec | STT-TTFT | STT-Dec |
 |--------|--------|--------|----------|---------|----------|---------|
-| Mac M4 Pro | 170 | 989/150 | 0.2s/0.1s* | 168 | 0.9s/0.2s* | 92 |
+| Mac M4 Pro | 170 | 989/150 | 0.2s/0.1s* | 168 | 1.0s/0.2s* | 92 |
 | Mac M3 Pro | 140 | 890/123 | 0.3s/0.1s* | 149 | 1.5s/0.4s* | 81 |
 | iPad/Mac M4 | 134 | 603/106 | 0.3s/0.1s* | 129 | 1.8s0.3s* | 70 |
 | iPad/Mac M3 | 117 | 525/93 | 0.4s/0.1s* | 111 | 2.8s/0.7s* | 61 |
@@ -126,7 +127,7 @@ Example response from Gemma3-270m
 # Supported models
 
 - <sub>Cactus smartly and compactly blends INT4, INT8 and F16 for all weights.</sub>
-- <sub>You can still quantize everything with one precision, but mixed is optimal</sub>
+- <sub>You could still quantize everything with one precision, but mixed is optimal</sub>
 
 | Model | Zipped Size | Completion | Tools | Vision | Embed | Speech | Pro |
 |-------|------------------|------------|-------|--------|-------|--------|-----|
@@ -180,3 +181,7 @@ git clone https://github.com/cactus-compute/cactus && cd cactus && source ./setu
 
 - [iOS Demo](https://apps.apple.com/gb/app/cactus-chat/id6744444212)
 - [Android Demo](https://play.google.com/store/apps/details?id=com.rshemetsubuser.myapp)
+
+# Maintaining Organisations
+1. [Cactus Compute, Inc](https://cactuscompute.com/) 
+2. [UCLA's BruinAI](https://bruinai.org/) 
