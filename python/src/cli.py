@@ -664,7 +664,7 @@ def cmd_clean(args):
     print_color(BLUE, "Re-running setup...")
     setup_script = PROJECT_ROOT / "setup"
     result = subprocess.run(
-        ["bash", "-c", f"source {setup_script} && pip install -e {PROJECT_ROOT / 'tools'} --quiet"],
+        ["bash", "-c", f"source {setup_script}"],
         cwd=PROJECT_ROOT
     )
     if result.returncode == 0:
