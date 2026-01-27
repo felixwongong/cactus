@@ -103,8 +103,8 @@ graph.hard_reset();
 |--------|--------|--------|----------|
 | Mac M4 Pro | 582/77 toks/sec| 1.2s(0.3s*) & 76 toks/sec | 1.5s(0.2s*) & 65 toks/sec |
 | iPad/Mac M4 | - | - | - |
-| iPhone 17 Pro | 300/33 toks/sec | 1.6s(0.3s*) & - toks/sec | 3.0s(0.6s*) & 70 toks/sec |
-| Galaxy S25 Ultra | 226/35 toks/sec | 2.6s(-*) & 35 toks/sec | 2.9(-*) & 44 toks/sec |
+| iPhone 17 Pro | 300/33 toks/sec | 1.6s(0.3s*) & 33 toks/sec | 3.0s(0.6s*) & 70 toks/sec |
+| Galaxy S25 Ultra | 226/35 toks/sec | 2.6s & 35 toks/sec | 2.9s & 44 toks/sec |
 | Pixel 10 Pro | - | - | - |
 | Vivo X200 Pro | - | - | - |
 
@@ -118,7 +118,7 @@ graph.hard_reset();
 | iPad/Mac M1 | - | - | - |
 | iPhone 13 Mini | - | - | - |
 | Galaxy A56 | - | - | - |
-| Pixel 6a | 218/44 toks/sec | 3.0s(-*) & 42 toks/sec | - |
+| Pixel 6a | 218/44 toks/sec | 3.0s & 42 toks/sec | - |
 | Nothing CMF | - | - | - |
 | Raspberry Pi 5 | - | - | - |
 
