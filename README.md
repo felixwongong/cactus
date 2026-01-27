@@ -99,7 +99,7 @@ graph.hard_reset();
 - Tested for worst case (big model + 1k context size)
 - Small models and small context yield flashier numbers, but hides stress points. 
 
-| Device | LFM2.5-1.2B (1k-Pre/100-Dec) | LFM2.5-VL-1.6B (256px-Latency & Dec) | Whisper-Small (30s-audio-Latency & Dec)
+| Device | LFM2.5-1.2B<br>(1k-Prefill/100-Decode) | LFM2.5-VL-1.6B<br>(256px-Latency & Decode) | Whisper-Small<br>(30s-audio-Latency & Decode)
 |--------|--------|--------|----------|
 | Mac M4 Pro | 582/77 toks/sec| 1.2s(0.3s*) & 76 toks/sec | 1.5s(0.2s*) & 65 toks/sec |
 | iPad/Mac M4 | - | - | - |
@@ -108,12 +108,12 @@ graph.hard_reset();
 | Pixel 10 Pro | - | - | - |
 | Vivo X200 Pro | - | - | - |
 
-## Budget Devices Benchmark (INT4)
+## Budget Devices Benchmark (INT8)
 
-- We recommend <=600m LLM/VLM and sub-300m transcription for ALL mobiles 
-- Cactus decides in sub 100ms when to fallback to cloud due to complexity, happens <20%
+- We recommend <=600m LLM/VLM and sub-300m transcription for ALL mobiles + cloud fallback
+- Cactus decides in sub 100ms when to fallback to private cloud due to complexity, happens <20%
 
-| Device | LFM2-350m (1k-Prefill/100-Dec) | LFM2-VL-450m (256px-Latency & Dec) | Moonshine-Base (30s-audio-Latency & Dec)
+| Device | LFM2-350m<br>(1k-Prefill/100-Decode) | LFM2-VL-450m<br>(256px-Latency & Decode) | Moonshine-Base<br>(30s-audio-Latency & Decode)
 |--------|--------|--------|----------|
 | iPad/Mac M1 | - | - | - |
 | iPhone 13 Mini | - | - | - |
@@ -143,7 +143,7 @@ graph.hard_reset();
   | LiquidAI/LFM2-VL-450M | 448MB | vision, txt & img embed, Apple NPU |                                                                                                            
   | LiquidAI/LFM2.5-VL-1.6B | 954MB | vision, txt & img embed, Apple NPU |                                                                                                          
   | **Speech** | | |                                                                                                                                                      
-  | UsefulSensors/moonshine-base | 283MB | transcription, embed |                                                                                                         
+  | UsefulSensors/moonshine-base | 150MB | transcription, speech embed |                                                                                                         
   | openai/whisper-small | 283MB | transcription, speech embed, Apple NPU |                                                                                                                 
   | openai/whisper-medium | 658MB | transcription, speech embed, Apple NPU |                                                                                                                
   | **Embeddings** | | |                                                                                                                                                  
