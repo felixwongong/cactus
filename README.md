@@ -102,11 +102,11 @@ graph.hard_reset();
 | Device | LFM2.5-1.2B (1k-Pre/100-Dec) | LFM2.5-VL-1.6B (256px-Latency & Dec) | Whisper-Small (30s-audio-Latency & Dec)
 |--------|--------|--------|----------|
 | Mac M4 Pro | 582/77 toks/sec| 1.2s(0.3s*) & 76 toks/sec | 1.5s(0.2s*) & 65 toks/sec |
-| iPad/Mac M4 | -/- toks/sec | -(-*) & - toks/sec | -(-*) & - toks/sec |
+| iPad/Mac M4 | - | - | - |
 | iPhone 17 Pro | 300/33 toks/sec | 1.6s(0.3s*) & - toks/sec | 3.0s(0.6s*) & 70 toks/sec |
 | Galaxy S25 Ultra | 226/35 toks/sec | 2.6s(-*) & 35 toks/sec | 2.9(-*) & 44 toks/sec |
-| Pixel 10 Pro | -/- toks/sec | -(-*) & - toks/sec | -(-*) & - toks/sec |
-| Vivo X200 Pro | -/- toks/sec | -(-*) & - toks/sec | -(-*) & - toks/sec |
+| Pixel 10 Pro | - | - | - |
+| Vivo X200 Pro | - | - | - |
 
 ## Budget Devices Benchmark (INT4)
 
@@ -115,12 +115,12 @@ graph.hard_reset();
 
 | Device | LFM2-350m (1k-Prefill/100-Dec) | LFM2-VL-450m (256px-Latency & Dec) | Moonshine-Base (30s-audio-Latency & Dec)
 |--------|--------|--------|----------|
-| iPad/Mac M1 | -/- toks/sec | -(-*) & - toks/sec | -(-*) & - toks/sec |
-| iPhone 13 Mini | -/- toks/sec | -(-*) & - toks/sec | -(-*) & - toks/sec |
-| Galaxy A56 | -/- toks/sec | -(-*) & - toks/sec | -(-*) & - toks/sec |
-| Pixel 6a | 218/44 toks/sec | 3.0s(-*) & 42 toks/sec | -(-*) & - toks/sec |
-| Nothing CMF | -/- toks/sec | -(-*) & - toks/sec | -(-*) & - toks/sec |
-| Raspberry Pi 5 | -/- toks/sec | -(-*) & - toks/sec | -(-*) & - toks/sec |
+| iPad/Mac M1 | - | - | - |
+| iPhone 13 Mini | - | - | - |
+| Galaxy A56 | - | - | - |
+| Pixel 6a | 218/44 toks/sec | 3.0s(-*) & 42 toks/sec | - |
+| Nothing CMF | - | - | - |
+| Raspberry Pi 5 | - | - | - |
 
 
  ## Supported Models                                                                                                                                                     
