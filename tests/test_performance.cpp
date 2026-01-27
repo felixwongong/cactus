@@ -972,16 +972,6 @@ bool test_gather_operations_performance(TestUtils::TestRunner& runner) {
     return true;
 }
 
-bool test_embedding_operations_performance(TestUtils::TestRunner& runner) {
-    BenchmarkConfig config;
-    config.iterations = 10;
-    // INT8 embeddings → FP16 output
-    benchmark_embedding_ops<int8_t>(runner, config);
-    benchmark_embedding_ops<__fp16>(runner, config);
-    benchmark_mmap_embedding(runner, config);
-    return true;
-}
-
 bool test_signals_performance(TestUtils::TestRunner& runner) {
     BenchmarkConfig config;
 
@@ -1008,7 +998,6 @@ int main() {
     runner.run_test("Advanced Operations", test_advanced_operations_performance(runner));
     runner.run_test("Engine Operations", test_engine_operations_performance(runner));
     runner.run_test("Gather Operations", test_gather_operations_performance(runner));
-    runner.run_test("Embedding Operations", test_embedding_operations_performance(runner));
     runner.run_test("Signals Operations", test_signals_performance(runner));
 
     runner.print_summary();

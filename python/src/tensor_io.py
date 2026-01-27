@@ -452,4 +452,3 @@ def print_quantization_summary(quantization_stats, args=None):
         print(f"SNR - Mean: {np.mean(snr_values):.1f}dB, Max: {np.max(snr_values):.1f}dB, Median: {np.median(snr_values):.1f}dB, Min: {np.min(snr_values):.1f}dB")
         print(f"CosSim - Mean: {np.mean(cos_sim_values):.6f}, Max: {np.max(cos_sim_values):.6f}, Median: {np.median(cos_sim_values):.6f}, Min: {np.min(cos_sim_values):.6f}")
         print(f"Processed {int8_count} INT8 tensors, {int4_count} INT4 tensors (stored as INT8), {fp16_count} FP16 tensors")
-        print(f"Note: All quantized weights use GGML-style interleaved format [N/4, K/4, 4, 4] for vdotq_laneq_s32")

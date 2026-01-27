@@ -349,7 +349,7 @@ void cactus_gemm_int8(
     constexpr size_t TILE_N = 4;
 
     const size_t num_groups = K / group_size;
-    const size_t N_blocks = (N + 3) / 4;
+    const size_t N_blocks = (N + TILE_N - 1) / TILE_N;
     const size_t num_row_tiles = (M + TILE_M - 1) / TILE_M;
     const size_t total_tiles = num_row_tiles * N_blocks;
 
@@ -361,8 +361,8 @@ void cactus_gemm_int8(
                 const size_t n_block = tile_idx % N_blocks;
                 const size_t m_start = tile_row * TILE_M;
                 const size_t m_end = std::min(m_start + TILE_M, M);
-                const size_t n_start = n_block * 4;
-                const size_t n_end = std::min(n_start + 4, N);
+                const size_t n_start = n_block * TILE_N;
+                const size_t n_end = std::min(n_start + TILE_N, N);
                 const size_t actual_m = m_end - m_start;
                 const size_t actual_n = n_end - n_start;
 
