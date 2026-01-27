@@ -186,6 +186,9 @@ git clone https://github.com/cactus-compute/cactus && cd cactus && source ./setu
 3. [Yale's AI Society](https://www.yale-ai.org/team)
 4. [National Unoversity of Singapore's AI Society](https://www.nusaisociety.org/)
 5. [UC Irvine's AI@UCI](https://aiclub.ics.uci.edu/)
+6. [Imperial College's AI Society](https://www.imperialcollegeunion.org/csp/1391)
+7. [University of Pennsylvania's AI@Penn](https://ai-at-penn-main-105.vercel.app/)
+8. [Universit of Colorado Boulder's AI Club](https://www.cuaiclub.org/)
 
 ## Join The Community
 - [Reddit Channel](https://www.reddit.com/r/cactuscompute/)
