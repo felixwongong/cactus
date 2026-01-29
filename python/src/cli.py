@@ -154,6 +154,12 @@ def cmd_download(args):
             except Exception as e:
                 print(f"  Warning: convert_processors failed: {e}")
 
+        elif 'moonshine' in model_id.lower():
+            from transformers import MoonshineForConditionalGeneration
+            print(f"  Note: Loading Moonshine model using MoonshineForConditionalGeneration...")
+            model = MoonshineForConditionalGeneration.from_pretrained(model_id, cache_dir=cache_dir, trust_remote_code=True, token=token)
+            tokenizer = AutoTokenizer.from_pretrained(model_id, cache_dir=cache_dir, trust_remote_code=True, token=token)
+
         elif is_whisper:
             tokenizer = AutoTokenizer.from_pretrained(model_id, cache_dir=cache_dir, trust_remote_code=True, token=token)
             model = AutoModel.from_pretrained(model_id, cache_dir=cache_dir, trust_remote_code=True, token=token)
@@ -542,6 +548,11 @@ def cmd_test(args):
     print_color(BLUE, "Running test suite...")
     print("=" * 20)
 
+    if getattr(args, 'large', False):
+        args.model = 'LiquidAI/LFM2.5-VL-1.6B'
+        args.transcribe_model = 'openai/whisper-small'
+        print_color(BLUE, f"Using large models: {args.model}, {args.transcribe_model}")
+
     precision = getattr(args, 'precision', None)
     if precision:
         # Regenerate main model weights
@@ -565,7 +576,7 @@ def cmd_test(args):
             return download_result
 
         # Regenerate transcribe model weights with same precision
-        transcribe_model_id = getattr(args, 'transcribe_model', 'openai/whisper-small')
+        transcribe_model_id = getattr(args, 'transcribe_model', 'UsefulSensors/moonshine-base')
         transcribe_weights_dir = get_weights_dir(transcribe_model_id)
 
         if transcribe_weights_dir.exists():
@@ -594,6 +605,8 @@ def cmd_test(args):
         cmd.extend(["--model", args.model])
     if args.transcribe_model:
         cmd.extend(["--transcribe_model", args.transcribe_model])
+    if precision:
+        cmd.extend(["--precision", precision])
     if getattr(args, 'no_rebuild', False):
         cmd.append("--no-rebuild")
     if args.android:
@@ -848,7 +861,8 @@ def create_parser():
 
     Optional flags:
     --model <model>                    default: LFM2-VL-450M
-    --transcribe_model <model>         default: whisper-small
+    --transcribe_model <model>         default: moonshine-base
+    --large                            use larger models (LFM2.5-VL-1.6B + whisper-small)
     --precision INT4|INT8|FP16         regenerates weights with precision
     --no-rebuild                       skip building library and tests
     --ios                              run on connected iPhone
@@ -932,8 +946,10 @@ def create_parser():
     test_parser = subparsers.add_parser('test', help='Run the test suite')
     test_parser.add_argument('--model', default='LiquidAI/LFM2-VL-450M',
                              help='Model to use for tests')
-    test_parser.add_argument('--transcribe_model', default='openai/whisper-small',
+    test_parser.add_argument('--transcribe_model', default='UsefulSensors/moonshine-base',
                              help='Transcribe model to use')
+    test_parser.add_argument('--large', action='store_true',
+                             help='Use larger models (LFM2.5-VL-1.6B + whisper-small)')
     test_parser.add_argument('--precision', choices=['INT4', 'INT8', 'FP16'],
                              help='Regenerate weights with this precision (deletes existing weights)')
     test_parser.add_argument('--no-rebuild', action='store_true',
