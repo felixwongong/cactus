@@ -183,7 +183,6 @@ int cactus_transcribe(
 
         size_t max_allowed_tokens = WHISPER_MAX_DECODER_POSITIONS - tokens.size();
         if (max_tokens > max_allowed_tokens) {
-            CACTUS_LOG_WARN("transcribe", "max_tokens exceeds limit, reducing to " << max_allowed_tokens);
             max_tokens = max_allowed_tokens;
         }
 
@@ -202,13 +201,11 @@ int cactus_transcribe(
         float max_tps = handle->model->get_config().default_max_tps;
         if (max_tps < 0) {
             max_tps = 100;
-            std::cout << "Default max TPS is not set, using 100" << std::endl;
         }
 
         float audio_length = audio_features.size() / 16000.0f;
         size_t max_tps_tokens = static_cast<size_t>(audio_length * max_tps);
         if (max_tokens > max_tps_tokens) {
-            CACTUS_LOG_WARN("transcribe", "max_tokens exceeds limit, reducing to " << max_tps_tokens);
             max_tokens = max_tps_tokens;
         }
 

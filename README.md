@@ -162,6 +162,7 @@ git clone https://github.com/cactus-compute/cactus && cd cactus && source ./setu
 | `cactus convert [model] [dir]` | Converts model, supports LoRA merging (`--lora <path>`) |
 | `cactus build` | Builds for ARM (`--apple` or `--android`) |
 | `cactus test` | Runs tests (`--ios` / `--android`, `--model [name/path]`), `--precision` |
+| `cactus transcribe [model]` | Transcribe audio file (`--file`) or live microphone |
 | `cactus clean` | Removes build artifacts |
 | `cactus --help` | Shows all commands and flags (please run this to see all commands) |
 

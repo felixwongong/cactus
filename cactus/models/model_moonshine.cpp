@@ -542,7 +542,15 @@ uint32_t MoonshineModel::decode_with_audio(
     if (!initialized_ || !graph_handle_)
         throw std::runtime_error("Model not initialized - call init() first");
     if (audio_features.empty())
-        throw std::runtime_error("Mel bins cannot be empty in Moonshine decode_with_audio");
+        throw std::runtime_error("Audio features cannot be empty in Moonshine decode_with_audio");
+
+    if (temperature <= 0) {
+        temperature = 0.0f; 
+    }
+    if (top_k == 0) {
+        top_k = 1; 
+    }
+
     auto* gb = static_cast<CactusGraph*>(graph_handle_);
     bool cold_start = !encoder_ready_;
     size_t logits_node = 0;

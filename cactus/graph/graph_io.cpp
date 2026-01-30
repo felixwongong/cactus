@@ -13,7 +13,6 @@ namespace {
     constexpr uint32_t FLAG_HAS_SCALES = 1 << 0;
     constexpr uint32_t FLAG_INTERLEAVED = 1 << 3;
     constexpr size_t HEADER_SIZE = 84;
-    constexpr uint32_t PRECISION_INT4_PACKED = 3;
 
     inline size_t align_offset(size_t offset, size_t alignment) {
         size_t remainder = offset % alignment;
