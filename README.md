@@ -142,14 +142,14 @@ git clone https://github.com/cactus-compute/cactus && cd cactus && source ./setu
 
 | Command | Description |
 |---------|-------------|
-| `cactus run [model-name-as-written-in-above-tables]` | Opens playground (auto downloads model) |
+| `cactus run [model]` | Opens playground (auto downloads model) |
 | `cactus download [model]` | Downloads model to `./weights` |
 | `cactus convert [model] [dir]` | Converts model, supports LoRA merging (`--lora <path>`) |
 | `cactus build` | Builds for ARM (`--apple` or `--android`) |
 | `cactus test` | Runs tests (`--ios` / `--android`, `--model [name/path]`), `--precision` |
 | `cactus transcribe [model]` | Transcribe audio file (`--file`) or live microphone |
 | `cactus clean` | Removes build artifacts |
-| `cactus --help` | Shows all commands and flags (please run this to see all commands) |
+| `cactus --help` | Shows all commands and flags (always run this) |
 
 ## Using in your apps 
 
