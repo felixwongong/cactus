@@ -21,19 +21,9 @@ class Cactus private constructor(private var handle: Long) : Closeable {
         }
 
         @JvmStatic
-        fun setTelemetryToken(token: String) = nativeSetTelemetryToken(token)
-
-        @JvmStatic
-        fun setProKey(key: String) = nativeSetProKey(key)
-
-        @JvmStatic
         private external fun nativeInit(modelPath: String, corpusDir: String?): Long
         @JvmStatic
         private external fun nativeGetLastError(): String
-        @JvmStatic
-        private external fun nativeSetTelemetryToken(token: String)
-        @JvmStatic
-        private external fun nativeSetProKey(key: String)
     }
 
     fun complete(prompt: String, options: CompletionOptions = CompletionOptions()): CompletionResult {

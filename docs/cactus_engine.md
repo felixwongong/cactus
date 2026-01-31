@@ -660,35 +660,6 @@ if (!model) {
 }
 ```
 
-### `cactus_set_telemetry_token`
-Sets the telemetry token for usage tracking. Pass NULL or empty string to disable telemetry.
-
-```c
-void cactus_set_telemetry_token(const char* token);
-```
-
-**Example:**
-```c
-cactus_set_telemetry_token("your-telemetry-token");
-cactus_set_telemetry_token(NULL); // disable
-```
-
-### `cactus_set_pro_key`
-Sets the pro key to enable NPU acceleration on supported devices (Apple Neural Engine).
-
-```c
-void cactus_set_pro_key(const char* pro_key);
-```
-
-**Example:**
-```c
-cactus_set_pro_key("your-pro-key");
-
-cactus_model_t model = cactus_init("path/to/model", NULL);
-```
-
-**Note:** The pro key should be set before initializing any models to ensure NPU acceleration is enabled.
-
 ## Vector Index APIs
 
 The vector index APIs provide persistent storage and retrieval of embeddings for RAG (Retrieval-Augmented Generation) applications.

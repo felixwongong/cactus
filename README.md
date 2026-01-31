@@ -15,16 +15,14 @@
 ```
 
 
-## Cactus Engine 
+## Cactus Engine
 
 ```cpp
 #include cactus.h
 
-cactus_set_pro_key("optional, email founders@cactuscompute.com"); 
-
 cactus_model_t model = cactus_init(
-    "path/to/weight/folder",            
-    "path to txt or dir of txts for auto-rag",  
+    "path/to/weight/folder",
+    "path to txt or dir of txts for auto-rag",
 );
 
 const char* messages = R"([
@@ -94,60 +92,47 @@ void* output_data = graph.get_output(result);
 graph.hard_reset(); 
 ```
 
-## High-End Devices Benchmark (INT8)
-
-- Tested for worst case (big model + 1k context size)
-- Small models and small context yield flashier numbers, but hides stress points. 
+## Benchmark (INT8)
 
 | Device | LFM2.5-1.2B<br>(1k-Prefill/100-Decode) | LFM2.5-VL-1.6B<br>(256px-Latency & Decode) | Whisper-Small<br>(30s-audio-Latency & Decode)
 |--------|--------|--------|----------|
-| Mac M4 Pro | 582/77 tps| 1.2s(0.3s*) & 76 tps | 1.5s(0.2s*) & 65 tps |
+| Mac M4 Pro | 582/77 tps| 0.2s & 76tps | 0.6s & 111tps |
 | iPad/Mac M4 | - | - | - |
-| iPhone 17 Pro | 300/33 tps | 1.6s(0.3s*) & 33 tps | 3.0s(0.6s*) & 70 tps |
-| Galaxy S25 Ultra | 226/35 tps | 2.6s & 35 tps | 2.9s & 44 tps |
+| iPhone 17 Pro | 300/33 tps | 0.3s & 33tps | 0.6s & 114tps |
+| Galaxy S25 Ultra | 226/35 tps | 2.6s & 35tps | 2.9s & 85tps |
 | Pixel 10 Pro | - | - | - |
 | Vivo X200 Pro | - | - | - |
-
-## Budget Devices Benchmark (INT8)
-
-- We recommend <=600m LLM/VLM and sub-300m transcription for ALL mobiles + cloud fallback
-- Cactus decides in sub 100ms when to fallback to private cloud due to complexity, happens <20%
 
 | Device | LFM2-350m<br>(1k-Prefill/100-Decode) | LFM2-VL-450m<br>(256px-Latency & Decode) | Moonshine-Base<br>(30s-audio-Latency & Decode)
 |--------|--------|--------|----------|
 | iPad/Mac M1 | - | - | - |
 | iPhone 13 Mini | - | - | - |
 | Galaxy A56 | - | - | - |
-| Pixel 6a | 218/44 tps | 3.0s & 42 tps | 1.8s & 138 tps |
+| Pixel 6a | 218/44 tps | 2.5s & 36 tps | 1.5s & 189 tps |
 | Nothing CMF | - | - | - |
 | Raspberry Pi 5 | - | - | - |
 
-
  ## Supported Models                                                                                                                                                     
                                                                                                                                                                           
-  | Model | Size | Features |                                                                                                                                             
-  |-------|------|----------|                                                                                                                                             
-  | **LLMs** | | |                                                                                                                                                        
-  | google/gemma-3-270m-it | 252MB | completion |                                                                                                                         
-  | google/functiongemma-270m-it | 252MB | completion, tools |                                                                                                            
-  | LiquidAI/LFM2-350M | 244MB | completion, tools, embed |                                                                                                               
-  | Qwen/Qwen3-0.6B | 514MB | completion, tools, embed |                                                                                                                  
-  | LiquidAI/LFM2-700M | 498MB | completion, tools, embed |                                                                                                               
-  | google/gemma-3-1b-it | 642MB | completion |                                                                                                                           
-  | LiquidAI/LFM2.5-1.2B-Thinking | 474MB | completion, tools, embed |                                                                                                    
-  | LiquidAI/LFM2.5-1.2B-Instruct | 474MB | completion, tools, embed |                                                                                                      
-  | Qwen/Qwen3-1.7B | 749MB | completion, tools, embed | 
-  | LiquidAI/LFM2-2.6B | 1.42G | completion, tools, embed |                                                                                                              
-  | **VLMs** | | |                                                                                                                                                        
-  | LiquidAI/LFM2-VL-450M | 448MB | vision, txt & img embed, Apple NPU |                                                                                                            
-  | LiquidAI/LFM2.5-VL-1.6B | 954MB | vision, txt & img embed, Apple NPU |                                                                                                          
-  | **Speech** | | |                                                                                                                                                      
-  | UsefulSensors/moonshine-base | 80MB | transcription, speech embed |                                                                                                         
-  | openai/whisper-small | 283MB | transcription, speech embed, Apple NPU |                                                                                                                 
-  | openai/whisper-medium | 658MB | transcription, speech embed, Apple NPU |                                                                                                                
-  | **Embeddings** | | |                                                                                                                                                  
-  | nomic-ai/nomic-embed-text-v2-moe | 451MB | embed |                                                                                                                    
-  | Qwen/Qwen3-Embedding-0.6B | 514MB | embed | 
+| Model | Features |                                                                                                                                             
+|-------|----------|                                                                                                                                             
+| google/gemma-3-270m-it | completion |                                                                                                                         
+| google/functiongemma-270m-it | completion, tools |                                                                                                            
+| LiquidAI/LFM2-350M | completion, tools, embed |                                                                                                               
+| Qwen/Qwen3-0.6B | completion, tools, embed |                                                                                                                  
+| LiquidAI/LFM2-700M | completion, tools, embed |                                                                                                               
+| google/gemma-3-1b-it | completion |                                                                                                                           
+| LiquidAI/LFM2.5-1.2B-Thinking | completion, tools, embed |                                                                                                    
+| LiquidAI/LFM2.5-1.2B-Instruct | completion, tools, embed |                                                                                                      
+| Qwen/Qwen3-1.7B | completion, tools, embed | 
+| LiquidAI/LFM2-2.6B | completion, tools, embed |                                                                                                                
+| LiquidAI/LFM2-VL-450M | vision, txt & img embed, Apple NPU |                                                                                                            
+| LiquidAI/LFM2.5-VL-1.6B | vision, txt & img embed, Apple NPU |                                                                                                               
+| UsefulSensors/moonshine-base | transcription, speech embed |                                                                                                         
+| openai/whisper-small | transcription, speech embed, Apple NPU |                                                                                                                 
+| openai/whisper-medium | transcribe, speech embed, Apple NPU |                                                                             
+| nomic-ai/nomic-embed-text-v2-moe | embed |                                                                                                                    
+| Qwen/Qwen3-Embedding-0.6B | embed | 
 
 ## Using this repo on a Mac
 

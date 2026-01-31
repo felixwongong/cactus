@@ -450,15 +450,6 @@ public final class Cactus: @unchecked Sendable {
     }
 
 
-    public static func setTelemetryToken(_ token: String) {
-        cactus_set_telemetry_token(token)
-    }
-
-    public static func setProKey(_ key: String) {
-        cactus_set_pro_key(key)
-    }
-
-
     private func serializeMessages(_ messages: [Message]) throws -> String {
         let dicts = messages.map { $0.toDict() }
         guard let data = try? JSONSerialization.data(withJSONObject: dicts),

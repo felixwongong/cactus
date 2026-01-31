@@ -239,24 +239,6 @@ Java_com_cactus_Cactus_nativeGetLastError(JNIEnv* env, jobject) {
     return env->NewStringUTF(error ? error : "");
 }
 
-JNIEXPORT void JNICALL
-Java_com_cactus_Cactus_nativeSetTelemetryToken(JNIEnv* env, jobject, jstring token) {
-    const char* tokenStr = jstring_to_cstr(env, token);
-    if (tokenStr != nullptr) {
-        cactus_set_telemetry_token(tokenStr);
-        release_jstring(env, token, tokenStr);
-    }
-}
-
-JNIEXPORT void JNICALL
-Java_com_cactus_Cactus_nativeSetProKey(JNIEnv* env, jobject, jstring key) {
-    const char* keyStr = jstring_to_cstr(env, key);
-    if (keyStr != nullptr) {
-        cactus_set_pro_key(keyStr);
-        release_jstring(env, key, keyStr);
-    }
-}
-
 JNIEXPORT jintArray JNICALL
 Java_com_cactus_Cactus_nativeTokenize(JNIEnv* env, jobject, jlong handle, jstring text) {
     if (handle == 0) return nullptr;

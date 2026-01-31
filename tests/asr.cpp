@@ -18,7 +18,6 @@
 #endif
 
 constexpr size_t RESPONSE_BUFFER_SIZE = 65536;
-constexpr int SAMPLE_RATE = 16000;
 
 namespace Color {
     const std::string RESET   = "\033[0m";
@@ -165,6 +164,7 @@ int transcribe_file(cactus_model_t model, const std::string& audio_path, const s
 
 #ifdef HAVE_SDL2
 
+constexpr int SAMPLE_RATE = 16000;
 constexpr int AUDIO_BUFFER_MS = 100;
 
 struct AudioState {

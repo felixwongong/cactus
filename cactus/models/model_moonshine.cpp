@@ -251,12 +251,12 @@ size_t MoonshineModel::build_decoder_self_attention(CactusGraph* gb, size_t inpu
             kv_cache_.precision
         );
         if (k_view.ptr2 == nullptr && v_view.ptr2 == nullptr) {
-            gb->set_input(cache_k_node, k_view.ptr1, kv_cache_.precision);
-            gb->set_input(cache_v_node, v_view.ptr1, kv_cache_.precision);
+            gb->set_external_input(cache_k_node, const_cast<void*>(k_view.ptr1), kv_cache_.precision);
+            gb->set_external_input(cache_v_node, const_cast<void*>(v_view.ptr1), kv_cache_.precision);
         }
         else {
-            gb->set_input(cache_k_node, kv_cache_.get_key_ptr(layer_idx), kv_cache_.precision);
-            gb->set_input(cache_v_node, kv_cache_.get_value_ptr(layer_idx), kv_cache_.precision);
+            gb->set_external_input(cache_k_node, kv_cache_.get_key_ptr(layer_idx), kv_cache_.precision);
+            gb->set_external_input(cache_v_node, kv_cache_.get_value_ptr(layer_idx), kv_cache_.precision);
         }
         final_k = gb->concat(cache_k_node, k_4d, 1);
         final_v = gb->concat(cache_v_node, v_4d, 1);

@@ -197,8 +197,8 @@ size_t WhisperModel::build_encoder_attention(CactusGraph* gb, size_t input, uint
         size_t cache_k_node = gb->input(k_shape, encoder_kv_precision_);
         size_t cache_v_node = gb->input(v_shape, encoder_kv_precision_);
 
-        gb->set_input(cache_k_node, encoder_k_host_[layer_idx].data(), encoder_kv_precision_);
-        gb->set_input(cache_v_node, encoder_v_host_[layer_idx].data(), encoder_kv_precision_);
+        gb->set_external_input(cache_k_node, encoder_k_host_[layer_idx].data(), encoder_kv_precision_);
+        gb->set_external_input(cache_v_node, encoder_v_host_[layer_idx].data(), encoder_kv_precision_);
 
         k_4d = cache_k_node;
         v_4d = cache_v_node;
@@ -297,11 +297,11 @@ size_t WhisperModel::build_decoder_self_attention(CactusGraph* gb, size_t input,
         );
 
         if (k_view.ptr2 == nullptr && v_view.ptr2 == nullptr) {
-            gb->set_input(cache_k_node, k_view.ptr1, kv_cache_.precision);
-            gb->set_input(cache_v_node, v_view.ptr1, kv_cache_.precision);
+            gb->set_external_input(cache_k_node, const_cast<void*>(k_view.ptr1), kv_cache_.precision);
+            gb->set_external_input(cache_v_node, const_cast<void*>(v_view.ptr1), kv_cache_.precision);
         } else {
-            gb->set_input(cache_k_node, kv_cache_.get_key_ptr(layer_idx), kv_cache_.precision);
-            gb->set_input(cache_v_node, kv_cache_.get_value_ptr(layer_idx), kv_cache_.precision);
+            gb->set_external_input(cache_k_node, kv_cache_.get_key_ptr(layer_idx), kv_cache_.precision);
+            gb->set_external_input(cache_v_node, kv_cache_.get_value_ptr(layer_idx), kv_cache_.precision);
         }
 
         final_k = gb->concat(cache_k_node, k_4d, 1);
@@ -500,7 +500,7 @@ void WhisperModel::run_encoder(const std::vector<float>& audio_features)
 
             if (elements_written > 0) {
                 size_t enc_output_node = gb->input({T_enc, D_enc}, Precision::FP16);
-                gb->set_input(enc_output_node, output_buffer, Precision::FP16);
+                gb->set_external_input(enc_output_node, output_buffer, Precision::FP16);
 
                 weight_nodes_.encoder_output = enc_output_node;
                 return;
@@ -746,7 +746,7 @@ uint32_t WhisperModel::decode_with_audio(
             throw std::runtime_error("Missing encoder_output_host_ in warm step!");
 
         size_t enc_node = gb->input(encoder_output_shape_, encoder_output_precision_);
-        gb->set_input(enc_node, encoder_output_host_.data(), encoder_output_precision_);
+        gb->set_external_input(enc_node, encoder_output_host_.data(), encoder_output_precision_);
         weight_nodes_.encoder_output = enc_node;
 
         std::vector<uint32_t> last_token_vec = { tokens.back() };
