@@ -687,7 +687,9 @@ static bool test_stream_transcription() {
         return false;
     }
 
-    cactus_stream_transcribe_t stream = cactus_stream_transcribe_init(model);
+    cactus_stream_transcribe_t stream = cactus_stream_transcribe_start(
+        model,  R"({"confirmation_threshold": 1.0, "min_chunk_size": 16000})"
+    );
     if (!stream) {
         std::cerr << "[✗] Failed to initialize stream transcribe\n";
         cactus_destroy(model);
@@ -698,7 +700,7 @@ static bool test_stream_transcription() {
     FILE* wav_file = fopen(audio_path.c_str(), "rb");
     if (!wav_file) {
         std::cerr << "[✗] Failed to open audio file\n";
-        cactus_stream_transcribe_destroy(stream);
+        cactus_stream_transcribe_stop(stream, nullptr, 0);
         cactus_destroy(model);
         return false;
     }
@@ -718,22 +720,18 @@ static bool test_stream_transcription() {
     for (size_t offset = 0; offset < pcm_samples.size(); offset += chunk_size) {
         size_t size = std::min(chunk_size, pcm_samples.size() - offset);
 
-        cactus_stream_transcribe_insert(
-            stream,
-            reinterpret_cast<const uint8_t*>(pcm_samples.data() + offset),
-            size * sizeof(int16_t)
-        );
-
         char response[1 << 15] = {0};
         int result = cactus_stream_transcribe_process(
             stream,
+            reinterpret_cast<const uint8_t*>(pcm_samples.data() + offset),
+            size * sizeof(int16_t),
             response,
-            sizeof(response), R"({"confirmation_threshold": 0.90})"
+            sizeof(response)
         );
 
         if (result < 0) {
             std::cerr << "\n[✗] Processing failed\n";
-            cactus_stream_transcribe_destroy(stream);
+            cactus_stream_transcribe_stop(stream, nullptr, 0);
             cactus_destroy(model);
             return false;
         }
@@ -742,21 +740,22 @@ static bool test_stream_transcription() {
         std::string confirmed = json_string(response_str, "confirmed");
         std::string pending = json_string(response_str, "pending");
 
-        full_transcription += confirmed;
-        if (!confirmed.empty()) std::cout << "├─ confirmed: " << confirmed << "\n";
-        if (!pending.empty()) std::cout << "├─ pending: " << pending << "\n";
+        std::cout << "├─ transcription: " << full_transcription + pending << std::endl;
+
+        if (!confirmed.empty()) {
+            full_transcription += confirmed + " ";
+        }
     }
 
     char final_response[1 << 15] = {0};
-    int final_result = cactus_stream_transcribe_finalize(
+    int stop_result = cactus_stream_transcribe_stop(
         stream,
         final_response,
         sizeof(final_response)
     );
 
-    if (final_result < 0) {
-        std::cerr << "[✗] Finalization failed\n";
-        cactus_stream_transcribe_destroy(stream);
+    if (stop_result < 0) {
+        std::cerr << "[✗] Stop failed\n";
         cactus_destroy(model);
         return false;
     }
@@ -791,7 +790,6 @@ static bool test_stream_transcription() {
               << "  \"words_transcribed\": " << word_count << "\n"
               << "├─ Full transcription: \"" << full_transcription << "\"" << std::endl;
 
-    cactus_stream_transcribe_destroy(stream);
     cactus_destroy(model);
     return true;
 }
@@ -1012,22 +1010,22 @@ static bool test_pcm_transcription() {
 
 int main() {
     TestUtils::TestRunner runner("Engine Tests");
-    // runner.run_test("1k_context", test_1k_context());
-    // runner.run_test("streaming", test_streaming());
-    // runner.run_test("tool_calls", test_tool_call());
-    // runner.run_test("tool_calls_with_two_tools", test_tool_call_with_two_tools());
-    // runner.run_test("tool_calls_with_three_tools", test_tool_call_with_three_tools());
-    // runner.run_test("cloud_handoff", test_cloud_handoff());
-    // runner.run_test("vlm_multiturn", test_vlm_multiturn());
-    // runner.run_test("embeddings", test_embeddings());
-    // runner.run_test("image_embeddings", test_image_embeddings());
-    // runner.run_test("audio_embeddings", test_audio_embeddings());
+    runner.run_test("1k_context", test_1k_context());
+    runner.run_test("streaming", test_streaming());
+    runner.run_test("tool_calls", test_tool_call());
+    runner.run_test("tool_calls_with_two_tools", test_tool_call_with_two_tools());
+    runner.run_test("tool_calls_with_three_tools", test_tool_call_with_three_tools());
+    runner.run_test("cloud_handoff", test_cloud_handoff());
     runner.run_test("vlm_multiturn", test_vlm_multiturn());
-    // runner.run_test("audio_processor", test_audio_processor());
+    runner.run_test("embeddings", test_embeddings());
+    runner.run_test("image_embeddings", test_image_embeddings());
+    runner.run_test("audio_embeddings", test_audio_embeddings());
+    runner.run_test("vlm_multiturn", test_vlm_multiturn());
+    runner.run_test("audio_processor", test_audio_processor());
     runner.run_test("transcription", test_transcription());
-    // runner.run_test("pcm_transcription", test_pcm_transcription());
-    // runner.run_test("stream_transcription", test_stream_transcription());
-    // runner.run_test("rag_preprocessing", test_rag());
+    runner.run_test("pcm_transcription", test_pcm_transcription());
+    runner.run_test("stream_transcription", test_stream_transcription());
+    runner.run_test("rag_preprocessing", test_rag());
     runner.print_summary();
     return runner.all_passed() ? 0 : 1;
 }
