@@ -98,7 +98,7 @@ graph.hard_reset();
 |--------|--------|--------|----------|
 | Mac M4 Pro | 582/77 tps| 0.2s & 76tps | 0.1s & 111tps |
 | iPad/Mac M4 | - | - | - |
-| iPhone 17 Pro | 300/33 tps | 0.3s & 33tps | 0.6s & 114tps |
+| iPhone 17 Pro | 300/33 tps | 0.3s & 33tps | 0.3s & 114tps |
 | Galaxy S25 Ultra | 226/36 tps | 2.6s & 33tps | 2.3s & 90tps |
 | Pixel 10 Pro | - | - | - |
 | Vivo X200 Pro | - | - | - |
