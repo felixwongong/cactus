@@ -8,6 +8,8 @@
 #include <queue>
 #include <limits>
 #include <cerrno>
+#include <stdexcept>
+#include <cstring>
 #include <algorithm>
 
 namespace cactus {

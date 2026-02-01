@@ -48,7 +48,6 @@ file(GLOB FFI_SOURCES "ffi/*.cpp")
 file(GLOB MODEL_SOURCES "models/*.cpp")
 file(GLOB INDEX_SOURCES "index/*.cpp")
 
-# NPU sources - platform specific
 if(APPLE)
     set(NPU_SOURCES "npu/npu_ane.mm")
     set_source_files_properties(npu/npu_ane.mm PROPERTIES COMPILE_FLAGS "-fobjc-arc")

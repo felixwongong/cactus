@@ -134,11 +134,18 @@ graph.hard_reset();
 | nomic-ai/nomic-embed-text-v2-moe | embed |                                                                                                                    
 | Qwen/Qwen3-Embedding-0.6B | embed | 
 
-## Using this repo on a Mac
-
+## Using this repo on Mac
 ```bash
 git clone https://github.com/cactus-compute/cactus && cd cactus && source ./setup
 ```
+
+## Using this repo on Linux (Ubuntu/Debian)
+
+```bash
+sudo apt-get install python3 python3-venv python3-pip cmake build-essential libcurl4-openssl-dev
+git clone https://github.com/cactus-compute/cactus && cd cactus && source ./setup
+```
+
 
 | Command | Description |
 |---------|-------------|
