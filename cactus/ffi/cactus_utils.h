@@ -106,14 +106,6 @@ inline cactus::engine::AudioProcessor::SpectrogramConfig get_whisper_spectrogram
 namespace cactus {
 namespace ffi {
 
-#ifndef CACTUS_VERSION
-#define CACTUS_VERSION "unknown"
-#endif
-
-inline const char* getVersion() {
-    return CACTUS_VERSION;
-}
-
 inline std::string generateUUID() {
 #ifdef __APPLE__
     uuid_t uuid;

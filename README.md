@@ -183,5 +183,15 @@ git clone https://github.com/cactus-compute/cactus && cd cactus && source ./setu
 8. [University of Michigan Ann-Arbor MSAIL](https://msail.github.io/)
 9. [University of Colorado Boulder's AI Club](https://www.cuaiclub.org/)
 
+## Contributing to Cactus
+
+- **C++ Standard**: Use C++20 features where appropriate
+- **Formatting**: Follow the existing code style in the project, one header per folder.
+- **Comments**: Avoid comments, make your code read like plain english
+- **AI-Generated Code**: Do not bindly PR AI slop, this codebase is very complex, they miss details.
+- **Update docs**: Please update docs when necessary, be intuitive and straightforward. 
+- **Keep It Simple**: Do not go beyond the scope of the GH issue, avoid bloated PRs, keep codes lean.
+- **Benchmark Your Changes**: Test performance impact, Cactus is performance-critical. 
+
 ## Join The Community
 - [Reddit Channel](https://www.reddit.com/r/cactuscompute/)

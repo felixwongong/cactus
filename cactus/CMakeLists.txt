@@ -13,9 +13,6 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
-file(READ "${CMAKE_CURRENT_SOURCE_DIR}/../CACTUS_VERSION" CACTUS_VERSION)
-string(STRIP "${CACTUS_VERSION}" CACTUS_VERSION)
-
 if(APPLE)
     set(CMAKE_OSX_ARCHITECTURES "arm64")
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -arch arm64 -march=armv8.2-a+fp16+simd+dotprod+i8mm -pthread -Wall -Wextra -pedantic -O3 -Wno-missing-field-initializers")
@@ -74,12 +71,7 @@ set(COMMON_INCLUDES
     npu
 )
 
-set(COMMON_DEFINITIONS
-    CACTUS_VERSION="${CACTUS_VERSION}"
-)
-
 function(configure_cactus_target target_name)
-    target_compile_definitions(${target_name} PUBLIC ${COMMON_DEFINITIONS})
     target_include_directories(${target_name} PUBLIC ${COMMON_INCLUDES})
 
     if(CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang" OR CMAKE_CXX_COMPILER_ID STREQUAL "Clang")

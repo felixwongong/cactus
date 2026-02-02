@@ -384,7 +384,7 @@ cactus_model_t cactus_init(const char* model_path, const char* corpus_dir, bool 
             }
 
             if (!loaded) {
-                CACTUS_LOG_INFO("init", cache_index ? "No existing index found, building new corpus index" : "Building fresh corpus index (caching disabled)");
+                CACTUS_LOG_INFO("init", (cache_index ? "No existing index found, building new corpus index" : "Building fresh corpus index (caching disabled)"));
                 if (!build_corpus_index(handle, handle->corpus_dir)) {
                     CACTUS_LOG_WARN("init", "Failed to build corpus index - RAG disabled");
                 }
