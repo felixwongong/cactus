@@ -46,7 +46,6 @@ file(GLOB GRAPH_SOURCES "graph/*.cpp")
 file(GLOB KERNEL_SOURCES "kernel/*.cpp")
 file(GLOB FFI_SOURCES "ffi/*.cpp")
 file(GLOB MODEL_SOURCES "models/*.cpp")
-file(GLOB INDEX_SOURCES "index/*.cpp")
 
 if(APPLE)
     set(NPU_SOURCES "npu/npu_ane.mm")
@@ -62,7 +61,6 @@ set(COMMON_SOURCES
     ${KERNEL_SOURCES}
     ${FFI_SOURCES}
     ${MODEL_SOURCES}
-    ${INDEX_SOURCES}
     ${NPU_SOURCES}
 )
 
@@ -73,12 +71,10 @@ set(COMMON_INCLUDES
     kernel
     ffi
     models
-    index
     npu
 )
 
 set(COMMON_DEFINITIONS
-    PLATFORM_CPU_ONLY=1
     CACTUS_VERSION="${CACTUS_VERSION}"
 )
 

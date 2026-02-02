@@ -75,6 +75,33 @@ bool matches_stop_sequence(const std::vector<uint32_t>& generated_tokens,
 std::string retrieve_rag_context(CactusModelHandle* handle, const std::string& query);
 
 namespace cactus {
+namespace audio {
+
+static constexpr size_t WHISPER_TARGET_FRAMES = 3000;
+static constexpr int WHISPER_SAMPLE_RATE = 16000;
+
+inline cactus::engine::AudioProcessor::SpectrogramConfig get_whisper_spectrogram_config() {
+    cactus::engine::AudioProcessor::SpectrogramConfig cfg{};
+    cfg.n_fft        = 400;
+    cfg.frame_length = 400;
+    cfg.hop_length   = 160;
+    cfg.power        = 2.0f;
+    cfg.center       = true;
+    cfg.pad_mode     = "reflect";
+    cfg.onesided     = true;
+    cfg.dither       = 0.0f;
+    cfg.mel_floor    = 1e-10f;
+    cfg.log_mel      = "log10";
+    cfg.reference    = 1.0f;
+    cfg.min_value    = 1e-10f;
+    cfg.remove_dc_offset = true;
+    return cfg;
+}
+
+} // namespace audio
+} // namespace cactus
+
+namespace cactus {
 namespace ffi {
 
 #ifndef CACTUS_VERSION

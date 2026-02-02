@@ -473,6 +473,8 @@ private:
     void compute_bias();
     void tokenize_grammar_elements();
     void add_tokens_for_string(const std::string& str, std::unordered_set<uint32_t>& token_set);
+    void tokenize_function_names(bool quote_names);
+    void init_common_tokens();
 };
 
 class Model {
@@ -647,6 +649,7 @@ public:
 private:
     Config config_;
 
+    std::pair<int64_t, int64_t> compute_pixel_limits() const;
     std::vector<unsigned char> convert_to_rgb(const unsigned char* img_data, int width, int height, int channels);
     std::pair<int, int> smart_resize(int height, int width);
     bool is_image_too_large(int height, int width);
