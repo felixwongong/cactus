@@ -33,10 +33,12 @@ inline size_t get_memory_footprint_bytes() {
     mach_msg_type_number_t count = TASK_VM_INFO_COUNT;
     if (task_info(mach_task_self(), TASK_VM_INFO, (task_info_t)&vm_info, &count) == KERN_SUCCESS)
         return vm_info.phys_footprint;
+
 #elif defined(_WIN32)
     PROCESS_MEMORY_COUNTERS_EX pmc;
     if (GetProcessMemoryInfo(GetCurrentProcess(), (PROCESS_MEMORY_COUNTERS*)&pmc, sizeof(pmc)))
         return pmc.PrivateUsage;
+        
 #elif defined(__linux__) || defined(__ANDROID__)
     std::ifstream statm("/proc/self/statm");
     if (statm.is_open()) {
@@ -333,8 +335,8 @@ inline void parse_options_json(const std::string& json,
     top_k = 0;
     max_tokens = 100;
     force_tools = false;
-    tool_rag_top_k = 2;  // 0 = disabled, N = select top N relevant tools
-    confidence_threshold = 0.7f;  // trigger cloud handoff when confidence < this value
+    tool_rag_top_k = 2;  
+    confidence_threshold = 0.7f;  
     include_stop_sequences = false;
     stop_sequences.clear();
 
