@@ -166,6 +166,25 @@ def changed(curr, prev):
     return curr.get("fingerprint") != prev.get("fingerprint")
 
 
+def update_org_readme(api, org):
+    readme = PROJECT_ROOT / "README.md"
+    if not readme.exists():
+        return
+
+    try:
+        api.create_repo(repo_id=f"{org}/README", repo_type="space", exist_ok=True)
+        api.upload_file(
+            path_or_fileobj=str(readme),
+            path_in_repo="README.md",
+            repo_id=f"{org}/README",
+            repo_type="space",
+            commit_message="Update organization README",
+        )
+        print("Updated organization README")
+    except Exception:
+        print("Failed to update organization README")
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--version", required=True)
@@ -227,6 +246,8 @@ def main():
             if stage_dir and stage_dir.exists():
                 shutil.rmtree(stage_dir)
                 print("Cleaned up stage directory")
+
+    update_org_readme(api, args.org)
 
 
 if __name__ == "__main__":
