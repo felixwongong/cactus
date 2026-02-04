@@ -32,9 +32,6 @@ namespace Color {
     const std::string MAGENTA = "\033[35m";
     const std::string RED     = "\033[31m";
     const std::string GRAY    = "\033[90m";
-#ifdef HAVE_SDL2
-    const std::string CLEAR_LINE = "\033[2K\r";
-#endif
 }
 
 bool supports_color() {
@@ -423,7 +420,7 @@ int run_live_transcription(cactus_model_t model) {
                     if (!pending.empty()) ss << colored(pending, Color::YELLOW);
                     
                     std::string ghost = ss.str();
-                    if (visible_length(ghost) >= width) ghost = truncate_visible(ghost, width - 1);
+                    if (visible_length(ghost) >= static_cast<size_t>(width)) ghost = truncate_visible(ghost, width - 1);
 
                     if (!ghost.empty()) {
                         std::cout << "\n" << ghost << std::flush;
