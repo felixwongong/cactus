@@ -98,6 +98,7 @@ graph.hard_reset();
 |--------|--------|--------|----------|
 | Mac M4 Pro | 582tps/77tps (76MB RAM) | 0.2s/76tps (87MB RAM) | 0.1s/119tps (73MB RAM) |
 | iPad/Mac M4 | 379tps/46tps (30MB RAM) | 0.2s/46tps (53MB RAM) | 0.2s/100tp (122MB RAM) |
+| iPad/Mac M2 | 315tps/42tps (181MB RAM) | 0.3s/42tps (426MB RAM) | 0.3s/86tps (160MB RAM) |
 | iPhone 17 Pro | 300tps/33tps (108MB RAM)| 0.3s/33tps (156MB RAM) | 0.3s/114tps (177MB RAM)|
 | Galaxy S25 Ultra | 226tps/36tps (1.2GB RAM) | 2.6s/33tps (2GB RAM) | 2.3s/90tps (363MB RAM) |
 | Pixel 10 Pro | - | - | - |
@@ -105,7 +106,7 @@ graph.hard_reset();
 
 | Device | LFM2-350m<br>(1k-Prefill/100-Decode) | LFM2-VL-450m<br>(256px-Latency & Decode) | Moonshine-Base-67m<br>(30s-audio-Latency & Decode)
 |--------|--------|--------|----------|
-| iPad/Mac M2 | 413tps/65tps (39MB RAM) | 0.2s/95tps (41MB RAM) | 0.3s / 407tps (91MB RAM) |
+| iPad/Mac M2 | 998tps/101tps (334MB RAM) | 0.2s/109tps (146MB RAM) | 0.3s/395tps (201MB RAM) |
 | iPad/Mac M1 | - | - | - |
 | iPhone 13 Mini | - | - | - |
 | Galaxy A56 | - | - | - |
