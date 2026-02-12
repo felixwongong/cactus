@@ -105,6 +105,7 @@ graph.hard_reset();
 
 | Device | LFM2-350m<br>(1k-Prefill/100-Decode) | LFM2-VL-450m<br>(256px-Latency & Decode) | Moonshine-Base-67m<br>(30s-audio-Latency & Decode)
 |--------|--------|--------|----------|
+| iPad/Mac M2 | 413tps/65tps (39MB RAM) | 0.2s/95tps (41MB RAM) | 0.3s / 407tps (91MB RAM) |
 | iPad/Mac M1 | - | - | - |
 | iPhone 13 Mini | - | - | - |
 | Galaxy A56 | - | - | - |
