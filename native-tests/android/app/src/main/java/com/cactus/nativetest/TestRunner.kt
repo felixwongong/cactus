@@ -160,7 +160,9 @@ class TestRunner(
             log("\n--- Test 8: VAD ---")
             if (audioExists) {
                 try {
-                    val result = transcribeModel.vad(audioPath)
+                    val vadModel = Cactus.create("$transcribeModelPath/vad")
+                    val result = vadModel.vad(audioPath)
+                    vadModel.close()
                     log("[PASS] ${result.segments.size} speech segment(s)")
                     for (seg in result.segments) {
                         log("       segment: ${seg.start}ms – ${seg.end}ms")

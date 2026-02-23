@@ -205,7 +205,9 @@ class _TestPageState extends State<TestPage> {
       _log('\n--- Test 8: VAD ---');
       if (audioExists) {
         try {
-          final result = transcribeModel.vad(audioPath);
+          final vadModel = Cactus.create('$transcribePath/vad');
+          final result = vadModel.vad(audioPath);
+          vadModel.dispose();
           _log('[PASS] ${result.segments.length} speech segment(s)');
           for (final seg in result.segments) {
             _log('       segment: ${seg.start}ms – ${seg.end}ms');

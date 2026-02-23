@@ -154,7 +154,8 @@ class TestRunner: ObservableObject {
                 self.log("\n--- Test 8: VAD ---")
                 if audioExists {
                     do {
-                        let result = try transcribeModel!.vad(audioPath: audioPath)
+                        let vadModel = try Cactus(modelPath: transcribeModelPath + "/vad")
+                        let result = try vadModel.vad(audioPath: audioPath)
                         self.log("[PASS] \(result.segments.count) speech segment(s)")
                         for seg in result.segments {
                             self.log("       segment: \(seg.start)ms – \(seg.end)ms")
