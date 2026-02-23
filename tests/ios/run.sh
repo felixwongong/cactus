@@ -304,9 +304,9 @@ if ! cp -R "$vad_model_src" "$app_path/"; then
     exit 1
 fi
 
-# Whisper/Moonshine init expects a bundled "<transcribe_model>/vad" directory.
+# ASR model init expects a bundled "<transcribe_model>/vad" directory.
 transcribe_lower=$(echo "$transcribe_model_dir" | tr '[:upper:]' '[:lower:]')
-if [[ "$transcribe_lower" == *"whisper"* || "$transcribe_lower" == *"moonshine"* ]]; then
+if [[ "$transcribe_lower" == *"whisper"* || "$transcribe_lower" == *"moonshine"* || "$transcribe_lower" == *"parakeet"* ]]; then
     if [ ! -f "$app_path/$transcribe_model_dir/vad/config.txt" ]; then
         echo "Transcribe model missing bundled VAD; injecting from $vad_model_src"
         mkdir -p "$app_path/$transcribe_model_dir/vad"

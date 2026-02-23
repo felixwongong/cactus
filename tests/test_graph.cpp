@@ -239,6 +239,68 @@ bool test_attention() {
     return true;
 }
 
+bool test_rel_pos_bias() {
+    TestUtils::FP16TestFixture fixture("Rel Pos Bias");
+
+    size_t query = fixture.create_input({1, 2, 1, 2});
+    size_t relative_key = fixture.create_input({1, 3, 1, 2});
+    size_t bias = fixture.graph().rel_pos_bias(query, relative_key, 0.1f);
+
+    std::vector<__fp16> q_data = {1.0f, 2.0f, 3.0f, 4.0f};                  // [B=1, T=2, H=1, D=2]
+    std::vector<__fp16> r_data = {10.0f, 20.0f, 30.0f, 40.0f, 50.0f, 60.0f}; // [B=1, R=3, H=1, D=2]
+
+    fixture.set_input_data(query, q_data);
+    fixture.set_input_data(relative_key, r_data);
+    fixture.execute();
+
+    // T=2, rel_idx=(T-1)-t+j:
+    // t=0 -> [idx1, idx2] => [11, 17]
+    // t=1 -> [idx0, idx1] => [11, 25]
+    std::vector<__fp16> expected = {11.0f, 17.0f, 11.0f, 25.0f};
+    return fixture.verify_output(bias, expected, 0.01f);
+}
+
+bool test_attention_additive_mask() {
+    TestUtils::FP16TestFixture fixture("Attention Additive Mask");
+
+    size_t query = fixture.create_input({1, 2, 1, 2});
+    size_t key = fixture.create_input({1, 2, 1, 2});
+    size_t value = fixture.create_input({1, 2, 1, 2});
+    size_t mask = fixture.create_input({1, 1, 2, 2});
+    size_t attention_result = fixture.graph().attention_masked(
+        query, key, value, mask, 1.0f, false, ComputeBackend::CPU, true);
+
+    std::vector<__fp16> q_data = {
+        1.0f, 0.0f,
+        0.0f, 1.0f
+    };
+    std::vector<__fp16> k_data = {
+        1.0f, 0.0f,
+        0.0f, 1.0f
+    };
+    std::vector<__fp16> v_data = {
+        1.0f, 2.0f,
+        10.0f, 20.0f
+    };
+    std::vector<__fp16> mask_data = {
+        -10000.0f, 0.0f,
+        0.0f, -10000.0f
+    };
+
+    fixture.set_input_data(query, q_data);
+    fixture.set_input_data(key, k_data);
+    fixture.set_input_data(value, v_data);
+    fixture.set_input_data(mask, mask_data);
+    fixture.execute();
+
+    std::vector<__fp16> expected = {
+        10.0f, 20.0f,
+        1.0f, 2.0f
+    };
+
+    return fixture.verify_output(attention_result, expected, 0.05f);
+}
+
 bool test_reduction_operations() {
     TestUtils::FP16TestFixture fixture("Reduction Operations");
 
@@ -926,6 +988,8 @@ int main() {
     runner.run_test("RMS Norm", test_rms_norm());
     runner.run_test("Softmax", test_softmax());
     runner.run_test("Attention", test_attention());
+    runner.run_test("Rel Pos Bias", test_rel_pos_bias());
+    runner.run_test("Attention Additive Mask", test_attention_additive_mask());
     runner.run_test("FP16 Precision", test_fp16_precision());
     runner.run_test("Broadcast Shape Compatibility", test_broadcast_shape_compatibility());
     runner.run_test("Broadcast Scalar Tensor", test_broadcast_scalar_tensor());

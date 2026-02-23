@@ -34,7 +34,7 @@ static const char* get_transcribe_prompt() {
     return "";
 }
 
-const char* g_whisper_prompt = get_transcribe_prompt();
+const char* g_transcribe_prompt = get_transcribe_prompt();
 
 const char* g_options = R"({
         "max_tokens": 256,
@@ -717,7 +717,7 @@ bool test_audio_processor() {
 }
 
 template<typename Predicate>
-bool run_whisper_test(const char* title, const char* options_json, Predicate check) {
+bool run_transcribe_test(const char* title, const char* options_json, Predicate check) {
     if (!g_transcribe_model_path) {
         std::cout << "⊘ SKIP │ " << std::left << std::setw(25) << title
                   << " │ CACTUS_TEST_TRANSCRIBE_MODEL not set\n";
@@ -730,7 +730,7 @@ bool run_whisper_test(const char* title, const char* options_json, Predicate che
 
     cactus_model_t model = cactus_init(g_transcribe_model_path, nullptr, false);
     if (!model) {
-        std::cerr << "[✗] Failed to initialize Whisper model\n";
+        std::cerr << "[✗] Failed to initialize transcribe model\n";
         return false;
     }
 
@@ -740,7 +740,7 @@ bool run_whisper_test(const char* title, const char* options_json, Predicate che
 
     std::string audio_path = std::string(g_assets_path) + "/test.wav";
     std::cout << "Transcript: ";
-    int rc = cactus_transcribe(model, audio_path.c_str(), g_whisper_prompt,
+    int rc = cactus_transcribe(model, audio_path.c_str(), g_transcribe_prompt,
                                response, sizeof(response), options_json,
                                stream_callback, &stream, nullptr, 0);
 
@@ -761,7 +761,7 @@ bool run_whisper_test(const char* title, const char* options_json, Predicate che
 }
 
 static bool test_transcription() {
-    return run_whisper_test("TRANSCRIPTION", R"({"max_tokens": 100, "telemetry_enabled": false})",
+    return run_transcribe_test("TRANSCRIPTION", R"({"max_tokens": 100, "telemetry_enabled": false})",
         [](int rc, const Metrics& m) { return rc > 0 && m.completion_tokens >= 8; });
 }
 
@@ -777,7 +777,7 @@ static bool test_stream_transcription() {
 
     cactus_model_t model = cactus_init(g_transcribe_model_path, nullptr, false);
     if (!model) {
-        std::cerr << "[✗] Failed to initialize Whisper model\n";
+        std::cerr << "[✗] Failed to initialize transcribe model\n";
         return false;
     }
 
@@ -942,7 +942,7 @@ static bool test_audio_embeddings() {
 
     cactus_model_t model = cactus_init(g_transcribe_model_path, nullptr, false);
     if (!model) {
-        std::cout << "⊘ SKIP │ Failed to init Whisper model\n";
+        std::cout << "⊘ SKIP │ Failed to init transcribe model\n";
         return true;
     }
 
@@ -1052,7 +1052,7 @@ static bool test_pcm_transcription() {
 
     cactus_model_t model = cactus_init(g_transcribe_model_path, nullptr, false);
     if (!model) {
-        std::cerr << "[✗] Failed to initialize Whisper model\n";
+        std::cerr << "[✗] Failed to initialize transcribe model\n";
         return false;
     }
 
@@ -1100,7 +1100,7 @@ static bool test_pcm_transcription() {
                 int rc = cactus_transcribe(
                     model,
                     nullptr,
-                    g_whisper_prompt,
+                    g_transcribe_prompt,
                     response,
                     sizeof(response),
                     R"({"max_tokens": 100, "telemetry_enabled": false})",
@@ -1146,7 +1146,7 @@ static bool test_pcm_transcription() {
         int rc = cactus_transcribe(
             model,
             nullptr,
-            g_whisper_prompt,
+            g_transcribe_prompt,
             response,
             sizeof(response),
             R"({"max_tokens": 100, "telemetry_enabled": false})",

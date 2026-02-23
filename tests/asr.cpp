@@ -167,7 +167,7 @@ std::string get_transcribe_prompt(const std::string& model_path) {
     if (path_lower.find("whisper") != std::string::npos) {
         return "<|startoftranscript|><|en|><|transcribe|><|notimestamps|>";
     }
-    return "";  // Moonshine uses empty prompt
+    return "";  // Parakeet/Moonshine use empty prompt
 }
 
 int transcribe_file(cactus_model_t model, const std::string& audio_path, const std::string& model_path) {
@@ -586,8 +586,8 @@ int main(int argc, char* argv[]) {
         std::cerr << colored("Error: ", Color::RED + Color::BOLD) << "Missing model path\n";
         std::cerr << "Usage: " << argv[0] << " <model_path> [audio_file]\n";
         std::cerr << "\nModes:\n";
-        std::cerr << "  " << argv[0] << " weights/whisper-small              # Live microphone transcription\n";
-        std::cerr << "  " << argv[0] << " weights/whisper-small audio.wav    # Transcribe single file\n";
+        std::cerr << "  " << argv[0] << " weights/parakeet-ctc-0.6b              # Live microphone transcription\n";
+        std::cerr << "  " << argv[0] << " weights/parakeet-ctc-0.6b audio.wav    # Transcribe single file\n";
         return 1;
     }
 
