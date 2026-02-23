@@ -306,7 +306,6 @@ void cactus_conv1d_f16_k3(
 static void conv1d_f16_accelerate(
     const __fp16* input,
     const __fp16* weight,
-    const __fp16* bias,
     __fp16* output,
     size_t N, size_t L,
     size_t C_in, size_t C_out,
@@ -329,9 +328,8 @@ static void conv1d_f16_accelerate(
         const __fp16* Xb  = input  + n * in_bs;
         __fp16*       Yoc = output + n * out_bs + oc * out_len;
         const __fp16* Woc = weight + oc * (C_in * K);
-        const float   b   = bias ? (float)bias[oc] : 0.f;
 
-        std::vector<float> out_f32(out_len, b);
+        std::vector<float> out_f32(out_len, 0.f);
         std::vector<float> input_f32(L);
         std::vector<float> weight_f32(K);
 
@@ -368,7 +366,6 @@ static void conv1d_f16_accelerate(
 static void conv1d_f16_neon(
     const __fp16* input,
     const __fp16* weight,
-    const __fp16* bias,
     __fp16* output,
     size_t N, size_t L,
     size_t C_in, size_t C_out,
@@ -391,11 +388,10 @@ static void conv1d_f16_neon(
         const __fp16* Xb  = input  + n * in_bs;
         __fp16*       Yoc = output + n * out_bs + oc * out_len;
         const __fp16* Woc = weight + oc * (C_in * K);
-        const float   b   = bias ? (float)bias[oc] : 0.f;
 
         for (size_t out_t = 0; out_t < out_len; ++out_t) {
             const size_t t = out_t * stride;
-            float sum = b;
+            float sum = 0.f;
 
             for (size_t ic = 0; ic < C_in; ++ic) {
                 const __fp16* Xc = Xb  + ic * L + t;
@@ -437,7 +433,6 @@ static void conv1d_f16_neon(
 void cactus_conv1d_f16(
     const __fp16* input,
     const __fp16* weight,
-    const __fp16* bias,
     __fp16* output,
     size_t N, size_t L,
     size_t C_in, size_t C_out,
@@ -446,17 +441,16 @@ void cactus_conv1d_f16(
 ){
 #ifdef __APPLE__
     if (K >= ACCELERATE_K_THRESHOLD && L >= ACCELERATE_L_THRESHOLD) {
-        conv1d_f16_accelerate(input, weight, bias, output, N, L, C_in, C_out, K, stride);
+        conv1d_f16_accelerate(input, weight, output, N, L, C_in, C_out, K, stride);
         return;
     }
 #endif
-    conv1d_f16_neon(input, weight, bias, output, N, L, C_in, C_out, K, stride);
+    conv1d_f16_neon(input, weight, output, N, L, C_in, C_out, K, stride);
 }
 
 inline void conv1d_k7s3_oc8_t4(
     const __fp16* Xb,
     const __fp16* Wpack,
-    const __fp16* bias,
     __fp16* Yb,
     size_t L,
     size_t out_len,
@@ -468,11 +462,6 @@ inline void conv1d_k7s3_oc8_t4(
     float32x4_t acc[4][2];
     float32x4_t b0 = vdupq_n_f32(0.f);
     float32x4_t b1 = vdupq_n_f32(0.f);
-    if (bias) {
-        float16x8_t bv = vld1q_f16(bias + oc0);
-        b0 = vcvt_f32_f16(vget_low_f16(bv));
-        b1 = vcvt_f32_f16(vget_high_f16(bv));
-    }
 
     for (int j = 0; j < 4; ++j) {
         acc[j][0] = b0;
@@ -516,7 +505,6 @@ inline void conv1d_k7s3_oc8_t4(
 inline void conv1d_k7s3_oc8_scalar(
     const __fp16* Xb,
     const __fp16* Wpack,
-    const __fp16* bias,
     __fp16* Yb,
     size_t L,
     size_t out_len,
@@ -527,12 +515,6 @@ inline void conv1d_k7s3_oc8_scalar(
 ){
     float32x4_t acc0 = vdupq_n_f32(0.f);
     float32x4_t acc1 = vdupq_n_f32(0.f);
-
-    if (bias) {
-        float16x8_t bv = vld1q_f16(bias + oc0);
-        acc0 = vcvt_f32_f16(vget_low_f16(bv));
-        acc1 = vcvt_f32_f16(vget_high_f16(bv));
-    }
 
     const size_t t_base = out_t * 3;
     
@@ -563,7 +545,6 @@ inline void conv1d_k7s3_oc8_scalar(
 void cactus_conv1d_f16_k7s3_oc8(
     const __fp16* input,
     const __fp16* Wpack,
-    const __fp16* bias,
     __fp16* output,
     size_t N,
     size_t L,
@@ -581,11 +562,11 @@ void cactus_conv1d_f16_k7s3_oc8(
 
         size_t out_t = 0;
         for (; out_t + 4 <= out_len; out_t += 4) {
-            conv1d_k7s3_oc8_t4(Xb, Wpack, bias, Yb, L, out_len, C_in, C_out, out_t, oc0);
+            conv1d_k7s3_oc8_t4(Xb, Wpack, Yb, L, out_len, C_in, C_out, out_t, oc0);
         }
 
         for (; out_t < out_len; ++out_t) {
-            conv1d_k7s3_oc8_scalar(Xb, Wpack, bias, Yb, L, out_len, C_in, C_out, out_t, oc0);
+            conv1d_k7s3_oc8_scalar(Xb, Wpack, Yb, L, out_len, C_in, C_out, out_t, oc0);
         }
     });
 }
@@ -713,7 +694,6 @@ void cactus_conv1d_same_depthwise_f16_k9(
     size_t N, size_t L, size_t C)
 {
     constexpr int K = 9;
-    constexpr int PAD = 4;
 
     const size_t bs = L * C;
 
@@ -822,7 +802,6 @@ void cactus_conv1d_same_depthwise_f16_k9(
 // void cactus_conv2d_f16_nchw_regular_tiled(
 //     const __fp16* input,          // [N, C_in, H, W]
 //     const __fp16* weight,         // [C_out, C_in, KH, KW]
-//     const __fp16* bias,           // [C_out] or nullptr
 //     __fp16* output,               // [N, C_out, H_out, W_out]
 //     size_t N,
 //     size_t C_in, size_t H, size_t W,
@@ -855,7 +834,7 @@ void cactus_conv1d_same_depthwise_f16_k9(
 
 //     // Parallelize over (batch, out_channel) like your other conv kernels.
 //     CactusThreading::parallel_for_2d(N, C_out, cfg, [&](size_t n, size_t oc) {
-//         const float b = bias ? (float)bias[oc] : 0.f;
+//         const float b = 0.f;
 
 //         for (size_t oh = 0; oh < H_out; ++oh) {
 //             const ptrdiff_t ih_base = (ptrdiff_t)oh * (ptrdiff_t)stride_h - (ptrdiff_t)pad_h;
@@ -903,7 +882,6 @@ void cactus_conv1d_same_depthwise_f16_k9(
 void cactus_conv2d_f16_k3s2p1_nchw(
     const __fp16* input,
     const __fp16* weight,
-    const __fp16* bias,
     __fp16* output,
     size_t N,
     size_t C_in, size_t H, size_t W,
@@ -934,7 +912,7 @@ void cactus_conv2d_f16_k3s2p1_nchw(
 
     // Parallel over (batch, output channel) like your other kernels
     CactusThreading::parallel_for_2d(N, C_out, cfg, [&](size_t n, size_t oc) {
-        const float b0 = bias ? (float)bias[oc] : 0.f;
+        const float b0 = 0.f;
 
         for (size_t oh = 0; oh < H_out; ++oh) {
             const ptrdiff_t ih0 = (ptrdiff_t)oh * 2 - 1; // pad=1
@@ -1088,4 +1066,215 @@ void cactus_conv2d_f16_k3s2p1_nchw(
             }
         }
     });
+}
+
+void cactus_conv2d_depthwise_f16_k3s2p1_nchw(
+    const __fp16* input,
+    const __fp16* weight,
+    __fp16* output,
+    size_t N,
+    size_t C,
+    size_t H,
+    size_t W
+){
+    if (H + 2 < 3 || W + 2 < 3) return;
+    const size_t H_out = (H - 1) / 2 + 1;
+    const size_t W_out = (W - 1) / 2 + 1;
+
+    auto in_idx = [&](size_t n, size_t c, size_t ih, size_t iw) -> size_t {
+        return ((n * C + c) * H + ih) * W + iw;
+    };
+    auto out_idx = [&](size_t n, size_t c, size_t oh, size_t ow) -> size_t {
+        return ((n * C + c) * H_out + oh) * W_out + ow;
+    };
+
+    constexpr size_t OW_VEC = 4;
+    const size_t total_compute = N * C * H_out * W_out * 9;
+    CactusThreading::ParallelConfig cfg =
+        (total_compute < 100000) ? CactusThreading::ParallelConfig{SIZE_MAX, SIZE_MAX}
+                                 : CactusThreading::Thresholds::ATTENTION;
+
+    CactusThreading::parallel_for_2d(N, C, cfg, [&](size_t n, size_t c) {
+        const __fp16* Wc = weight + c * 9;
+        const float w00 = (float)Wc[0], w01 = (float)Wc[1], w02 = (float)Wc[2];
+        const float w10 = (float)Wc[3], w11 = (float)Wc[4], w12 = (float)Wc[5];
+        const float w20 = (float)Wc[6], w21 = (float)Wc[7], w22 = (float)Wc[8];
+        const float b0 = 0.f;
+
+        for (size_t oh = 0; oh < H_out; ++oh) {
+            const ptrdiff_t ih0 = (ptrdiff_t)oh * 2 - 1;
+            const bool h_interior = (ih0 >= 0) && ((size_t)(ih0 + 2) < H);
+
+            for (size_t ow = 0; ow < W_out; ) {
+                const size_t rem = W_out - ow;
+                const bool do_vec = (rem >= OW_VEC);
+                const bool w_interior_vec =
+                    do_vec &&
+                    (ow >= 1) &&
+                    (((ow + (OW_VEC - 1)) * 2 + 1) < W);
+
+                if (h_interior && w_interior_vec) {
+                    const __fp16* row0 = input + in_idx(n, c, (size_t)(ih0 + 0), 0);
+                    const __fp16* row1 = input + in_idx(n, c, (size_t)(ih0 + 1), 0);
+                    const __fp16* row2 = input + in_idx(n, c, (size_t)(ih0 + 2), 0);
+                    const ptrdiff_t iw_base0 = (ptrdiff_t)ow * 2 - 1;
+
+                    float32x4_t vacc = vdupq_n_f32(b0);
+                    float x0, x1, x2, x3;
+
+                    x0 = (float)row0[(size_t)(iw_base0 + 0)];
+                    x1 = (float)row0[(size_t)(iw_base0 + 2)];
+                    x2 = (float)row0[(size_t)(iw_base0 + 4)];
+                    x3 = (float)row0[(size_t)(iw_base0 + 6)];
+                    vacc = vfmaq_f32(vacc, (float32x4_t){x0, x1, x2, x3}, vdupq_n_f32(w00));
+
+                    x0 = (float)row0[(size_t)(iw_base0 + 1)];
+                    x1 = (float)row0[(size_t)(iw_base0 + 3)];
+                    x2 = (float)row0[(size_t)(iw_base0 + 5)];
+                    x3 = (float)row0[(size_t)(iw_base0 + 7)];
+                    vacc = vfmaq_f32(vacc, (float32x4_t){x0, x1, x2, x3}, vdupq_n_f32(w01));
+
+                    x0 = (float)row0[(size_t)(iw_base0 + 2)];
+                    x1 = (float)row0[(size_t)(iw_base0 + 4)];
+                    x2 = (float)row0[(size_t)(iw_base0 + 6)];
+                    x3 = (float)row0[(size_t)(iw_base0 + 8)];
+                    vacc = vfmaq_f32(vacc, (float32x4_t){x0, x1, x2, x3}, vdupq_n_f32(w02));
+
+                    x0 = (float)row1[(size_t)(iw_base0 + 0)];
+                    x1 = (float)row1[(size_t)(iw_base0 + 2)];
+                    x2 = (float)row1[(size_t)(iw_base0 + 4)];
+                    x3 = (float)row1[(size_t)(iw_base0 + 6)];
+                    vacc = vfmaq_f32(vacc, (float32x4_t){x0, x1, x2, x3}, vdupq_n_f32(w10));
+
+                    x0 = (float)row1[(size_t)(iw_base0 + 1)];
+                    x1 = (float)row1[(size_t)(iw_base0 + 3)];
+                    x2 = (float)row1[(size_t)(iw_base0 + 5)];
+                    x3 = (float)row1[(size_t)(iw_base0 + 7)];
+                    vacc = vfmaq_f32(vacc, (float32x4_t){x0, x1, x2, x3}, vdupq_n_f32(w11));
+
+                    x0 = (float)row1[(size_t)(iw_base0 + 2)];
+                    x1 = (float)row1[(size_t)(iw_base0 + 4)];
+                    x2 = (float)row1[(size_t)(iw_base0 + 6)];
+                    x3 = (float)row1[(size_t)(iw_base0 + 8)];
+                    vacc = vfmaq_f32(vacc, (float32x4_t){x0, x1, x2, x3}, vdupq_n_f32(w12));
+
+                    x0 = (float)row2[(size_t)(iw_base0 + 0)];
+                    x1 = (float)row2[(size_t)(iw_base0 + 2)];
+                    x2 = (float)row2[(size_t)(iw_base0 + 4)];
+                    x3 = (float)row2[(size_t)(iw_base0 + 6)];
+                    vacc = vfmaq_f32(vacc, (float32x4_t){x0, x1, x2, x3}, vdupq_n_f32(w20));
+
+                    x0 = (float)row2[(size_t)(iw_base0 + 1)];
+                    x1 = (float)row2[(size_t)(iw_base0 + 3)];
+                    x2 = (float)row2[(size_t)(iw_base0 + 5)];
+                    x3 = (float)row2[(size_t)(iw_base0 + 7)];
+                    vacc = vfmaq_f32(vacc, (float32x4_t){x0, x1, x2, x3}, vdupq_n_f32(w21));
+
+                    x0 = (float)row2[(size_t)(iw_base0 + 2)];
+                    x1 = (float)row2[(size_t)(iw_base0 + 4)];
+                    x2 = (float)row2[(size_t)(iw_base0 + 6)];
+                    x3 = (float)row2[(size_t)(iw_base0 + 8)];
+                    vacc = vfmaq_f32(vacc, (float32x4_t){x0, x1, x2, x3}, vdupq_n_f32(w22));
+
+                    __fp16* Y = output + out_idx(n, c, oh, ow);
+                    vst1_f16(Y, vcvt_f16_f32(vacc));
+                    ow += OW_VEC;
+                    continue;
+                }
+
+                const size_t tile = do_vec ? OW_VEC : 1;
+                float acc_s[OW_VEC] = {b0, b0, b0, b0};
+                for (size_t t = 0; t < tile; ++t) {
+                    const size_t ow_t = ow + t;
+                    for (size_t kh = 0; kh < 3; ++kh) {
+                        const ptrdiff_t ih = ih0 + (ptrdiff_t)kh;
+                        if (ih < 0 || ih >= (ptrdiff_t)H) continue;
+
+                        const __fp16* row = input + in_idx(n, c, (size_t)ih, 0);
+                        for (size_t kw = 0; kw < 3; ++kw) {
+                            const ptrdiff_t iw = (ptrdiff_t)ow_t * 2 - 1 + (ptrdiff_t)kw;
+                            if (iw < 0 || iw >= (ptrdiff_t)W) continue;
+                            const float wv = (float)Wc[kh * 3 + kw];
+                            acc_s[t] += (float)row[(size_t)iw] * wv;
+                        }
+                    }
+                }
+
+                __fp16* Y = output + out_idx(n, c, oh, ow);
+                for (size_t t = 0; t < tile; ++t) {
+                    Y[t] = (__fp16)acc_s[t];
+                }
+                ow += tile;
+            }
+        }
+    });
+}
+
+void cactus_conv2d_pointwise_f16_1x1_nchw_gemm(
+    const __fp16* input,
+    const __fp16* weight,
+    __fp16* output,
+    size_t N,
+    size_t C_in,
+    size_t H,
+    size_t W,
+    size_t C_out
+){
+    const size_t HW = H * W;
+    if (HW == 0 || N == 0) return;
+
+    CactusThreading::parallel_for(
+        N,
+        CactusThreading::Thresholds::ATTENTION,
+        [&](size_t n_start, size_t n_end) {
+            std::vector<__fp16> packed_in(HW * C_in);
+            std::vector<__fp16> packed_out(HW * C_out);
+
+            for (size_t n = n_start; n < n_end; ++n) {
+                const __fp16* Xn = input + n * C_in * HW;
+                __fp16* Yn = output + n * C_out * HW;
+
+                for (size_t hw = 0; hw < HW; ++hw) {
+                    const size_t h = hw / W;
+                    const size_t w = hw - h * W;
+                    __fp16* row = packed_in.data() + hw * C_in;
+                    for (size_t ic = 0; ic < C_in; ++ic) {
+                        row[ic] = Xn[(ic * H + h) * W + w];
+                    }
+                }
+
+                cactus_matmul_f16(
+                    packed_in.data(),
+                    weight,
+                    packed_out.data(),
+                    HW,
+                    C_in,
+                    C_out
+                );
+
+                for (size_t hw = 0; hw < HW; ++hw) {
+                    const size_t h = hw / W;
+                    const size_t w = hw - h * W;
+                    const __fp16* row = packed_out.data() + hw * C_out;
+                    for (size_t oc = 0; oc < C_out; ++oc) {
+                        Yn[(oc * H + h) * W + w] = row[oc];
+                    }
+                }
+            }
+        });
+}
+
+void cactus_conv1d_pointwise_f16_gemm(
+    const __fp16* input,
+    const __fp16* weight,
+    __fp16* output,
+    size_t N,
+    size_t L,
+    size_t C_in,
+    size_t C_out
+){
+    const size_t M = N * L;
+    if (M == 0) return;
+
+    cactus_matmul_f16(input, weight, output, M, C_in, C_out);
 }

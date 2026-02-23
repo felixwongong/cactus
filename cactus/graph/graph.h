@@ -115,7 +115,7 @@ enum class OpType {
     MATMUL, TRANSPOSE, RESHAPE, SLICE, GATHER, EMBEDDING,
     BILINEAR_INTERPOLATION,
     SUM, MEAN, VARIANCE, MIN, MAX,
-    RMS_NORM, ROPE, ROPE_GPTJ, SOFTMAX, ATTENTION, ATTENTION_INT8_HYBRID, CONV1D_CAUSAL, CONV1D_K3, CONV1D_K7S3, CONV1D,
+    RMS_NORM, ROPE, ROPE_GPTJ, SOFTMAX, ATTENTION, ATTENTION_INT8_HYBRID, CONV1D_CAUSAL, CONV1D_K3, CONV1D_K7S3, CONV1D, CONV1D_SAME_DEPTHWISE_K9, CONV1D_POINTWISE, CONV2D_K3S2P1, CONV2D_DEPTHWISE_K3S2P1, CONV2D_POINTWISE_1X1, GLU, BATCHNORM,
     SCALAR_ADD, SCALAR_SUBTRACT, SCALAR_MULTIPLY, SCALAR_DIVIDE, SCALAR_EXP, SCALAR_SQRT, SCALAR_COS, SCALAR_SIN,
     RELU, SILU, GELU, GELU_ERF, SIGMOID, TANH,
     SAMPLE, CONCAT,
@@ -425,6 +425,7 @@ public:
     size_t gelu_erf(size_t input);
     size_t sigmoid(size_t input);
     size_t tanh(size_t input);
+    size_t glu(size_t input, int axis = -1);
     
     size_t matmul(size_t input1, size_t input2, bool pretransposed_rhs = false, ComputeBackend backend = ComputeBackend::CPU);
     size_t transpose(size_t input, ComputeBackend backend = ComputeBackend::CPU);
@@ -455,6 +456,7 @@ public:
     size_t layernorm(size_t input, size_t weight, size_t bias, float epsilon = 1e-5f);
     size_t layernorm(size_t input, size_t weight, float epsilon = 1e-5f);  // No bias version
     size_t groupnorm(size_t input, size_t weight, size_t bias, size_t num_groups = 32, float epsilon = 1e-5f);
+    size_t batchnorm(size_t input, size_t weight, size_t bias, size_t running_mean, size_t running_var, int axis = 1, float epsilon = 1e-5f);
     size_t topk(size_t input, size_t k);
     size_t rms_norm(size_t input, size_t weight, float epsilon = 1e-5f);
     size_t rope(size_t input, float theta, size_t position_offset = 0, ComputeBackend backend = ComputeBackend::CPU);
@@ -474,6 +476,15 @@ public:
     size_t conv1d_k7s3(size_t input, size_t weight, size_t bias);
     size_t conv1d(size_t input, size_t weight, size_t stride);
     size_t conv1d(size_t input, size_t weight, size_t bias, size_t stride);
+    size_t conv1d_same_depthwise_k9(size_t input, size_t weight);
+    size_t conv1d_pointwise(size_t input, size_t weight);
+    size_t conv1d_pointwise(size_t input, size_t weight, size_t bias);
+    size_t conv2d_k3s2p1(size_t input, size_t weight);
+    size_t conv2d_k3s2p1(size_t input, size_t weight, size_t bias);
+    size_t conv2d_depthwise_k3s2p1(size_t input, size_t weight);
+    size_t conv2d_depthwise_k3s2p1(size_t input, size_t weight, size_t bias);
+    size_t conv2d_pointwise_1x1(size_t input, size_t weight);
+    size_t conv2d_pointwise_1x1(size_t input, size_t weight, size_t bias);
 
     size_t lstm_cell(size_t input, size_t h_prev, size_t c_prev, size_t weight_ih, size_t weight_hh, size_t bias_ih, size_t bias_hh);
     size_t stft_magnitude(size_t input, size_t weight, size_t stride, size_t num_fft_bins);
