@@ -108,8 +108,8 @@ graph.hard_reset();
 |--------|--------|--------|----------|
 | iPad/Mac M2 | 998tps/101tps (334MB RAM) | 0.2s/109tps (146MB RAM) | 0.3s/395tps (201MB RAM) |
 | iPad/Mac M1 | - | - | - |
-| iPhone 13 Mini | - | - | - |
-| Galaxy A56 | - | - | - |
+| iPhone 13 Mini | 516tps/65tps (29MB RAM) | 0.3s/69tps (20MB RAM) | 0.7s/413tps (10MB RAM) |
+| Galaxy A56 | 87tps/24tps (395MB RAM) | 4.1s/20tps (619MB RAM) | 4.2s/90tps (103MB RAM) |
 | Pixel 6a | 218tps/44tps (395MB RAM)| 2.5s/36tps (631MB RAM) | 1.5s/189tps (111MB RAM)|
 | CMF Phone 2 Pro | 146tps/21tps (394MB RAM) | 2.4s/22tps (632MB RAM) | 1.9s/119tps (112MB RAM) |
 | Raspberry Pi 5 | - | - | - |
