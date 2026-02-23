@@ -56,6 +56,12 @@ struct Config {
     uint32_t num_shared_experts = 0;
     uint32_t num_top_experts = 0;
     uint32_t moe_every_n_layers = 0;
+    uint32_t moe_intermediate_dim = 0;
+    uint32_t num_dense_layers = 0;
+    uint32_t num_experts_per_tok = 0;
+    bool norm_topk_prob = false;
+    bool use_expert_bias = false;
+    float routed_scaling_factor = 1.0f;
     bool tie_word_embeddings = true;
 
     uint32_t vision_hidden_dim = 0;
@@ -366,7 +372,6 @@ struct KVCache {
                          size_t num_tokens, size_t kv_heads, size_t head_dim);
 
     bool is_empty() const { return current_seq_len == 0; }
-    bool is_int8() const { return precision == Precision::INT8; }
     void* get_key_ptr(size_t layer);
     void* get_value_ptr(size_t layer);
 
@@ -721,6 +726,8 @@ namespace index {
     struct QueryResult {
         int doc_id;
         float score;
+
+        QueryResult(int doc_id, float score) : doc_id(doc_id), score(score) {}
     };
 
     struct QueryOptions {

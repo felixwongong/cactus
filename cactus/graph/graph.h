@@ -6,6 +6,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <functional>
+#include <cassert>
 #include <cstring>
 #include <stdexcept>
 #include <string>
@@ -109,6 +110,15 @@ enum class ComputeBackend {
     NPU
 };
 
+enum class Activation {
+    SILU,
+    GELU,
+    GELU_ERF,
+    RELU,
+    SIGMOID,
+    TANH
+};
+
 enum class OpType {
     INPUT, PRECISION_CAST,
     ADD, ADD_CLIPPED, SUBTRACT, MULTIPLY, DIVIDE,
@@ -116,11 +126,12 @@ enum class OpType {
     BILINEAR_INTERPOLATION,
     SUM, MEAN, VARIANCE, MIN, MAX,
     RMS_NORM, ROPE, ROPE_GPTJ, SOFTMAX, ATTENTION, ATTENTION_INT8_HYBRID, CONV1D_CAUSAL, CONV1D_K3, CONV1D_K7S3, CONV1D,
-    SCALAR_ADD, SCALAR_SUBTRACT, SCALAR_MULTIPLY, SCALAR_DIVIDE, SCALAR_EXP, SCALAR_SQRT, SCALAR_COS, SCALAR_SIN,
+    SCALAR_ADD, SCALAR_SUBTRACT, SCALAR_MULTIPLY, SCALAR_DIVIDE, SCALAR_EXP, SCALAR_SQRT, SCALAR_COS, SCALAR_SIN, SCALAR_LOG,
     RELU, SILU, GELU, GELU_ERF, SIGMOID, TANH,
     SAMPLE, CONCAT,
     SCATTER_TOPK,
     TOPK, LAYERNORM, GROUPNORM,
+    MOE_LAYER,
     INDEX,
     PERSISTENT,
     QUANTIZE_ACTIVATIONS,
@@ -141,8 +152,17 @@ struct PrecisionTraits {
 
     static constexpr size_t packed_size_of(Precision prec, size_t count) {
         switch (prec) {
-            case Precision::INT4: return (count + 1) / 2;  
+            case Precision::INT4: return (count + 1) / 2;
             default: return count * size_of(prec);
+        }
+    }
+
+    static size_t byte_offset_of(Precision prec, size_t element_offset) {
+        switch (prec) {
+            case Precision::INT4:
+                assert(element_offset % 32 == 0 && "INT4 byte offset must be group-aligned (multiple of 32)");
+                return element_offset / 2;
+            default: return element_offset * size_of(prec);
         }
     }
 
@@ -181,7 +201,6 @@ struct TensorConfig {
     Precision compute_precision = Precision::INT8;
     Precision output_precision = Precision::INT8;
     bool auto_mixed_precision = false;
-    bool enable_int4_packing = true;
     
     static TensorConfig& global();
 };
@@ -241,6 +260,10 @@ struct BufferDesc {
 
     bool is_grouped_int8() const {
         return precision == Precision::INT8 && group_size > 0;
+    }
+
+    bool is_grouped_int4() const {
+        return precision == Precision::INT4 && group_size > 0;
     }
 
     void set_grouped_scales(size_t gs, size_t ng, void* scales_ptr) {
@@ -309,6 +332,11 @@ struct OpParams {
     size_t num_groups = 0;
     size_t dst_height = 0;
     size_t dst_width = 0;
+    bool normalize_routing = false;
+    size_t num_experts = 0;
+    size_t num_experts_per_tok = 0;
+    bool moe_gated = true; 
+    Activation activation = Activation::SILU;
 
     std::vector<float> bias_values;
     std::vector<uint32_t> bias_indices;
@@ -356,7 +384,6 @@ void compute_index_node(GraphNode& node, const std::vector<std::unique_ptr<Graph
 void compute_lstm_cell_node(GraphNode& node, const std::vector<std::unique_ptr<GraphNode>>& nodes, const std::unordered_map<size_t, size_t>& node_index_map);
 
 void shrink_thread_local_buffers();
-
 class BufferPool {
 public:
     BufferPool() = default;
@@ -418,6 +445,7 @@ public:
     size_t scalar_sqrt(size_t input);
     size_t scalar_cos(size_t input);
     size_t scalar_sin(size_t input);
+    size_t scalar_log(size_t input);
     
     size_t relu(size_t input);
     size_t silu(size_t input);
@@ -456,6 +484,28 @@ public:
     size_t layernorm(size_t input, size_t weight, float epsilon = 1e-5f);  // No bias version
     size_t groupnorm(size_t input, size_t weight, size_t bias, size_t num_groups = 32, float epsilon = 1e-5f);
     size_t topk(size_t input, size_t k);
+    size_t moe_layer(size_t hidden,
+                     size_t routing_probs,
+                     size_t topk_indices,
+                     const std::vector<size_t>& w1_weights,
+                     const std::vector<size_t>& w3_weights,
+                     const std::vector<size_t>& w2_weights,
+                     size_t num_experts,
+                     size_t num_experts_per_tok,
+                     bool normalize_routing,
+                     float epsilon,
+                     float routed_scaling_factor);
+    size_t moe_layer(size_t hidden,
+                     size_t routing_probs,
+                     size_t topk_indices,
+                     const std::vector<size_t>& w1_weights,
+                     const std::vector<size_t>& w2_weights,
+                     size_t num_experts,
+                     size_t num_experts_per_tok,
+                     bool normalize_routing,
+                     float epsilon,
+                     float routed_scaling_factor,
+                     Activation activation);
     size_t rms_norm(size_t input, size_t weight, float epsilon = 1e-5f);
     size_t rope(size_t input, float theta, size_t position_offset = 0, ComputeBackend backend = ComputeBackend::CPU);
     size_t rope_gptj(size_t input, float theta, size_t position_offset = 0, size_t rot_dim = 0, ComputeBackend backend = ComputeBackend::CPU);
@@ -581,12 +631,9 @@ namespace GraphFile {
         bool is_interleaved_ = false;
         size_t original_N_ = 0;
 
-        std::unique_ptr<int8_t[]> unpacked_data_;  
-
         void parse_header();
         void apply_madvise_hints();
-        void unpack_int4_data();
     };
 }
 
-#endif 
+#endif
