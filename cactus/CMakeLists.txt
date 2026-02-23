@@ -50,13 +50,18 @@ if(APPLE)
     find_library(SYSTEMCONFIGURATION_FRAMEWORK SystemConfiguration REQUIRED)
     find_library(CFNETWORK_FRAMEWORK CFNetwork REQUIRED)
 else()
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -march=armv8.2-a+fp16+simd+dotprod+i8mm -pthread -Wall -Wextra -pedantic -O3 -Wno-missing-field-initializers")
-    add_compile_definitions(
-        __ARM_NEON=1
-        __ARM_FEATURE_FP16_VECTOR_ARITHMETIC=1
-        __ARM_FEATURE_DOTPROD=1
-        __ARM_FEATURE_MATMUL_INT8=1
-    )
+    # Detect architecture: ARM flags only apply to aarch64/arm targets
+    if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm|ARM")
+        # Use armv8.2-a+dotprod (no i8mm — requires GCC 11+)
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -march=armv8.2-a+fp16+simd+dotprod -pthread -Wall -Wextra -pedantic -O3 -Wno-missing-field-initializers")
+        add_compile_definitions(
+            __ARM_NEON=1
+            __ARM_FEATURE_FP16_VECTOR_ARITHMETIC=1
+            __ARM_FEATURE_DOTPROD=1
+        )
+    else()
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -march=native -pthread -Wall -Wextra -pedantic -O3 -Wno-missing-field-initializers")
+    endif()
 endif()
 
 file(GLOB ENGINE_SOURCES "engine/*.cpp")
