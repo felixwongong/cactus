@@ -317,24 +317,30 @@ size_t LFM2MoEModel::build_mlp(CactusGraph* gb, size_t normalized_h, uint32_t la
     auto topk_indices_and_values = gb->topk(scores_for_routing, config_.num_experts_per_tok);
     auto topk_indices = gb->index(topk_indices_and_values, 0, 0);
 
-    auto accum = gb->scalar_multiply(normalized_h, 0.0f);
+    std::vector<size_t> w1_weights, w3_weights, w2_weights;
+    w1_weights.reserve(config_.num_experts);
+    w3_weights.reserve(config_.num_experts);
+    w2_weights.reserve(config_.num_experts);
     for (uint32_t expert_idx = 0; expert_idx < config_.num_experts; ++expert_idx) {
         const auto& expert = layer.moe_experts[expert_idx];
-        accum = gb->moe_expert_apply(
-            accum,
-            normalized_h,
-            routing_probs,
-            topk_indices,
-            expert.w1_weight,
-            expert.w3_weight,
-            expert.w2_weight,
-            expert_idx,
-            config_.norm_topk_prob,
-            1e-6f,
-            config_.routed_scaling_factor
-        );
+        w1_weights.push_back(expert.w1_weight);
+        w3_weights.push_back(expert.w3_weight);
+        w2_weights.push_back(expert.w2_weight);
     }
-    return accum;
+
+    return gb->moe_layer(
+        normalized_h,
+        routing_probs,
+        topk_indices,
+        w1_weights,
+        w3_weights,
+        w2_weights,
+        config_.num_experts,
+        config_.num_experts_per_tok,
+        config_.norm_topk_prob,
+        1e-6f,
+        config_.routed_scaling_factor
+    );
 }
 
 size_t LFM2MoEModel::build_transformer_block(CactusGraph* gb, size_t hidden, uint32_t layer_idx,

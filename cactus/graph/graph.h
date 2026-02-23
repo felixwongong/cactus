@@ -122,6 +122,7 @@ enum class OpType {
     SCATTER_TOPK,
     TOPK, LAYERNORM, GROUPNORM,
     MOE_EXPERT_APPLY,
+    MOE_LAYER,
     INDEX,
     PERSISTENT,
     QUANTIZE_ACTIVATIONS,
@@ -311,6 +312,8 @@ struct OpParams {
     size_t dst_height = 0;
     size_t dst_width = 0;
     bool normalize_routing = false;
+    size_t num_experts = 0;
+    size_t num_experts_per_tok = 0;
 
     std::vector<float> bias_values;
     std::vector<uint32_t> bias_indices;
@@ -469,6 +472,17 @@ public:
                             bool normalize_routing,
                             float epsilon,
                             float routed_scaling_factor);
+    size_t moe_layer(size_t hidden,
+                     size_t routing_probs,
+                     size_t topk_indices,
+                     const std::vector<size_t>& w1_weights,
+                     const std::vector<size_t>& w3_weights,
+                     const std::vector<size_t>& w2_weights,
+                     size_t num_experts,
+                     size_t num_experts_per_tok,
+                     bool normalize_routing,
+                     float epsilon,
+                     float routed_scaling_factor);
     size_t rms_norm(size_t input, size_t weight, float epsilon = 1e-5f);
     size_t rope(size_t input, float theta, size_t position_offset = 0, ComputeBackend backend = ComputeBackend::CPU);
     size_t rope_gptj(size_t input, float theta, size_t position_offset = 0, size_t rot_dim = 0, ComputeBackend backend = ComputeBackend::CPU);

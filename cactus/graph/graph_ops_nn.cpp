@@ -208,31 +208,56 @@ void compute_matmul_node(GraphNode& node, const std::vector<std::unique_ptr<Grap
 }
 
 namespace {
+    thread_local std::vector<size_t> legacy_moe_selected_tokens_buf;
+    thread_local std::vector<__fp16> legacy_moe_compact_hidden_buf;
+    thread_local std::vector<__fp16> legacy_moe_gate_buf;
+    thread_local std::vector<__fp16> legacy_moe_up_buf;
+    thread_local std::vector<__fp16> legacy_moe_expert_out_buf;
+    thread_local std::vector<int8_t> legacy_moe_lhs_q_buf;
+    thread_local std::vector<float> legacy_moe_lhs_scales_buf;
+
+    void ensure_legacy_moe_buffers(size_t max_tokens, size_t hidden_dim, size_t intermediate_dim) {
+        size_t hidden_size = max_tokens * hidden_dim;
+        size_t inter_size = max_tokens * intermediate_dim;
+        if (legacy_moe_selected_tokens_buf.size() < max_tokens) legacy_moe_selected_tokens_buf.resize(max_tokens);
+        if (legacy_moe_compact_hidden_buf.size() < hidden_size) legacy_moe_compact_hidden_buf.resize(hidden_size);
+        if (legacy_moe_gate_buf.size() < inter_size) legacy_moe_gate_buf.resize(inter_size);
+        if (legacy_moe_up_buf.size() < inter_size) legacy_moe_up_buf.resize(inter_size);
+        if (legacy_moe_expert_out_buf.size() < hidden_size) legacy_moe_expert_out_buf.resize(hidden_size);
+        size_t max_k = std::max(hidden_dim, intermediate_dim);
+        size_t quant_size = max_tokens * max_k;
+        if (legacy_moe_lhs_q_buf.size() < quant_size) legacy_moe_lhs_q_buf.resize(quant_size);
+        if (legacy_moe_lhs_scales_buf.size() < max_tokens) legacy_moe_lhs_scales_buf.resize(max_tokens);
+    }
+
     void matmul_with_expert_weight(const __fp16* lhs,
                                    size_t M,
                                    size_t K,
                                    const BufferDesc& rhs_buffer,
                                    __fp16* output,
-                                   size_t N) {
+                                   size_t N,
+                                   bool lhs_prequantized = false) {
         if (rhs_buffer.precision == Precision::FP16) {
             cactus_matmul_f16(lhs, rhs_buffer.data_as<__fp16>(), output, M, K, N);
             return;
         }
 
         if (rhs_buffer.precision == Precision::INT8 && rhs_buffer.is_grouped_int8()) {
-            std::vector<int8_t> lhs_q(M * K);
-            std::vector<float> lhs_scales(M);
-            for (size_t row = 0; row < M; ++row) {
-                float scale = cactus_fp16_max_abs(lhs + row * K, K) / 127.0f;
-                if (scale < 1e-10f) {
-                    scale = 1e-10f;
+            int8_t* lhs_q = legacy_moe_lhs_q_buf.data();
+            float* lhs_scales = legacy_moe_lhs_scales_buf.data();
+            if (!lhs_prequantized) {
+                for (size_t row = 0; row < M; ++row) {
+                    float scale = cactus_fp16_max_abs(lhs + row * K, K) / 127.0f;
+                    if (scale < 1e-10f) {
+                        scale = 1e-10f;
+                    }
+                    lhs_scales[row] = scale;
+                    cactus_fp16_to_int8(lhs + row * K, lhs_q + row * K, K, scale);
                 }
-                lhs_scales[row] = scale;
-                cactus_fp16_to_int8(lhs + row * K, lhs_q.data() + row * K, K, scale);
             }
 
-            cactus_matmul_int8(lhs_q.data(),
-                               lhs_scales.data(),
+            cactus_matmul_int8(lhs_q,
+                               lhs_scales,
                                rhs_buffer.data_as<int8_t>(),
                                rhs_buffer.scales_as_fp16(),
                                output,
@@ -325,8 +350,11 @@ void compute_moe_expert_apply_node(GraphNode& node, const std::vector<std::uniqu
         return routing_fp32[offset];
     };
 
-    std::vector<size_t> selected_tokens;
-    selected_tokens.reserve(token_count / 4 + 1);
+    // Use thread-local scratch buffers instead of per-call heap allocations
+    ensure_legacy_moe_buffers(token_count, hidden_dim, expert_intermediate_dim);
+
+    size_t* selected_tokens_ptr = legacy_moe_selected_tokens_buf.data();
+    size_t selected_count = 0;
     for (size_t tok = 0; tok < token_count; ++tok) {
         bool selected = false;
         for (size_t k = 0; k < top_k; ++k) {
@@ -337,57 +365,269 @@ void compute_moe_expert_apply_node(GraphNode& node, const std::vector<std::uniqu
             }
         }
         if (selected) {
-            selected_tokens.push_back(tok);
+            selected_tokens_ptr[selected_count++] = tok;
         }
     }
-    std::memcpy(output, accum, token_count * hidden_dim * sizeof(__fp16));
-    if (selected_tokens.empty()) {
+    const bool in_place = (output == accum);
+
+    if (selected_count == 0) {
+        // No tokens routed to this expert — pass through accumulator
+        if (!in_place) {
+            std::memcpy(output, accum, token_count * hidden_dim * sizeof(__fp16));
+        }
         return;
     }
 
-    const size_t selected_count = selected_tokens.size();
-    std::vector<__fp16> compact_hidden(selected_count * hidden_dim);
+    __fp16* compact_hidden = legacy_moe_compact_hidden_buf.data();
     for (size_t i = 0; i < selected_count; ++i) {
-        const size_t tok = selected_tokens[i];
-        std::memcpy(compact_hidden.data() + i * hidden_dim,
+        const size_t tok = selected_tokens_ptr[i];
+        std::memcpy(compact_hidden + i * hidden_dim,
                     hidden + tok * hidden_dim,
                     hidden_dim * sizeof(__fp16));
     }
 
-    std::vector<__fp16> gate(selected_count * expert_intermediate_dim);
-    std::vector<__fp16> up(selected_count * expert_intermediate_dim);
-    std::vector<__fp16> expert_out(selected_count * hidden_dim);
+    __fp16* gate = legacy_moe_gate_buf.data();
+    __fp16* up = legacy_moe_up_buf.data();
+    __fp16* expert_out = legacy_moe_expert_out_buf.data();
 
-    matmul_with_expert_weight(compact_hidden.data(), selected_count, hidden_dim, w1_buffer, gate.data(), expert_intermediate_dim);
-    cactus_silu_f16(gate.data(), gate.data(), gate.size());
-    matmul_with_expert_weight(compact_hidden.data(), selected_count, hidden_dim, w3_buffer, up.data(), expert_intermediate_dim);
-    cactus_multiply_f16(gate.data(), up.data(), gate.data(), gate.size());
-    matmul_with_expert_weight(gate.data(), selected_count, expert_intermediate_dim, w2_buffer, expert_out.data(), hidden_dim);
+    matmul_with_expert_weight(compact_hidden, selected_count, hidden_dim, w1_buffer, gate, expert_intermediate_dim);
+    const bool w1_was_int8 = w1_buffer.is_grouped_int8();
+    cactus_silu_f16(gate, gate, selected_count * expert_intermediate_dim);
+    matmul_with_expert_weight(compact_hidden, selected_count, hidden_dim, w3_buffer, up, expert_intermediate_dim, w1_was_int8);
+    cactus_multiply_f16(gate, up, gate, selected_count * expert_intermediate_dim);
+    matmul_with_expert_weight(gate, selected_count, expert_intermediate_dim, w2_buffer, expert_out, hidden_dim);
 
-    for (size_t i = 0; i < selected_count; ++i) {
-        const size_t tok = selected_tokens[i];
-        float expert_prob = routing_prob(tok, expert_idx);
-        if (expert_prob <= 0.0f) {
-            continue;
+    size_t sel_idx = 0;
+    for (size_t tok = 0; tok < token_count; ++tok) {
+        auto* out_row = output + tok * hidden_dim;
+        const auto* accum_row = accum + tok * hidden_dim;
+
+        if (sel_idx < selected_count && selected_tokens_ptr[sel_idx] == tok) {
+            const auto* expert_row = expert_out + sel_idx * hidden_dim;
+            float expert_prob = routing_prob(tok, expert_idx);
+
+            if (expert_prob > 0.0f) {
+                float route_weight = expert_prob;
+                if (normalize_routing) {
+                    float sum_probs = 0.0f;
+                    for (size_t k = 0; k < top_k; ++k) {
+                        const size_t idx = rounded_expert_index(topk_idx[tok * top_k + k], num_experts);
+                        sum_probs += routing_prob(tok, idx);
+                    }
+                    route_weight = expert_prob / (sum_probs + eps);
+                }
+                route_weight *= routed_scaling_factor;
+
+                cactus_add_scaled_f16(accum_row, expert_row, out_row, hidden_dim, route_weight);
+            } else if (!in_place) {
+                std::memcpy(out_row, accum_row, hidden_dim * sizeof(__fp16));
+            }
+            sel_idx++;
+        } else if (!in_place) {
+            // Not selected and different buffers: copy accum row through
+            std::memcpy(out_row, accum_row, hidden_dim * sizeof(__fp16));
+        }
+    }
+}
+
+namespace {
+    thread_local std::vector<__fp16> moe_compact_hidden_buf;
+    thread_local std::vector<__fp16> moe_gate_buf;
+    thread_local std::vector<__fp16> moe_up_buf;
+    thread_local std::vector<__fp16> moe_expert_out_buf;
+    thread_local std::vector<int8_t> moe_lhs_q_buf;
+    thread_local std::vector<float> moe_lhs_scales_buf;
+    thread_local std::vector<size_t> moe_expert_offsets_buf;  
+    thread_local std::vector<size_t> moe_expert_tokens_buf; 
+    thread_local std::vector<float> moe_routing_denom_buf; 
+
+    void ensure_moe_buffers(size_t max_tokens, size_t hidden_dim, size_t intermediate_dim,
+                            size_t num_experts, size_t top_k) {
+        size_t hidden_size = max_tokens * hidden_dim;
+        size_t inter_size = max_tokens * intermediate_dim;
+        if (moe_compact_hidden_buf.size() < hidden_size) moe_compact_hidden_buf.resize(hidden_size);
+        if (moe_gate_buf.size() < inter_size) moe_gate_buf.resize(inter_size);
+        if (moe_up_buf.size() < inter_size) moe_up_buf.resize(inter_size);
+        if (moe_expert_out_buf.size() < hidden_size) moe_expert_out_buf.resize(hidden_size);
+        size_t max_k = std::max(hidden_dim, intermediate_dim);
+        size_t quant_size = max_tokens * max_k;
+        if (moe_lhs_q_buf.size() < quant_size) moe_lhs_q_buf.resize(quant_size);
+        if (moe_lhs_scales_buf.size() < max_tokens) moe_lhs_scales_buf.resize(max_tokens);
+        size_t total_assignments = max_tokens * top_k;
+        if (moe_expert_offsets_buf.size() < num_experts + 1) moe_expert_offsets_buf.resize(num_experts + 1);
+        if (moe_expert_tokens_buf.size() < total_assignments) moe_expert_tokens_buf.resize(total_assignments);
+        if (moe_routing_denom_buf.size() < max_tokens) moe_routing_denom_buf.resize(max_tokens);
+    }
+
+    void matmul_with_expert_weight_scratch(const __fp16* lhs,
+                                            size_t M,
+                                            size_t K,
+                                            const BufferDesc& rhs_buffer,
+                                            __fp16* output,
+                                            size_t N,
+                                            bool lhs_prequantized = false) {
+        if (rhs_buffer.precision == Precision::FP16) {
+            cactus_matmul_f16(lhs, rhs_buffer.data_as<__fp16>(), output, M, K, N);
+            return;
         }
 
-        float route_weight = expert_prob;
-        if (normalize_routing) {
+        if (rhs_buffer.precision == Precision::INT8 && rhs_buffer.is_grouped_int8()) {
+            int8_t* lhs_q = moe_lhs_q_buf.data();
+            float* lhs_scales = moe_lhs_scales_buf.data();
+            if (!lhs_prequantized) {
+                for (size_t row = 0; row < M; ++row) {
+                    float scale = cactus_fp16_max_abs(lhs + row * K, K) / 127.0f;
+                    if (scale < 1e-10f) scale = 1e-10f;
+                    lhs_scales[row] = scale;
+                    cactus_fp16_to_int8(lhs + row * K, lhs_q + row * K, K, scale);
+                }
+            }
+            cactus_matmul_int8(lhs_q, lhs_scales,
+                               rhs_buffer.data_as<int8_t>(),
+                               rhs_buffer.scales_as_fp16(),
+                               output, M, K, N, rhs_buffer.group_size);
+            return;
+        }
+
+        throw std::runtime_error("moe_layer only supports FP16 or grouped INT8 expert weights");
+    }
+}
+
+void compute_moe_layer_node(GraphNode& node, const std::vector<std::unique_ptr<GraphNode>>& nodes, const std::unordered_map<size_t, size_t>& node_index_map) {
+    const size_t num_experts = node.params.num_experts;
+    const size_t top_k = node.params.num_experts_per_tok;
+    const bool normalize_routing = node.params.normalize_routing;
+    const float eps = node.params.epsilon;
+    const float routed_scaling_factor = node.params.scalar;
+
+    const size_t expected_inputs = 3 + 3 * num_experts;
+    if (node.input_ids.size() != expected_inputs) {
+        throw std::runtime_error("moe_layer expects 3 + 3*num_experts inputs, got " + std::to_string(node.input_ids.size()));
+    }
+
+    const auto& hidden_buffer = nodes[node_index_map.at(node.input_ids[0])]->output_buffer;
+    const auto& routing_buffer = nodes[node_index_map.at(node.input_ids[1])]->output_buffer;
+    const auto& topk_idx_buffer = nodes[node_index_map.at(node.input_ids[2])]->output_buffer;
+
+    if (hidden_buffer.precision != Precision::FP16 || node.output_buffer.precision != Precision::FP16) {
+        throw std::runtime_error("moe_layer expects FP16 hidden/output");
+    }
+    if (topk_idx_buffer.precision != Precision::FP32) {
+        throw std::runtime_error("moe_layer expects FP32 topk indices");
+    }
+
+    const size_t token_count = hidden_buffer.shape[0];
+    const size_t hidden_dim = hidden_buffer.shape[1];
+    const size_t total_num_experts = routing_buffer.shape[1];
+
+    const auto& w1_0_buffer = nodes[node_index_map.at(node.input_ids[3])]->output_buffer;
+    const size_t expert_intermediate_dim = w1_0_buffer.shape[0];
+
+    const auto* hidden = hidden_buffer.data_as<__fp16>();
+    auto* output = node.output_buffer.data_as<__fp16>();
+    const auto* topk_idx = topk_idx_buffer.data_as<float>();
+    const auto* routing_fp16 = routing_buffer.precision == Precision::FP16 ? routing_buffer.data_as<__fp16>() : nullptr;
+    const auto* routing_fp32 = routing_buffer.precision == Precision::FP32 ? routing_buffer.data_as<float>() : nullptr;
+
+    auto routing_prob = [&](size_t tok, size_t exp) -> float {
+        const size_t offset = tok * total_num_experts + exp;
+        if (routing_fp16) return static_cast<float>(routing_fp16[offset]);
+        return routing_fp32[offset];
+    };
+
+    ensure_moe_buffers(token_count, hidden_dim, expert_intermediate_dim, num_experts, top_k);
+
+    size_t* expert_offsets = moe_expert_offsets_buf.data(); 
+    size_t* expert_tokens_flat = moe_expert_tokens_buf.data();  
+
+   std::memset(expert_offsets, 0, (num_experts + 1) * sizeof(size_t));
+    for (size_t tok = 0; tok < token_count; ++tok) {
+        for (size_t k = 0; k < top_k; ++k) {
+            float raw_idx = topk_idx[tok * top_k + k];
+            if (!std::isfinite(raw_idx)) {
+                throw std::runtime_error("moe_layer got non-finite expert index");
+            }
+            size_t idx = static_cast<size_t>(raw_idx + 0.5f);
+            if (idx >= num_experts) {
+                throw std::runtime_error("moe_layer got expert index out of range");
+            }
+            expert_offsets[idx + 1]++;
+        }
+    }
+    
+    for (size_t e = 0; e < num_experts; ++e) {
+        expert_offsets[e + 1] += expert_offsets[e];
+    }
+    
+    thread_local std::vector<size_t> moe_write_cursors;
+    if (moe_write_cursors.size() < num_experts) moe_write_cursors.resize(num_experts);
+    std::memcpy(moe_write_cursors.data(), expert_offsets, num_experts * sizeof(size_t));
+
+    for (size_t tok = 0; tok < token_count; ++tok) {
+        for (size_t k = 0; k < top_k; ++k) {
+            size_t idx = static_cast<size_t>(topk_idx[tok * top_k + k] + 0.5f);
+            expert_tokens_flat[moe_write_cursors[idx]++] = tok;
+        }
+    }
+
+    float* routing_denom = moe_routing_denom_buf.data();
+    if (normalize_routing) {
+        for (size_t tok = 0; tok < token_count; ++tok) {
             float sum_probs = 0.0f;
             for (size_t k = 0; k < top_k; ++k) {
-                const size_t idx = rounded_expert_index(topk_idx[tok * top_k + k], num_experts);
+                size_t idx = static_cast<size_t>(topk_idx[tok * top_k + k] + 0.5f);
                 sum_probs += routing_prob(tok, idx);
             }
-            route_weight = expert_prob / (sum_probs + eps);
+            routing_denom[tok] = sum_probs + eps;
         }
-        route_weight *= routed_scaling_factor;
+    }
 
-        auto* out_row = output + tok * hidden_dim;
-        const auto* expert_row = expert_out.data() + i * hidden_dim;
-        for (size_t h = 0; h < hidden_dim; ++h) {
-            const float accum_val = static_cast<float>(out_row[h]);
-            const float add_val = static_cast<float>(expert_row[h]) * route_weight;
-            out_row[h] = static_cast<__fp16>(accum_val + add_val);
+    std::memset(output, 0, token_count * hidden_dim * sizeof(__fp16));
+
+    for (size_t expert_idx = 0; expert_idx < num_experts; ++expert_idx) {
+        const size_t start = expert_offsets[expert_idx];
+        const size_t end = expert_offsets[expert_idx + 1];
+        if (start == end) continue;
+
+        const size_t selected_count = end - start;
+        const size_t* selected_tokens = expert_tokens_flat + start;
+
+        const auto& w1_buffer = nodes[node_index_map.at(node.input_ids[3 + expert_idx])]->output_buffer;
+        const auto& w3_buffer = nodes[node_index_map.at(node.input_ids[3 + num_experts + expert_idx])]->output_buffer;
+        const auto& w2_buffer = nodes[node_index_map.at(node.input_ids[3 + 2 * num_experts + expert_idx])]->output_buffer;
+
+        __fp16* compact_hidden = moe_compact_hidden_buf.data();
+        for (size_t i = 0; i < selected_count; ++i) {
+            std::memcpy(compact_hidden + i * hidden_dim,
+                        hidden + selected_tokens[i] * hidden_dim,
+                        hidden_dim * sizeof(__fp16));
+        }
+
+        __fp16* gate = moe_gate_buf.data();
+        __fp16* up = moe_up_buf.data();
+        __fp16* expert_out = moe_expert_out_buf.data();
+
+        matmul_with_expert_weight_scratch(compact_hidden, selected_count, hidden_dim, w1_buffer, gate, expert_intermediate_dim);
+        const bool w1_was_int8 = w1_buffer.is_grouped_int8();
+        cactus_silu_f16(gate, gate, selected_count * expert_intermediate_dim);
+        matmul_with_expert_weight_scratch(compact_hidden, selected_count, hidden_dim, w3_buffer, up, expert_intermediate_dim, w1_was_int8);
+        cactus_multiply_f16(gate, up, gate, selected_count * expert_intermediate_dim);
+        matmul_with_expert_weight_scratch(gate, selected_count, expert_intermediate_dim, w2_buffer, expert_out, hidden_dim);
+
+        for (size_t i = 0; i < selected_count; ++i) {
+            const size_t tok = selected_tokens[i];
+            float expert_prob = routing_prob(tok, expert_idx);
+            if (expert_prob <= 0.0f) continue;
+
+            float route_weight = expert_prob;
+            if (normalize_routing) {
+                route_weight = expert_prob / routing_denom[tok];
+            }
+            route_weight *= routed_scaling_factor;
+
+            auto* out_row = output + tok * hidden_dim;
+            const auto* expert_row = expert_out + i * hidden_dim;
+            cactus_add_scaled_f16(out_row, expert_row, out_row, hidden_dim, route_weight);
         }
     }
 }
