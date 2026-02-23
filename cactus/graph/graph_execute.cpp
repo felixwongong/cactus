@@ -47,7 +47,6 @@ extern void compute_bilinear_interpolation_node(GraphNode& node, const std::vect
 extern void compute_sample_node(GraphNode& node, const std::vector<std::unique_ptr<GraphNode>>& nodes, const std::unordered_map<size_t, size_t>& node_index_map);
 extern void compute_topk_node(GraphNode& node, const std::vector<std::unique_ptr<GraphNode>>& nodes, const std::unordered_map<size_t, size_t>& node_index_map);
 extern void compute_scatter_topk_node(GraphNode& node, const std::vector<std::unique_ptr<GraphNode>>& nodes, const std::unordered_map<size_t, size_t>& node_index_map);
-extern void compute_moe_expert_apply_node(GraphNode& node, const std::vector<std::unique_ptr<GraphNode>>& nodes, const std::unordered_map<size_t, size_t>& node_index_map);
 extern void compute_moe_layer_node(GraphNode& node, const std::vector<std::unique_ptr<GraphNode>>& nodes, const std::unordered_map<size_t, size_t>& node_index_map);
 extern void compute_persistent_node(GraphNode& node, const std::vector<std::unique_ptr<GraphNode>>& nodes, const std::unordered_map<size_t, size_t>& node_index_map);
 extern void compute_quantize_activations_node(GraphNode& node, const std::vector<std::unique_ptr<GraphNode>>& nodes, const std::unordered_map<size_t, size_t>& node_index_map);
@@ -65,7 +64,6 @@ static const char* op_type_names[] = {
     "SAMPLE", "CONCAT",
     "SCATTER_TOPK",
     "TOPK", "LAYERNORM", "GROUPNORM",
-    "MOE_EXPERT_APPLY",
     "MOE_LAYER",
     "INDEX",
     "PERSISTENT",
@@ -221,10 +219,6 @@ void compute_node_optimized(GraphNode& node, const std::vector<std::unique_ptr<G
 
         case OpType::SCATTER_TOPK:
             compute_scatter_topk_node(node, nodes, node_index_map);
-            break;
-
-        case OpType::MOE_EXPERT_APPLY:
-            compute_moe_expert_apply_node(node, nodes, node_index_map);
             break;
 
         case OpType::MOE_LAYER:

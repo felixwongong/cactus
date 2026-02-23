@@ -121,7 +121,6 @@ enum class OpType {
     SAMPLE, CONCAT,
     SCATTER_TOPK,
     TOPK, LAYERNORM, GROUPNORM,
-    MOE_EXPERT_APPLY,
     MOE_LAYER,
     INDEX,
     PERSISTENT,
@@ -356,7 +355,6 @@ void compute_scatter_topk_node(GraphNode& node, const std::vector<std::unique_pt
 void compute_topk_node(GraphNode& node, const std::vector<std::unique_ptr<GraphNode>>& nodes, const std::unordered_map<size_t, size_t>& node_index_map);
 void compute_layernorm_node(GraphNode& node, const std::vector<std::unique_ptr<GraphNode>>& nodes, const std::unordered_map<size_t, size_t>& node_index_map);
 void compute_groupnorm_node(GraphNode& node, const std::vector<std::unique_ptr<GraphNode>>& nodes, const std::unordered_map<size_t, size_t>& node_index_map);
-void compute_moe_expert_apply_node(GraphNode& node, const std::vector<std::unique_ptr<GraphNode>>& nodes, const std::unordered_map<size_t, size_t>& node_index_map);
 void compute_persistent_node(GraphNode& node, const std::vector<std::unique_ptr<GraphNode>>& nodes, const std::unordered_map<size_t, size_t>& node_index_map);
 void compute_index_node(GraphNode& node, const std::vector<std::unique_ptr<GraphNode>>& nodes, const std::unordered_map<size_t, size_t>& node_index_map);
 void compute_lstm_cell_node(GraphNode& node, const std::vector<std::unique_ptr<GraphNode>>& nodes, const std::unordered_map<size_t, size_t>& node_index_map);
@@ -461,17 +459,6 @@ public:
     size_t layernorm(size_t input, size_t weight, float epsilon = 1e-5f);  // No bias version
     size_t groupnorm(size_t input, size_t weight, size_t bias, size_t num_groups = 32, float epsilon = 1e-5f);
     size_t topk(size_t input, size_t k);
-    size_t moe_expert_apply(size_t accum,
-                            size_t hidden,
-                            size_t routing_probs,
-                            size_t topk_indices,
-                            size_t w1,
-                            size_t w3,
-                            size_t w2,
-                            size_t expert_idx,
-                            bool normalize_routing,
-                            float epsilon,
-                            float routed_scaling_factor);
     size_t moe_layer(size_t hidden,
                      size_t routing_probs,
                      size_t topk_indices,
