@@ -274,19 +274,101 @@ void compute_softmax_node(GraphNode& node, const std::vector<std::unique_ptr<Gra
                       batch_size, 1, vocab_size);
 }
 
+void compute_rel_pos_bias_node(GraphNode& node, const std::vector<std::unique_ptr<GraphNode>>& nodes,
+                               const std::unordered_map<size_t, size_t>& node_index_map) {
+    if (node.input_ids.size() != 2) {
+        throw std::runtime_error("REL_POS_BIAS requires 2 inputs (query, relative_key)");
+    }
+
+    const auto& q_buffer = nodes[node_index_map.at(node.input_ids[0])]->output_buffer;
+    const auto& r_buffer = nodes[node_index_map.at(node.input_ids[1])]->output_buffer;
+    auto& y_buffer = node.output_buffer;
+
+    if (q_buffer.shape.size() != 4) {
+        throw std::runtime_error("REL_POS_BIAS query must be [B, T, H, D]");
+    }
+    if (r_buffer.shape.size() != 4) {
+        throw std::runtime_error("REL_POS_BIAS relative_key must be [B, R, H, D]");
+    }
+    if (q_buffer.precision != Precision::FP16 || r_buffer.precision != Precision::FP16) {
+        throw std::runtime_error("REL_POS_BIAS currently only supports FP16 tensors");
+    }
+
+    const size_t B = q_buffer.shape[0];
+    const size_t T = q_buffer.shape[1];
+    const size_t H = q_buffer.shape[2];
+    const size_t D = q_buffer.shape[3];
+    const size_t Rb = r_buffer.shape[0];
+    const size_t R = r_buffer.shape[1];
+
+    if (Rb != 1 && Rb != B) {
+        throw std::runtime_error("REL_POS_BIAS relative_key batch must be 1 or match query batch");
+    }
+    if (r_buffer.shape[2] != H || r_buffer.shape[3] != D) {
+        throw std::runtime_error("REL_POS_BIAS expects matching [H, D] between query and relative_key");
+    }
+    if (R < (2 * T - 1)) {
+        throw std::runtime_error("REL_POS_BIAS requires relative_key length >= 2*T-1");
+    }
+
+    const __fp16* q = q_buffer.data_as<__fp16>();
+    const __fp16* r = r_buffer.data_as<__fp16>();
+    __fp16* y = y_buffer.data_as<__fp16>();
+
+    const float scale = node.params.scale;
+
+    const size_t q_batch_stride = T * H * D;
+    const size_t r_batch_stride = R * H * D;
+    const size_t y_batch_stride = H * T * T;
+    const size_t q_head_stride = D;
+    const size_t r_head_stride = D;
+    const size_t q_time_stride = H * D;
+    const size_t r_time_stride = H * D;
+
+    CactusThreading::parallel_for(B * H * T, CactusThreading::Thresholds::ATTENTION,
+        [&](size_t start_idx, size_t end_idx) {
+            for (size_t work_idx = start_idx; work_idx < end_idx; ++work_idx) {
+                const size_t b = work_idx / (H * T);
+                const size_t rem = work_idx % (H * T);
+                const size_t h = rem / T;
+                const size_t t = rem % T;
+
+                const size_t rb = (Rb == 1) ? 0 : b;
+                const __fp16* q_vec = q + b * q_batch_stride + t * q_time_stride + h * q_head_stride;
+                const __fp16* r_base = r + rb * r_batch_stride + h * r_head_stride;
+                __fp16* y_row = y + b * y_batch_stride + h * (T * T) + t * T;
+
+                for (size_t j = 0; j < T; ++j) {
+                    const size_t rel_idx = (T - 1) - t + j;
+                    const __fp16* r_vec = r_base + rel_idx * r_time_stride;
+
+                    float acc = 0.0f;
+                    for (size_t d = 0; d < D; ++d) {
+                        acc += static_cast<float>(q_vec[d]) * static_cast<float>(r_vec[d]);
+                    }
+                    y_row[j] = static_cast<__fp16>(acc * scale);
+                }
+            }
+        });
+}
+
 void compute_attention_node(GraphNode& node, const std::vector<std::unique_ptr<GraphNode>>& nodes, const std::unordered_map<size_t, size_t>& node_index_map) {
     if (node.params.backend == ComputeBackend::NPU) {
         throw std::runtime_error("NPU attention operation not yet implemented");
     }
 
-    if (node.input_ids.size() < 3) {
-        throw std::runtime_error("Attention operation requires 3 inputs (query, key, value), got " +
+    if (node.input_ids.size() < 3 || node.input_ids.size() > 4) {
+        throw std::runtime_error("Attention operation requires 3 or 4 inputs (query, key, value[, mask]), got " +
                                 std::to_string(node.input_ids.size()) + " inputs");
     }
 
     const auto& query_buffer = nodes[node_index_map.at(node.input_ids[0])]->output_buffer;
     const auto& key_buffer = nodes[node_index_map.at(node.input_ids[1])]->output_buffer;
     const auto& value_buffer = nodes[node_index_map.at(node.input_ids[2])]->output_buffer;
+    const BufferDesc* mask_buffer = nullptr;
+    if (node.input_ids.size() == 4) {
+        mask_buffer = &nodes[node_index_map.at(node.input_ids[3])]->output_buffer;
+    }
     const auto& q_shape = query_buffer.shape;
     const auto& k_shape = key_buffer.shape;
 
@@ -305,11 +387,41 @@ void compute_attention_node(GraphNode& node, const std::vector<std::unique_ptr<G
     size_t head_dim = q_shape[3];
     size_t num_kv_heads = k_shape[2];
     size_t kv_seq_len = key_buffer.shape[1];
+    bool mask_per_head = false;
+    const __fp16* mask_ptr = nullptr;
+
+    if (mask_buffer) {
+        if (mask_buffer->precision != Precision::FP16) {
+            throw std::runtime_error("Attention mask tensor must be FP16");
+        }
+
+        if (mask_buffer->shape.size() == 3) {
+            if (mask_buffer->shape[0] != batch_size ||
+                mask_buffer->shape[1] != seq_len ||
+                mask_buffer->shape[2] != kv_seq_len) {
+                throw std::runtime_error("Attention mask [B, T, S] shape mismatch");
+            }
+            mask_per_head = false;
+        } else if (mask_buffer->shape.size() == 4) {
+            if (mask_buffer->shape[0] != batch_size ||
+                mask_buffer->shape[1] != num_q_heads ||
+                mask_buffer->shape[2] != seq_len ||
+                mask_buffer->shape[3] != kv_seq_len) {
+                throw std::runtime_error("Attention mask [B, H, T, S] shape mismatch");
+            }
+            mask_per_head = true;
+        } else {
+            throw std::runtime_error("Attention mask must be rank 3 or 4");
+        }
+
+        mask_ptr = mask_buffer->data_as<__fp16>();
+    }
 
     cactus_attention_f16(query_buffer.data_as<__fp16>(), key_buffer.data_as<__fp16>(),
                          value_buffer.data_as<__fp16>(), node.output_buffer.data_as<__fp16>(),
-                         batch_size, seq_len, kv_seq_len, num_q_heads, num_kv_heads, head_dim, node.params.scale, nullptr,
-                         node.params.position_offset, node.params.window_size, node.params.is_causal);
+                         batch_size, seq_len, kv_seq_len, num_q_heads, num_kv_heads, head_dim, node.params.scale, mask_ptr,
+                         node.params.position_offset, node.params.window_size, node.params.is_causal,
+                         node.params.attention_mask_is_additive, mask_per_head);
 }
 
 void compute_attention_int8_hybrid_node(GraphNode& node, const std::vector<std::unique_ptr<GraphNode>>& nodes, const std::unordered_map<size_t, size_t>& node_index_map) {

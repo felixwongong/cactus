@@ -344,6 +344,51 @@ size_t CactusGraph::attention(size_t query, size_t key, size_t value, float scal
     return add_node(OpType::ATTENTION, {query, key, value}, {}, params);
 }
 
+size_t CactusGraph::attention_masked(size_t query, size_t key, size_t value, size_t mask, float scale,
+                                     bool is_causal, ComputeBackend backend, bool additive_mask,
+                                     size_t position_offset, size_t window_size) {
+    OpParams params{
+        .scale = scale,
+        .position_offset = position_offset,
+        .window_size = window_size,
+        .is_causal = is_causal,
+        .backend = backend
+    };
+    params.attention_mask_is_additive = additive_mask;
+    return add_node(OpType::ATTENTION, {query, key, value, mask}, {}, params);
+}
+
+size_t CactusGraph::rel_pos_bias(size_t query, size_t relative_key, float scale) {
+    const auto& q = get_output_buffer(query);
+    const auto& r = get_output_buffer(relative_key);
+
+    if (q.shape.size() != 4) {
+        throw std::runtime_error("rel_pos_bias expects query [B, T, H, D]");
+    }
+    if (r.shape.size() != 4) {
+        throw std::runtime_error("rel_pos_bias expects relative_key [B, R, H, D]");
+    }
+
+    const size_t B = q.shape[0];
+    const size_t T = q.shape[1];
+    const size_t H = q.shape[2];
+    const size_t D = q.shape[3];
+    const size_t R = r.shape[1];
+
+    if (r.shape[0] != 1 && r.shape[0] != B) {
+        throw std::runtime_error("rel_pos_bias relative_key batch must be 1 or match query batch");
+    }
+    if (r.shape[2] != H || r.shape[3] != D) {
+        throw std::runtime_error("rel_pos_bias expects matching [H, D] between query and relative_key");
+    }
+    if (R < (2 * T - 1)) {
+        throw std::runtime_error("rel_pos_bias requires relative_key length >= 2*T-1");
+    }
+
+    OpParams params{.scale = scale, .output_precision = q.precision};
+    return add_node(OpType::REL_POS_BIAS, {query, relative_key}, {B, H, T, T}, params);
+}
+
 size_t CactusGraph::attention_int8_hybrid(size_t query, size_t key_new, size_t value_new, float scale, size_t position_offset,
                                           const int8_t* cached_keys, const int8_t* cached_values,
                                           const float* k_scales, const float* v_scales,
