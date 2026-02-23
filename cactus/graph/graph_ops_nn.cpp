@@ -236,7 +236,7 @@ namespace {
         if (moe_routing_denom_buf.size() < max_tokens) moe_routing_denom_buf.resize(max_tokens);
     }
 
-    void matmul_with_expert_weight_scratch(const __fp16* lhs,
+    void moe_matmul(const __fp16* lhs,
                                             size_t M,
                                             size_t K,
                                             const BufferDesc& rhs_buffer,
@@ -276,10 +276,11 @@ void compute_moe_layer_node(GraphNode& node, const std::vector<std::unique_ptr<G
     const bool normalize_routing = node.params.normalize_routing;
     const float eps = node.params.epsilon;
     const float routed_scaling_factor = node.params.scalar;
-
-    const size_t expected_inputs = 3 + 3 * num_experts;
+    const bool gated = node.params.moe_gated;
+    const Activation activation = node.params.activation;
+    const size_t expected_inputs = gated ? (3 + 3 * num_experts) : (3 + 2 * num_experts);
     if (node.input_ids.size() != expected_inputs) {
-        throw std::runtime_error("moe_layer expects 3 + 3*num_experts inputs, got " + std::to_string(node.input_ids.size()));
+        throw std::runtime_error("moe_layer expects " + std::to_string(expected_inputs) + " inputs, got " + std::to_string(node.input_ids.size()));
     }
 
     const auto& hidden_buffer = nodes[node_index_map.at(node.input_ids[0])]->output_buffer;
@@ -370,8 +371,9 @@ void compute_moe_layer_node(GraphNode& node, const std::vector<std::unique_ptr<G
         const size_t* selected_tokens = expert_tokens_flat + start;
 
         const auto& w1_buffer = nodes[node_index_map.at(node.input_ids[3 + expert_idx])]->output_buffer;
-        const auto& w3_buffer = nodes[node_index_map.at(node.input_ids[3 + num_experts + expert_idx])]->output_buffer;
-        const auto& w2_buffer = nodes[node_index_map.at(node.input_ids[3 + 2 * num_experts + expert_idx])]->output_buffer;
+        const auto& w2_buffer = gated
+            ? nodes[node_index_map.at(node.input_ids[3 + 2 * num_experts + expert_idx])]->output_buffer
+            : nodes[node_index_map.at(node.input_ids[3 + num_experts + expert_idx])]->output_buffer;
 
         __fp16* compact_hidden = moe_compact_hidden_buf.data();
         for (size_t i = 0; i < selected_count; ++i) {
@@ -384,12 +386,32 @@ void compute_moe_layer_node(GraphNode& node, const std::vector<std::unique_ptr<G
         __fp16* up = moe_up_buf.data();
         __fp16* expert_out = moe_expert_out_buf.data();
 
-        matmul_with_expert_weight_scratch(compact_hidden, selected_count, hidden_dim, w1_buffer, gate, expert_intermediate_dim);
+        moe_matmul(compact_hidden, selected_count, hidden_dim, w1_buffer, gate, expert_intermediate_dim);
         const bool w1_was_int8 = w1_buffer.is_grouped_int8();
-        cactus_silu_f16(gate, gate, selected_count * expert_intermediate_dim);
-        matmul_with_expert_weight_scratch(compact_hidden, selected_count, hidden_dim, w3_buffer, up, expert_intermediate_dim, w1_was_int8);
-        cactus_multiply_f16(gate, up, gate, selected_count * expert_intermediate_dim);
-        matmul_with_expert_weight_scratch(gate, selected_count, expert_intermediate_dim, w2_buffer, expert_out, hidden_dim);
+
+        switch (activation) {
+            case Activation::GELU:
+                cactus_gelu_f16(gate, gate, selected_count * expert_intermediate_dim);
+                break;
+            case Activation::GELU_ERF:
+                cactus_gelu_f16_erf(gate, gate, selected_count * expert_intermediate_dim);
+                break;
+            case Activation::RELU:
+                cactus_relu_f16(gate, gate, selected_count * expert_intermediate_dim);
+                break;
+            case Activation::SILU:
+            default:
+                cactus_silu_f16(gate, gate, selected_count * expert_intermediate_dim);
+                break;
+        }
+
+        if (gated) {
+            const auto& w3_buffer = nodes[node_index_map.at(node.input_ids[3 + num_experts + expert_idx])]->output_buffer;
+            moe_matmul(compact_hidden, selected_count, hidden_dim, w3_buffer, up, expert_intermediate_dim, w1_was_int8);
+            cactus_multiply_f16(gate, up, gate, selected_count * expert_intermediate_dim);
+        }
+
+        moe_matmul(gate, selected_count, expert_intermediate_dim, w2_buffer, expert_out, hidden_dim);
 
         for (size_t i = 0; i < selected_count; ++i) {
             const size_t tok = selected_tokens[i];
