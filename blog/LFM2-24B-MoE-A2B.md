@@ -1,8 +1,8 @@
-# The Sweet Spot for Mac Code Use: Reviewing LFM2 24B MoE A1B with Cactus
+# The Sweet Spot for Mac Code Use: Reviewing LFM2 24B MoE A2B with Cactus
 
 *By Noah Cylich and Henry Ndubuaku*
 
-LFM2-24B-A3B is a really great next step to see over the LFM2-8B-A1B model. The model features 24B total parameters, but only activates a sparse subset of 3B during inference. This allows it to be competitive in inference speed to 3B dense models, while delivering far greater performance.
+LFM2-24B-A2B is a really great next step to see over the LFM2-8B-A1B model. The model features 24B total parameters, but only activates a sparse subset of 3B during inference. This allows it to be competitive in inference speed to 3B dense models, while delivering far greater performance.
 
 > "LFM2-24B-A1 excels at coding, keen to see on-device coding agents built with these."
 > — Henry Ndubuaku, Cactus Co-founder & CTO
