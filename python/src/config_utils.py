@@ -19,7 +19,7 @@ class CactusConfig:
         self.config_file.write_text(json.dumps(config, indent=2))
 
     def get_api_key(self):
-        env_key = os.getenv("CACTUS_CLOUD_API_KEY")
+        env_key = os.getenv("CACTUS_CLOUD_KEY")
         if env_key:
             return env_key
         config = self.load_config()

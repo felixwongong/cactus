@@ -769,7 +769,7 @@ def cmd_run(args):
     api_key = prompt_for_api_key(config)
 
     if api_key:
-        os.environ["CACTUS_CLOUD_API_KEY"] = api_key
+        os.environ["CACTUS_CLOUD_KEY"] = api_key
 
     model_id = args.model_id
 
@@ -920,7 +920,7 @@ def _cmd_transcribe_android(weights_dir, audio_file, args):
         print_color(RED, "Failed to push audio file to device")
         return 1
 
-    cloud_api_key = os.environ.get("CACTUS_CLOUD_API_KEY", "")
+    cloud_api_key = os.environ.get("CACTUS_CLOUD_KEY", "")
     cloud_strict_ssl = os.environ.get("CACTUS_CLOUD_STRICT_SSL", "")
     cloud_handoff_threshold = os.environ.get("CACTUS_CLOUD_HANDOFF_THRESHOLD", "")
     ca_bundle = os.environ.get("CACTUS_CA_BUNDLE", "")
@@ -928,7 +928,7 @@ def _cmd_transcribe_android(weights_dir, audio_file, args):
     force_handoff = os.environ.get("CACTUS_FORCE_HANDOFF", "")
     env_exports = []
     if cloud_api_key:
-        env_exports.append(f"export CACTUS_CLOUD_API_KEY='{cloud_api_key}'")
+        env_exports.append(f"export CACTUS_CLOUD_KEY='{cloud_api_key}'")
     if cloud_strict_ssl:
         env_exports.append(f"export CACTUS_CLOUD_STRICT_SSL='{cloud_strict_ssl}'")
     if cloud_handoff_threshold:
@@ -981,7 +981,7 @@ def cmd_transcribe(args):
     api_key = prompt_for_api_key(config)
 
     if api_key:
-        os.environ["CACTUS_CLOUD_API_KEY"] = api_key
+        os.environ["CACTUS_CLOUD_KEY"] = api_key
 
     model_id = getattr(args, 'model_id', DEFAULT_ASR_MODEL_ID)
     audio_file = getattr(args, 'audio_file', None)

@@ -21,7 +21,7 @@
 #endif
 
 static std::string get_cloud_api_key() {
-    const char* key = std::getenv("CACTUS_CLOUD_API_KEY");
+    const char* key = std::getenv("CACTUS_CLOUD_KEY");
     return key ? std::string(key) : "";
 }
 
@@ -367,7 +367,7 @@ int run_live_transcription(cactus_model_t model, const std::string& language = "
     std::string api_key = get_cloud_api_key();
     if (api_key.empty()) {
         std::cout << colored("Warning: ", Color::YELLOW + Color::BOLD)
-                  << "CACTUS_CLOUD_API_KEY environment variable not set.\n";
+                  << "CACTUS_CLOUD_KEY environment variable not set.\n";
         std::cout << colored("         Cloud handoff will be disabled (fallback to local transcription).\n", Color::YELLOW);
         std::cout << "\n";
     }

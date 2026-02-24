@@ -425,7 +425,7 @@ int cactus_stream_transcribe_process(
                 cloud_job_id = handle->next_cloud_job_id++;
                 handle->pending_cloud_jobs.push_back({
                     cloud_job_id,
-                    std::async(std::launch::async, cloud_transcribe_request, b64, confirmed, 15L)
+                    std::async(std::launch::async, cloud_transcribe_request, b64, confirmed, 15L, nullptr)
                 });
             }
 
