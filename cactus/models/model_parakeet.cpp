@@ -1,11 +1,183 @@
 #include "model.h"
 #include "../graph/graph.h"
+#include "../npu/npu.h"
 #include "../kernel/kernel.h"
 #include <algorithm>
 #include <cctype>
 #include <cmath>
 #include <stdexcept>
 #include <vector>
+
+namespace {
+
+size_t shape_elements(const std::vector<int>& shape) {
+    if (shape.empty()) return 0;
+    size_t total = 1;
+    for (int d : shape) {
+        if (d <= 0) return 0;
+        total *= static_cast<size_t>(d);
+    }
+    return total;
+}
+
+bool pack_parakeet_features_for_npu(
+    const std::vector<__fp16>& time_major_f16,
+    size_t frames,
+    size_t num_mels,
+    const std::vector<int>& input_shape,
+    std::vector<__fp16>& packed)
+{
+    if (input_shape.empty()) return false;
+    const size_t total = shape_elements(input_shape);
+    if (total == 0) return false;
+    packed.assign(total, static_cast<__fp16>(0.0f));
+
+    auto tm = [&](size_t t, size_t m) -> __fp16 {
+        return time_major_f16[t * num_mels + m];
+    };
+
+    if (input_shape.size() == 4) {
+        const size_t s0 = static_cast<size_t>(input_shape[0]);
+        const size_t s1 = static_cast<size_t>(input_shape[1]);
+        const size_t s2 = static_cast<size_t>(input_shape[2]);
+        const size_t s3 = static_cast<size_t>(input_shape[3]);
+        if (s0 != 1) return false;
+
+        if (s1 == 1 && s2 >= frames && s3 == num_mels) {
+            for (size_t t = 0; t < frames; ++t) {
+                for (size_t m = 0; m < num_mels; ++m) {
+                    packed[(t * s3) + m] = tm(t, m);
+                }
+            }
+            return true;
+        }
+        if (s1 >= frames && s2 == num_mels && s3 == 1) {
+            for (size_t t = 0; t < frames; ++t) {
+                for (size_t m = 0; m < num_mels; ++m) {
+                    packed[((t * s2 + m) * s3)] = tm(t, m);
+                }
+            }
+            return true;
+        }
+        if (s1 == num_mels && s2 >= frames && s3 == 1) {
+            for (size_t t = 0; t < frames; ++t) {
+                for (size_t m = 0; m < num_mels; ++m) {
+                    packed[((m * s2 + t) * s3)] = tm(t, m);
+                }
+            }
+            return true;
+        }
+        if (s1 == 1 && s2 == num_mels && s3 >= frames) {
+            for (size_t t = 0; t < frames; ++t) {
+                for (size_t m = 0; m < num_mels; ++m) {
+                    packed[(m * s3) + t] = tm(t, m);
+                }
+            }
+            return true;
+        }
+        return false;
+    }
+
+    if (input_shape.size() == 3) {
+        const size_t s0 = static_cast<size_t>(input_shape[0]);
+        const size_t s1 = static_cast<size_t>(input_shape[1]);
+        const size_t s2 = static_cast<size_t>(input_shape[2]);
+
+        if (s0 == 1 && s1 >= frames && s2 == num_mels) {
+            for (size_t t = 0; t < frames; ++t) {
+                for (size_t m = 0; m < num_mels; ++m) {
+                    packed[t * s2 + m] = tm(t, m);
+                }
+            }
+            return true;
+        }
+        if (s0 == 1 && s1 == num_mels && s2 >= frames) {
+            for (size_t t = 0; t < frames; ++t) {
+                for (size_t m = 0; m < num_mels; ++m) {
+                    packed[m * s2 + t] = tm(t, m);
+                }
+            }
+            return true;
+        }
+        if (s0 >= frames && s1 == num_mels && s2 == 1) {
+            for (size_t t = 0; t < frames; ++t) {
+                for (size_t m = 0; m < num_mels; ++m) {
+                    packed[(t * s1 + m) * s2] = tm(t, m);
+                }
+            }
+            return true;
+        }
+        if (s0 == num_mels && s1 >= frames && s2 == 1) {
+            for (size_t t = 0; t < frames; ++t) {
+                for (size_t m = 0; m < num_mels; ++m) {
+                    packed[(m * s1 + t) * s2] = tm(t, m);
+                }
+            }
+            return true;
+        }
+        return false;
+    }
+
+    if (input_shape.size() == 2) {
+        const size_t s0 = static_cast<size_t>(input_shape[0]);
+        const size_t s1 = static_cast<size_t>(input_shape[1]);
+
+        if (s0 >= frames && s1 == num_mels) {
+            for (size_t t = 0; t < frames; ++t) {
+                for (size_t m = 0; m < num_mels; ++m) {
+                    packed[t * s1 + m] = tm(t, m);
+                }
+            }
+            return true;
+        }
+        if (s0 == num_mels && s1 >= frames) {
+            for (size_t t = 0; t < frames; ++t) {
+                for (size_t m = 0; m < num_mels; ++m) {
+                    packed[m * s1 + t] = tm(t, m);
+                }
+            }
+            return true;
+        }
+        return false;
+    }
+
+    return false;
+}
+
+bool infer_npu_encoder_output_shape(
+    const std::vector<int>& output_shape,
+    size_t elements_written,
+    size_t fallback_hidden_dim,
+    size_t& time_steps,
+    size_t& hidden_dim)
+{
+    if (elements_written == 0) return false;
+
+    std::vector<size_t> dims;
+    dims.reserve(output_shape.size());
+    for (int d : output_shape) {
+        if (d > 0) dims.push_back(static_cast<size_t>(d));
+    }
+
+    if (dims.size() >= 2) {
+        time_steps = dims[dims.size() - 2];
+        hidden_dim = dims[dims.size() - 1];
+    } else if (dims.size() == 1) {
+        hidden_dim = dims[0];
+        if (hidden_dim == 0 || (elements_written % hidden_dim) != 0) return false;
+        time_steps = elements_written / hidden_dim;
+    } else {
+        hidden_dim = fallback_hidden_dim;
+        if (hidden_dim == 0 || (elements_written % hidden_dim) != 0) return false;
+        time_steps = elements_written / hidden_dim;
+    }
+
+    if (time_steps == 0 || hidden_dim == 0) return false;
+    if (time_steps * hidden_dim > elements_written) return false;
+    return true;
+}
+
+} // namespace
 
 namespace cactus {
 namespace engine {
@@ -45,6 +217,21 @@ void ParakeetModel::load_weights_to_graph(CactusGraph* gb) {
 
     weight_nodes_.ctc_head_weight = gb->mmap_weights(model_folder_path_ + "/ctc_head_weight.weights");
     weight_nodes_.ctc_head_bias = gb->mmap_weights(model_folder_path_ + "/ctc_head_bias.bias");
+
+    if (npu::is_npu_available()) {
+        std::string npu_encoder_path = model_folder_path_ + "/model.mlpackage";
+        npu_encoder_ = npu::create_encoder();
+        if (npu_encoder_ && npu_encoder_->load(npu_encoder_path)) {
+            use_npu_encoder_ = true;
+            std::vector<int> input_shape = npu_encoder_->get_input_shape();
+            if (!input_shape.empty()) {
+                npu_encoder_->preallocate(input_shape, "x", "");
+            }
+        } else {
+            use_npu_encoder_ = false;
+            npu_encoder_.reset();
+        }
+    }
 
     for (uint32_t i = 0; i < config_.num_layers; ++i) {
         auto& layer = weight_nodes_.layers[i];
@@ -334,6 +521,82 @@ size_t ParakeetModel::build_encoder_block(CactusGraph* gb, size_t hidden, size_t
 }
 
 size_t ParakeetModel::build_encoder(CactusGraph* gb, const std::vector<float>& audio_features) {
+    const size_t num_mels = std::max<size_t>(1, static_cast<size_t>(config_.num_mel_bins));
+    if (audio_features.empty() || (audio_features.size() % num_mels) != 0) {
+        throw std::runtime_error("Parakeet expects audio_features with shape [num_mels, num_frames]");
+    }
+    const size_t frames = audio_features.size() / num_mels;
+    size_t expected_hidden_dim = std::max<size_t>(1, static_cast<size_t>(config_.hidden_dim));
+    size_t expected_vocab_size = std::max<size_t>(1, static_cast<size_t>(config_.vocab_size));
+    {
+        const auto& ctc_w_shape = gb->get_output_buffer(weight_nodes_.ctc_head_weight).shape;
+        if (ctc_w_shape.size() == 2) {
+            expected_vocab_size = ctc_w_shape[0];
+            expected_hidden_dim = ctc_w_shape[1];
+        } else if (ctc_w_shape.size() == 3) {
+            expected_vocab_size = ctc_w_shape[0];
+            expected_hidden_dim = ctc_w_shape[1];
+        }
+    }
+
+    if (use_npu_encoder_ && npu_encoder_ && npu_encoder_->is_available()) {
+        std::vector<float> time_major(frames * num_mels);
+        for (size_t m = 0; m < num_mels; ++m) {
+            const float* src = &audio_features[m * frames];
+            for (size_t t = 0; t < frames; ++t) {
+                time_major[t * num_mels + m] = src[t];
+            }
+        }
+
+        std::vector<__fp16> time_major_f16(time_major.size());
+        cactus_fp32_to_fp16(time_major.data(), time_major_f16.data(), time_major.size());
+
+        std::vector<int> input_shape = npu_encoder_->get_input_shape();
+        std::vector<__fp16> npu_input;
+        if (pack_parakeet_features_for_npu(time_major_f16, frames, num_mels, input_shape, npu_input)) {
+            npu_encoder_->preallocate(input_shape, "x", "");
+
+            std::vector<int> output_shape = npu_encoder_->get_output_shape();
+            size_t output_capacity = npu_encoder_->get_output_buffer_size();
+            if (output_capacity == 0) {
+                output_capacity = shape_elements(output_shape);
+            }
+            if (output_capacity == 0) {
+                output_capacity = std::max<size_t>(
+                    1, frames * std::max<size_t>(1, static_cast<size_t>(config_.hidden_dim)));
+            }
+
+            std::vector<__fp16> npu_output(output_capacity);
+            const size_t elements_written = npu_encoder_->encode(
+                npu_input.data(),
+                npu_output.data(),
+                input_shape,
+                "x",
+                ""
+            );
+
+            size_t T_enc = 0;
+            size_t D_enc = 0;
+            if (elements_written > 0 &&
+                infer_npu_encoder_output_shape(output_shape, elements_written,
+                                               static_cast<size_t>(config_.hidden_dim), T_enc, D_enc)) {
+                const __fp16* src = npu_output.data();
+                __fp16* cached_output = npu_encoder_->get_output_buffer();
+                const size_t cached_count = npu_encoder_->get_output_buffer_size();
+                const size_t required = T_enc * D_enc;
+                if (cached_output != nullptr && cached_count >= required) {
+                    src = cached_output;
+                }
+
+                // Accept encoder hidden output [T, hidden] or direct logits [T, vocab].
+                if (D_enc == expected_hidden_dim || D_enc == expected_vocab_size) {
+                    size_t enc_output = gb->input({T_enc, D_enc}, Precision::FP16);
+                    gb->set_input(enc_output, src, Precision::FP16);
+                    return enc_output;
+                }
+            }
+        }
+    }
     ComputeBackend backend = ComputeBackend::CPU;
     size_t hidden = build_subsampling(gb, audio_features);
     const auto& hidden_shape = gb->get_output_buffer(hidden).shape;
@@ -371,8 +634,36 @@ size_t ParakeetModel::forward(const std::vector<float>& audio_features, const st
     (void)use_cache;
     auto* gb = static_cast<CactusGraph*>(graph_handle_);
     gb->clear_debug_nodes();
-    size_t hidden = build_encoder(gb, audio_features);
-    return build_ctc_logits(gb, hidden);
+    size_t encoder_out = build_encoder(gb, audio_features);
+
+    const auto& enc_shape = gb->get_output_buffer(encoder_out).shape;
+    if (enc_shape.size() != 2) {
+        throw std::runtime_error("Parakeet encoder output must be rank-2 [T, D]");
+    }
+
+    size_t ctc_hidden_dim = std::max<size_t>(1, static_cast<size_t>(config_.hidden_dim));
+    size_t ctc_vocab_size = std::max<size_t>(1, static_cast<size_t>(config_.vocab_size));
+    const auto& ctc_w_shape = gb->get_output_buffer(weight_nodes_.ctc_head_weight).shape;
+    if (ctc_w_shape.size() == 2) {
+        ctc_vocab_size = ctc_w_shape[0];
+        ctc_hidden_dim = ctc_w_shape[1];
+    } else if (ctc_w_shape.size() == 3) {
+        ctc_vocab_size = ctc_w_shape[0];
+        ctc_hidden_dim = ctc_w_shape[1];
+    }
+
+    // If the NPU graph already emits [T, vocab] logits, skip CPU CTC head.
+    if (enc_shape[1] == ctc_vocab_size && ctc_vocab_size != ctc_hidden_dim) {
+        return encoder_out;
+    }
+
+    if (enc_shape[1] != ctc_hidden_dim) {
+        throw std::runtime_error(
+            "Parakeet encoder output dim mismatch: expected hidden dim " +
+            std::to_string(ctc_hidden_dim) + ", got " + std::to_string(enc_shape[1]));
+    }
+
+    return build_ctc_logits(gb, encoder_out);
 }
 
 std::vector<uint32_t> ParakeetModel::greedy_decode_tokens(CactusGraph* gb, size_t logits_node) const {
@@ -503,6 +794,31 @@ std::vector<float> ParakeetModel::get_audio_embeddings(const std::vector<float>&
     auto* gb = static_cast<CactusGraph*>(graph_handle_);
     gb->soft_reset();
     size_t hidden = build_encoder(gb, audio_features);
+
+    const auto& hidden_shape = gb->get_output_buffer(hidden).shape;
+    size_t ctc_hidden_dim = std::max<size_t>(1, static_cast<size_t>(config_.hidden_dim));
+    size_t ctc_vocab_size = std::max<size_t>(1, static_cast<size_t>(config_.vocab_size));
+    const auto& ctc_w_shape = gb->get_output_buffer(weight_nodes_.ctc_head_weight).shape;
+    if (ctc_w_shape.size() == 2) {
+        ctc_vocab_size = ctc_w_shape[0];
+        ctc_hidden_dim = ctc_w_shape[1];
+    } else if (ctc_w_shape.size() == 3) {
+        ctc_vocab_size = ctc_w_shape[0];
+        ctc_hidden_dim = ctc_w_shape[1];
+    }
+
+    // Embeddings require hidden states; if NPU returned logits, rerun CPU encoder.
+    if (hidden_shape.size() == 2 &&
+        hidden_shape[1] == ctc_vocab_size &&
+        ctc_vocab_size != ctc_hidden_dim &&
+        use_npu_encoder_) {
+        const bool prev_use_npu = use_npu_encoder_;
+        use_npu_encoder_ = false;
+        gb->soft_reset();
+        hidden = build_encoder(gb, audio_features);
+        use_npu_encoder_ = prev_use_npu;
+    }
+
     size_t pooled = gb->mean(hidden, 0);
     gb->execute();
 

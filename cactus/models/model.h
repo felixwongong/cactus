@@ -854,6 +854,9 @@ private:
     size_t ctc_emit_index_ = 0;
     std::vector<uint32_t> ctc_tokens_;
     size_t last_input_token_count_ = 0;
+
+    std::unique_ptr<npu::NPUEncoder> npu_encoder_;
+    bool use_npu_encoder_ = false;
 };
 
 
