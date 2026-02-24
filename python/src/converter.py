@@ -354,11 +354,11 @@ def convert_hf_model_weights(model, output_dir, precision='INT8', args=None):
                         saved_tensor_full_names.add(attn_name)
                         found = True
 
+                if not found:
+                    missing_tensors.append((i, output_name, name_patterns))
+
     if saved_tensor_full_names != set(state_dict.keys()):
         print(f"Warning: Unsaved tensors: {set(state_dict.keys()) - saved_tensor_full_names}")
-
-        if not found:
-            missing_tensors.append((i, output_name, name_patterns))
 
     if missing_tensors:
         missing_report = output_dir / "missing_weights.txt"
