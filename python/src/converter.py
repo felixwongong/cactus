@@ -108,6 +108,10 @@ def convert_hf_model_weights(model, output_dir, precision='INT8', args=None):
             if dst.exists():
                 dst.unlink()
             os.link(src, dst)
+        if embedding_found:
+            for name in OUTPUT_NAMES:
+                if name in state_dict:
+                    saved_tensor_full_names.add(name)
     else:
         for name in OUTPUT_NAMES:
             if name in state_dict:
