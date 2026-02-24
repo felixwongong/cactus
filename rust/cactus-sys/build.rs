@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 
 fn main() {
     let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
+    let target_arch = env::var("CARGO_CFG_TARGET_ARCH").unwrap_or_default();
     let cactus_src = locate_cactus_source();
     set_rebuild_triggers(&cactus_src);
 
@@ -12,6 +13,8 @@ fn main() {
 
     let build_dir = if target_os == "android" {
         build_native_library_android(&cactus_src)
+    } else if target_arch == "x86_64" {
+        build_native_library_x86(&cactus_src)
     } else {
         build_native_library(&cactus_src)
     };
@@ -68,6 +71,43 @@ fn apply_linux_compiler_workaround() {
     unsafe { env::set_var("CXXFLAGS", cxxflags) };
 }
 
+/// The cofy-cactus crate root (4 levels up from cactus-sys manifest dir).
+fn cofy_cactus_root() -> PathBuf {
+    let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
+    // vendor/cactus/rust/cactus-sys → vendor/cactus/rust → vendor/cactus → vendor → cofy-cactus
+    manifest_dir.ancestors().nth(4).unwrap().to_path_buf()
+}
+
+/// Build for x86_64 using NEON→SSE emulation via SIMDe (SIMD Everywhere).
+///
+/// Our `cofy-cactus/include/arm_neon.h` shim intercepts `#include <arm_neon.h>`
+/// and routes through SIMDe, which provides the complete NEON API using native
+/// x86 SSE/AVX/FMA instructions. Zero vendor C++ source modifications required.
+fn build_native_library_x86(cactus_src: &Path) -> PathBuf {
+    let include_dir = cofy_cactus_root().join("include");
+
+    cmake::Config::new(cactus_src)
+        .define("BUILD_SHARED_LIBS", "OFF")
+        .define("CMAKE_BUILD_TYPE", "Release")
+        // Our shim include dir must come first so #include <arm_neon.h> finds ours
+        .cxxflag(&format!("-I{}", include_dir.display()))
+        // x86 SIMD features required by SIMDe and F16C conversion
+        .cxxflag("-msse4.2")
+        .cxxflag("-mssse3")
+        .cxxflag("-mfma")
+        .cxxflag("-mf16c")
+        // Trick code into thinking ARM NEON is available
+        // (NOT defining __ARM_FEATURE_DOTPROD — use emulated dot product path)
+        // (NOT defining __aarch64__ — avoid ARM stnp assembly in kernel_utils.h)
+        .cxxflag("-D__ARM_NEON=1")
+        .cxxflag("-D__ARM_FEATURE_FP16_VECTOR_ARITHMETIC=1")
+        // Define __fp16 globally — npu.h uses it without including arm_neon.h
+        .cxxflag("-D__fp16=_Float16")
+        .build_target("cactus")
+        .build()
+        .join("build")
+}
+
 fn build_native_library(cactus_src: &Path) -> PathBuf {
     cmake::Config::new(cactus_src)
         .define("BUILD_SHARED_LIBS", "OFF")
@@ -82,27 +122,45 @@ fn build_native_library_android(cactus_src: &Path) -> PathBuf {
     let android_dir = root.join("android");
     let curl_root = root.join("libs").join("curl");
 
-    // Use the android/ CMakeLists.txt which knows about vendored curl + mbedtls.
-    // We need Clang 17+ for full C++20 support (P0960R3 parenthesized aggregate init).
-    // The cross-rs image's NDK has Clang 14 which doesn't support this.
-    // We override the compiler via CMAKE_CXX_COMPILER directly instead of using
-    // a toolchain file, because cmake's built-in Android platform module overrides
-    // the compiler from toolchain files.
-    let cxx_compiler = env::var("CACTUS_ANDROID_CXX_COMPILER")
-        .unwrap_or_else(|_| "/usr/bin/clang++-17".to_string());
-    let c_compiler = env::var("CACTUS_ANDROID_C_COMPILER")
-        .unwrap_or_else(|_| "/usr/bin/clang-17".to_string());
+    // Resolve the NDK path — supports Docker (/android-ndk) and local SDK installs.
+    let ndk_root = resolve_android_ndk();
+    let ndk_toolchain = ndk_root
+        .join("toolchains/llvm/prebuilt/linux-x86_64/bin");
+    let ndk_sysroot = ndk_root.join("toolchains/llvm/prebuilt/linux-x86_64/sysroot");
+
+    // Use the NDK's cmake toolchain file — it handles sysroot, compiler,
+    // API level detection, and all Android-specific flags automatically.
+    // NDK 28+ ships Clang 19 which has full C++20 support.
+    // For older NDKs or Docker cross-rs, override compilers explicitly.
+    let ndk_cmake_toolchain = ndk_root.join("build/cmake/android.toolchain.cmake");
 
     let mut config = cmake::Config::new(&android_dir);
+
+    if ndk_cmake_toolchain.exists() {
+        // Standard NDK build: use the toolchain file
+        eprintln!("Using NDK cmake toolchain: {}", ndk_cmake_toolchain.display());
+        config
+            .define("CMAKE_TOOLCHAIN_FILE", ndk_cmake_toolchain.to_str().unwrap())
+            .define("ANDROID_ABI", "arm64-v8a")
+            .define("ANDROID_PLATFORM", "android-24")
+            .define("ANDROID_STL", "c++_static");
+    } else {
+        // Fallback: manual compiler configuration (Docker cross-rs images)
+        let cxx_compiler = env::var("CACTUS_ANDROID_CXX_COMPILER")
+            .unwrap_or_else(|_| ndk_toolchain.join("clang++").to_string_lossy().to_string());
+        let c_compiler = env::var("CACTUS_ANDROID_C_COMPILER")
+            .unwrap_or_else(|_| ndk_toolchain.join("clang").to_string_lossy().to_string());
+        config
+            .define("CMAKE_C_COMPILER", &c_compiler)
+            .define("CMAKE_CXX_COMPILER", &cxx_compiler)
+            .define("CMAKE_C_COMPILER_TARGET", "aarch64-linux-android24")
+            .define("CMAKE_CXX_COMPILER_TARGET", "aarch64-linux-android24")
+            .define("CMAKE_SYSROOT", ndk_sysroot.to_str().unwrap())
+            .define("ANDROID_ABI", "arm64-v8a")
+            .define("ANDROID_PLATFORM", "android-24");
+    }
+
     config
-        .define("CMAKE_C_COMPILER", &c_compiler)
-        .define("CMAKE_CXX_COMPILER", &cxx_compiler)
-        .define("CMAKE_C_COMPILER_TARGET", "aarch64-linux-android24")
-        .define("CMAKE_CXX_COMPILER_TARGET", "aarch64-linux-android24")
-        .define("CMAKE_SYSROOT", "/android-ndk/sysroot");
-    config
-        .define("ANDROID_ABI", "arm64-v8a")
-        .define("ANDROID_PLATFORM", "android-24")
         .define("CMAKE_BUILD_TYPE", "Release")
         .define("CACTUS_CURL_ROOT", curl_root.to_str().unwrap())
         // Override SOURCE_DIR so the android CMakeLists can find cactus sources
@@ -115,10 +173,68 @@ fn build_native_library_android(cactus_src: &Path) -> PathBuf {
         .join("build")
 }
 
+/// Resolve the Android NDK root directory.
+///
+/// Search order:
+/// 1. `ANDROID_NDK_HOME` env var (explicit override)
+/// 2. `ANDROID_NDK_ROOT` env var
+/// 3. Docker path `/android-ndk` (cross-rs images)
+/// 4. `ANDROID_HOME`/ndk/<latest> (Android SDK Manager installs)
+fn resolve_android_ndk() -> PathBuf {
+    // Explicit env vars
+    for var in ["ANDROID_NDK_HOME", "ANDROID_NDK_ROOT", "NDK_HOME"] {
+        if let Ok(path) = env::var(var) {
+            let p = PathBuf::from(&path);
+            if p.exists() {
+                eprintln!("Using NDK from {var}={path}");
+                return p;
+            }
+        }
+    }
+
+    // Docker cross-rs fallback
+    let docker_ndk = PathBuf::from("/android-ndk");
+    if docker_ndk.exists() {
+        eprintln!("Using NDK from Docker path: /android-ndk");
+        return docker_ndk;
+    }
+
+    // Android SDK Manager: find the latest NDK version
+    if let Ok(sdk_home) = env::var("ANDROID_HOME") {
+        let ndk_dir = PathBuf::from(&sdk_home).join("ndk");
+        if ndk_dir.is_dir() {
+            if let Some(latest) = find_latest_ndk_version(&ndk_dir) {
+                eprintln!("Using NDK from ANDROID_HOME: {}", latest.display());
+                return latest;
+            }
+        }
+    }
+
+    panic!(
+        "Android NDK not found. Set ANDROID_NDK_HOME, ANDROID_NDK_ROOT, \
+         or install via Android SDK Manager (ANDROID_HOME/ndk/)."
+    );
+}
+
+/// Find the latest NDK version directory under `ndk_dir/`.
+fn find_latest_ndk_version(ndk_dir: &Path) -> Option<PathBuf> {
+    let mut versions: Vec<_> = std::fs::read_dir(ndk_dir)
+        .ok()?
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().is_dir())
+        .collect();
+    // Sort by name descending to get the latest version
+    versions.sort_by(|a, b| b.file_name().cmp(&a.file_name()));
+    versions.first().map(|e| e.path())
+}
+
 fn link_native_library(build_dir: &Path, target_os: &str) {
     if target_os == "android" {
         // Android cmake puts static libs in lib/ subdirectory
-        println!("cargo:rustc-link-search=native={}", build_dir.join("lib").display());
+        println!(
+            "cargo:rustc-link-search=native={}",
+            build_dir.join("lib").display()
+        );
         println!("cargo:rustc-link-search=native={}", build_dir.display());
         println!("cargo:rustc-link-lib=static=cactus_static");
     } else {
@@ -195,10 +311,14 @@ fn generate_bindings(cactus_src: &Path, target_os: &str) {
         .derive_debug(true)
         .derive_default(true);
 
-    // For Android cross-compilation, set the target triple for clang
+    // For Android cross-compilation, set the target triple and NDK sysroot for clang
     if target_os == "android" {
+        let ndk_root = resolve_android_ndk();
+        let ndk_sysroot = ndk_root
+            .join("toolchains/llvm/prebuilt/linux-x86_64/sysroot");
         builder = builder
             .clang_arg("--target=aarch64-linux-android24")
+            .clang_arg(format!("--sysroot={}", ndk_sysroot.display()))
             .clang_arg("-DPLATFORM_CPU_ONLY=1");
     }
 
