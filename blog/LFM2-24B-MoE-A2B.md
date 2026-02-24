@@ -20,6 +20,7 @@ Going into more depth about the model, there's really a lot to appreciate with a
 
 Together with Cactus, these choices enable lightning fast inference at low energy. Ultimately, despite being 24B params, only 200mb of running memory is used, while generating 25 TPS with our m4 pro chips with 48gb of ram.
 
+
 ## Model Architecture Diagram
 
 ```
@@ -79,6 +80,123 @@ Together with Cactus, these choices enable lightning fast inference at low energ
                                                                                     └───────────│───────────┘
 ```
 
-## Real-World Performance
+## Getting Started with LFM2-24B on Cactus
 
-For our use cases, this model is the sweet spot for mac use. The 8B model was too big for mobile use cases, but not quite hefty enough for mac use. This model filled that niche: it's fast enough to still be usable, while also being big enough to have some intelligence. This model has finally made edge coding truly usable (I know I'll be running this on my next plane flight). It provides real world value to the Cactus team. Here is a video of me demoing the model with Cactus in int4!
+Ready to run LFM2-24B locally on your Mac? Here's how to get up and running.
+
+### Prerequisites
+
+- macOS with Apple Silicon (M1 or later recommended; M4 Pro with 48GB RAM for best results)
+- Python 3.10+
+- CMake (`brew install cmake`)
+- Git
+
+### 1. Clone and Build
+
+```bash
+git clone https://github.com/cactus-compute/cactus.git
+cd cactus
+
+# Build the Cactus engine (shared library for Python FFI)
+cactus build --python
+```
+
+### 2. Download the Model
+
+Cactus handles downloading and converting HuggingFace models to its optimized binary format with INT4/INT8 quantization, all in one command:
+
+```bash
+cactus download LiquidAI/LFM2-24B-A2B
+```
+
+### 3. Chat Interactively
+
+The fastest way to start chatting with the model:
+
+```bash
+cactus run LiquidAI/LFM2-24B-A2B
+```
+
+This builds, downloads (if needed), and launches an interactive chat session.
+
+### 4. Use the Python API
+
+For building your own applications and agents, use the Python FFI bindings directly:
+
+```python
+import json
+from cactus import cactus_init, cactus_complete, cactus_reset, cactus_destroy
+
+# Load the model
+model = cactus_init("weights/lfm2-24b-a2b")
+
+# Simple chat completion
+messages = [{"role": "user", "content": "Write a Python function to sort a list"}]
+response = json.loads(cactus_complete(model, messages))
+
+print(response["response"])       # Generated text
+print(f"{response['decode_tps']:.1f} tokens/sec")
+
+# Streaming with a callback
+def on_token(token, token_id, user_data):
+    print(token.decode(), end="", flush=True)
+
+cactus_complete(model, messages, callback=on_token)
+
+# Clean up
+cactus_reset(model)
+cactus_destroy(model)
+```
+
+### 5. Function Calling for Agents
+
+Cactus supports tool use out of the box, a key building block for on-device coding agents:
+
+```python
+tools = [
+    {
+        "type": "function",
+        "function": {
+            "name": "run_code",
+            "description": "Execute Python code and return the output",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "code": {"type": "string", "description": "Python code to execute"}
+                },
+                "required": ["code"]
+            }
+        }
+    }
+]
+
+messages = [{"role": "user", "content": "Calculate the factorial of 10"}]
+response = json.loads(cactus_complete(model, messages, tools=tools))
+
+if response["function_calls"]:
+    print(response["function_calls"])  # Model's tool invocation
+```
+
+### Cloud Handoff
+
+Cactus measures model confidence during generation. When the model isn't confident enough for a query, the response signals `cloud_handoff: true`, letting your agent route complex requests to a cloud API while keeping simple ones fast and local:
+
+```python
+response = json.loads(cactus_complete(model, messages, confidence_threshold=0.7))
+
+if response["cloud_handoff"]:
+    # Route to cloud API for this query
+    pass
+else:
+    print(response["response"])
+```
+
+This hybrid local-cloud pattern is what makes on-device coding agents practical: fast local inference for the majority of tasks, with automatic escalation when needed.
+
+## Conclusion
+
+LFM2-24B-A2B represents a compelling sweet spot for on-device coding. The MoE architecture activates just 2B of its 24B parameters per token, delivering quality that punches well above its compute class while keeping inference fast and memory-lean at ~200MB of running RAM. Paired with Cactus's INT4 quantization, SIMD-optimized kernels, and built-in function calling, this is a model you can actually build local coding agents on top of today.
+
+The pieces are coming together: models that are smart enough to be useful, efficient enough to run on a laptop, and runtimes that make it all accessible through a few lines of Python. Whether you're building a code assistant that works offline, a privacy-first dev tool, or just experimenting with what's possible without a cloud API, LFM2-24B with Cactus is a great place to start.
+
+Give it a try, build something, and let us know what you think.
