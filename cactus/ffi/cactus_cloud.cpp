@@ -20,9 +20,15 @@ namespace {
 #ifdef CACTUS_USE_CURL
 static std::atomic<bool> g_warned_missing_cloud_api_key{false};
 
-static std::string get_cloud_api_key() {
-    const char* key = std::getenv("CACTUS_CLOUD_API_KEY");
-    return key ? std::string(key) : "";
+static std::string resolve_cloud_api_key(const char* cloud_key_param) {
+    const char* env_cloud = std::getenv("CACTUS_CLOUD_KEY");
+    std::string resolved_cloud_key;
+    if (cloud_key_param && *cloud_key_param) {
+        resolved_cloud_key = cloud_key_param;
+    } else if (env_cloud && *env_cloud) {
+        resolved_cloud_key = env_cloud;
+    }
+    return resolved_cloud_key;
 }
 
 static bool cloud_insecure_ssl_enabled() {
@@ -228,11 +234,12 @@ static std::string build_cloud_text_prompt(const CloudCompletionRequest& request
 static std::string call_cloud_endpoint(const std::string& url,
                                        const std::string& payload,
                                        long timeout_ms,
+                                       const char* cloud_key_param,
                                        std::string& err_out) {
-    std::string api_key = get_cloud_api_key();
+    std::string api_key = resolve_cloud_api_key(cloud_key_param);
     if (api_key.empty()) {
         if (!g_warned_missing_cloud_api_key.exchange(true)) {
-            CACTUS_LOG_WARN("cloud_handoff", "CACTUS_CLOUD_API_KEY is not set; cloud handoff will fall back to local output");
+            CACTUS_LOG_WARN("cloud_handoff", "No cloud key found (cloud_key param or CACTUS_CLOUD_KEY env); cloud handoff will fall back to local output");
         }
         err_out = "missing_api_key";
         return {};
@@ -337,14 +344,15 @@ std::vector<uint8_t> cloud_build_wav(const uint8_t* pcm, size_t pcm_bytes) {
 
 CloudResponse cloud_transcribe_request(const std::string& audio_b64,
                                        const std::string& fallback_text,
-                                       long timeout_seconds) {
+                                       long timeout_seconds,
+                                       const char* cloud_key) {
 #ifdef CACTUS_USE_CURL
     std::string endpoint = "https://104.198.76.3/api/v1/transcribe";
 
     std::string payload = "{\"audio\":\"" + audio_b64 + "\",\"mime_type\":\"audio/wav\",\"language\":\"en-US\"}";
 
     std::string err;
-    std::string body = call_cloud_endpoint(endpoint, payload, timeout_seconds * 1000L, err);
+    std::string body = call_cloud_endpoint(endpoint, payload, timeout_seconds * 1000L, cloud_key, err);
     if (body.empty()) {
         return {fallback_text, "", false, err.empty() ? "request_failed" : err};
     }
@@ -415,7 +423,8 @@ CloudCompletionResult cloud_complete_request(const CloudCompletionRequest& reque
     }
 
     std::string err;
-    std::string body = call_cloud_endpoint(endpoint, payload, timeout_ms, err);
+    const char* cloud_key = request.cloud_key.empty() ? nullptr : request.cloud_key.c_str();
+    std::string body = call_cloud_endpoint(endpoint, payload, timeout_ms, cloud_key, err);
     if (body.empty()) {
         return {false, false, "", {}, err.empty() ? "request_failed" : err};
     }

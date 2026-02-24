@@ -21,6 +21,7 @@ struct CloudCompletionRequest {
     std::string local_output;
     std::vector<std::string> local_function_calls;
     bool has_images = false;
+    std::string cloud_key;
 };
 
 struct CloudCompletionResult {
@@ -35,7 +36,8 @@ std::string cloud_base64_encode(const uint8_t* data, size_t len);
 std::vector<uint8_t> cloud_build_wav(const uint8_t* pcm, size_t pcm_bytes);
 CloudResponse cloud_transcribe_request(const std::string& audio_b64,
                                        const std::string& fallback_text,
-                                       long timeout_seconds = 15L);
+                                       long timeout_seconds = 15L,
+                                       const char* cloud_key = nullptr);
 CloudCompletionResult cloud_complete_request(const CloudCompletionRequest& request,
                                              long timeout_ms);
 
