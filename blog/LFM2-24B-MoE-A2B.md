@@ -2,6 +2,8 @@
 
 *By Noah Cylich and Henry Ndubuaku*
 
+[![Video Title](https://img.youtube.com/vi/-duR4gh_O10/maxresdefault.jpg)](https://youtu.be/-duR4gh_O10)
+
 LFM2-24B-A2B is a really great next step to see over the LFM2-8B-A1B model. The model features 24B total parameters, but only activates a sparse subset of 2B during inference. This allows it to be competitive in inference speed to 2B dense models, while delivering far greater performance.
 
 > "LFM2-24B-A1 excels at coding, keen to see on-device coding agents built with these."
@@ -80,5 +82,3 @@ Together with Cactus, these choices enable lightning fast inference at low energ
 ## Real-World Performance
 
 For our use cases, this model is the sweet spot for mac use. The 8B model was too big for mobile use cases, but not quite hefty enough for mac use. This model filled that niche: it's fast enough to still be usable, while also being big enough to have some intelligence. This model has finally made edge coding truly usable (I know I'll be running this on my next plane flight). It provides real world value to the Cactus team. Here is a video of me demoing the model with Cactus in int4!
-
-[![Watch the demo](https://youtu.be/-duR4gh_O10)
