@@ -301,7 +301,7 @@ void compute_embedding_node(GraphNode& node, const std::vector<std::unique_ptr<G
                 }
 
                 if (k < k_end)
-                    assert (embeddings_buffer.precision == Precision::INT8 && "grouped INT4 embeddings must have hidden_dim that is a multiple of 32");
+                    assert (embeddings_buffer.precision != Precision::INT4 && "grouped INT4 embeddings must have hidden_dim that is a multiple of 32");
                 for (; k < k_end; k++) {
                     size_t k_group = k / 4;
                     size_t k_within = k % 4;
