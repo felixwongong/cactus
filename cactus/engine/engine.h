@@ -56,6 +56,12 @@ struct Config {
     uint32_t num_shared_experts = 0;
     uint32_t num_top_experts = 0;
     uint32_t moe_every_n_layers = 0;
+    uint32_t moe_intermediate_dim = 0;
+    uint32_t num_dense_layers = 0;
+    uint32_t num_experts_per_tok = 0;
+    bool norm_topk_prob = false;
+    bool use_expert_bias = false;
+    float routed_scaling_factor = 1.0f;
     bool tie_word_embeddings = true;
 
     uint32_t vision_hidden_dim = 0;
@@ -366,7 +372,6 @@ struct KVCache {
                          size_t num_tokens, size_t kv_heads, size_t head_dim);
 
     bool is_empty() const { return current_seq_len == 0; }
-    bool is_int8() const { return precision == Precision::INT8; }
     void* get_key_ptr(size_t layer);
     void* get_value_ptr(size_t layer);
 
@@ -696,6 +701,69 @@ public:
         const std::vector<float>& waveform,
         const SpectrogramConfig& config);
 
+    void compute_stft_power(
+        const std::vector<float>& waveform,
+        size_t sampling_rate,
+        const SpectrogramConfig& config,
+        std::vector<float>& stft_power,
+        std::vector<float>& freqs_hz,
+        size_t& num_frames) const;
+
+    float high_freq_energy_ratio_mean(
+        const std::vector<float>& stft_power,
+        const std::vector<float>& freqs_hz,
+        size_t num_frames,
+        float cutoff_hz) const;
+
+    float high_freq_energy_ratio_std(
+        const std::vector<float>& stft_power,
+        const std::vector<float>& freqs_hz,
+        size_t num_frames,
+        float cutoff_hz) const;
+
+    float spectral_flatness_mean(
+        const std::vector<float>& stft_power,
+        size_t num_frames) const;
+
+    float spectral_flatness_std(
+        const std::vector<float>& stft_power,
+        size_t num_frames) const;
+
+    float spectral_entropy_mean(
+        const std::vector<float>& stft_power,
+        size_t num_frames) const;
+
+    float spectral_entropy_std(
+        const std::vector<float>& stft_power,
+        size_t num_frames) const;
+
+    float overlap_pitch_lag_cv(
+        const std::vector<float>& waveform,
+        size_t sample_rate,
+        size_t frame_length = 512,
+        size_t hop_length = 128,
+        float fmin = 80.0f,
+        float fmax = 300.0f,
+        float energy_gate = 0.01f) const;
+
+    float overlap_spectral_peak_spacing_cv_mean(
+        const std::vector<float>& waveform,
+        size_t sample_rate,
+        size_t frame_length = 512,
+        size_t hop_length = 128,
+        size_t n_fft = 512,
+        float peak_prominence = 6.0f,
+        float energy_gate = 0.01f) const;
+
+    float overlap_yin_conf_p95(
+        const std::vector<float>& waveform,
+        size_t sample_rate,
+        size_t frame_length = 512,
+        size_t hop_length = 128,
+        float fmin = 80.0f,
+        float fmax = 300.0f,
+        float energy_gate = 0.01f) const;
+
     const std::vector<float>& get_mel_filters() const { return mel_filters_; }
 
     size_t get_num_mel_filters() const { return num_mel_filters_; }
@@ -721,6 +789,8 @@ namespace index {
     struct QueryResult {
         int doc_id;
         float score;
+
+        QueryResult(int doc_id, float score) : doc_id(doc_id), score(score) {}
     };
 
     struct QueryOptions {

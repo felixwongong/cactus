@@ -116,14 +116,14 @@ static std::string suppress_unwanted_text(const std::string& text) {
 static void parse_stream_transcribe_init_options(const std::string& json,
                                                  double& confirmation_threshold,
                                                  size_t& min_chunk_size,
-                                                 bool& telemetry_enabled) {
+                                                 bool& telemetry_enabled,
+                                                 std::string& language) {
     confirmation_threshold = 0.99;
     min_chunk_size = 32000;
     telemetry_enabled = true;
+    language = "en";
 
-    if (json.empty()) {
-        return;
-    }
+    if (json.empty()) return;
 
     size_t pos = json.find("\"confirmation_threshold\"");
     if (pos != std::string::npos) {
@@ -141,6 +141,9 @@ static void parse_stream_transcribe_init_options(const std::string& json,
     if (pos != std::string::npos) {
         telemetry_enabled = json_bool(json, "telemetry_enabled");
     }
+
+    language = json_string(json, "language");
+    if (language.empty()) language = "en";
 }
 
 struct CactusStreamTranscribeHandle {
@@ -149,6 +152,7 @@ struct CactusStreamTranscribeHandle {
     struct CactusStreamTranscribeOptions {
         double confirmation_threshold;
         size_t min_chunk_size;
+        std::string language;
     } options;
 
     std::vector<uint8_t> audio_buffer;
@@ -263,14 +267,16 @@ cactus_stream_transcribe_t cactus_stream_transcribe_start(cactus_model_t model, 
         double confirmation_threshold;
         size_t min_chunk_size;
         bool telemetry_enabled;
+        std::string language;
         parse_stream_transcribe_init_options(
             options_json ? options_json : "",
             confirmation_threshold,
             min_chunk_size,
-            telemetry_enabled
+            telemetry_enabled,
+            language
         );
 
-        stream_handle->options = { confirmation_threshold, min_chunk_size };
+        stream_handle->options = { confirmation_threshold, min_chunk_size, language };
 
         CACTUS_LOG_INFO("stream_transcribe_start",
             "Stream transcription initialized for model: " << model_handle->model_name);
@@ -343,11 +349,14 @@ int cactus_stream_transcribe_process(
 
         bool is_moonshine = handle->model_handle->model->get_config().model_type == cactus::engine::Config::ModelType::MOONSHINE;
 
+        std::string prompt = is_moonshine ? "" :
+            "<|startoftranscript|><|" + handle->options.language + "|><|transcribe|><|notimestamps|>";
+
         cactus::telemetry::setStreamMode(true);
         const int result = cactus_transcribe(
             handle->model_handle,
             nullptr,
-            is_moonshine ? "" : "<|startoftranscript|><|en|><|transcribe|><|notimestamps|>",
+            prompt.c_str(),
             handle->transcribe_response_buffer,
             sizeof(handle->transcribe_response_buffer),
             nullptr,

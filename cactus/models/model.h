@@ -258,6 +258,92 @@ private:
 };
 
 
+class LFM2MoEModel : public Model {
+public:
+    LFM2MoEModel();
+    explicit LFM2MoEModel(const Config& config);
+    ~LFM2MoEModel() override = default;
+
+    bool is_cache_empty() const;
+
+    bool init(const std::string& model_folder, size_t context_size, const std::string& system_prompt = "", bool do_warmup = true) override;
+    bool init(CactusGraph* external_graph, const std::string& model_folder, size_t context_size,
+              const std::string& system_prompt = "", bool do_warmup = true) override;
+
+protected:
+    using Model::forward;
+    size_t build_attention(CactusGraph* gb, size_t normalized_input, uint32_t layer_idx,
+                          ComputeBackend backend, bool use_cache = false, size_t position_offset = 0) override;
+
+    size_t build_conv1d(CactusGraph* gb, size_t input, uint32_t layer_idx,
+                        ComputeBackend backend, bool use_cache);
+
+    size_t build_mlp(CactusGraph* gb, size_t normalized_h, uint32_t layer_idx,
+                    ComputeBackend backend) const override;
+
+    size_t build_transformer_block(CactusGraph* gb, size_t hidden, uint32_t layer_idx,
+                                  ComputeBackend backend, bool use_cache = false, size_t position_offset = 0) override;
+
+    size_t forward(const std::vector<uint32_t>& tokens, bool use_cache = false) override;
+    size_t forward(CactusGraph* gb, const std::vector<uint32_t>& tokens, ComputeBackend backend, bool use_cache = false);
+    size_t forward(CactusGraph* gb, size_t input_embeddings, size_t seq_len, ComputeBackend backend, bool use_cache = false);
+    void post_init() override;
+    void post_execute_updates(CactusGraph* gb, size_t seq_len) override;
+    void reset_cache() override;
+    void load_weights_to_graph(CactusGraph* gb) override;
+
+private:
+    bool is_dense_layer(uint32_t layer_idx) const;
+
+    struct WeightNodeIDs {
+        size_t output_weight;
+        size_t output_norm_weight;
+
+        struct ExpertWeights {
+            size_t w1_weight = 0;
+            size_t w3_weight = 0;
+            size_t w2_weight = 0;
+        };
+
+        struct LayerWeights {
+            size_t attn_q_weight = 0;
+            size_t attn_k_weight = 0;
+            size_t attn_v_weight = 0;
+            size_t attn_output_weight = 0;
+            size_t attn_q_norm_weight = 0;
+            size_t attn_k_norm_weight = 0;
+
+            size_t conv_depthwise_weight = 0;
+            size_t conv_in_proj_weight = 0;
+            size_t conv_out_proj_weight = 0;
+
+            size_t input_layernorm_weight = 0;
+            size_t post_attention_layernorm_weight = 0;
+            size_t ffn_gate_weight = 0;
+            size_t ffn_up_weight = 0;
+            size_t ffn_down_weight = 0;
+
+            size_t moe_router_weight = 0;
+            size_t moe_expert_bias = 0;
+            std::vector<ExpertWeights> moe_experts;
+        };
+
+        enum class LayerType : uint8_t { ATTENTION, CONV };
+
+        struct LayerEntry {
+            LayerType type;
+            LayerWeights weights;
+        };
+
+        std::vector<LayerEntry> layers;
+    } weight_nodes_;
+
+    ConvCache conv_cache_;
+    std::vector<size_t> conv_cache_bx_nodes_;
+    bool last_forward_used_cache_ = false;
+};
+
+
 class NomicModel : public Model {
 public:
     NomicModel();
@@ -840,6 +926,54 @@ private:
 
     bool image_prefill_completed_ = false;
     size_t last_token_count_ = 0;
+};
+
+class WhisperCloudHandoffModel {
+public:
+    WhisperCloudHandoffModel() = default;
+    ~WhisperCloudHandoffModel() = default;
+
+    bool init(const std::string& model_folder, std::string* error = nullptr);
+    bool ready() const { return initialized_; }
+
+    const std::vector<std::string>& feature_names() const { return feature_names_; }
+    size_t input_dim() const { return input_dim_; }
+    float threshold() const { return threshold_; }
+    float high_freq_cutoff_hz() const { return high_freq_cutoff_hz_; }
+
+    float predict_probability(const std::vector<float>& features) const;
+    bool predict_handoff(const std::vector<float>& features, float* out_probability = nullptr) const;
+
+private:
+    static float gelu_tanh(float x);
+    static bool parse_json_float(const std::string& json, const std::string& key, float& out_value);
+    static bool parse_json_string(const std::string& json, const std::string& key, std::string& out_value);
+
+    bool load_tensor_f32(
+        const std::string& path,
+        std::vector<float>& out_data,
+        std::vector<size_t>& out_shape,
+        std::string* error);
+
+    void set_error(std::string* error, const std::string& message) const;
+
+    bool initialized_ = false;
+    std::string activation_ = "relu";
+    float threshold_ = 0.5f;
+    float high_freq_cutoff_hz_ = 3000.0f;
+
+    size_t input_dim_ = 0;
+    size_t hidden_dim_ = 0;
+    size_t output_dim_ = 0;
+
+    std::vector<float> fc1_weight_;  // [hidden_dim, input_dim]
+    std::vector<float> fc1_bias_;    // [hidden_dim]
+    std::vector<float> fc2_weight_;  // [output_dim, hidden_dim]
+    std::vector<float> fc2_bias_;    // [output_dim]
+
+    std::vector<float> feature_mean_;
+    std::vector<float> feature_std_;
+    std::vector<std::string> feature_names_;
 };
 
 class SileroVADModel : public Model {

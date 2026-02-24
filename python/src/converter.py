@@ -1,5 +1,7 @@
 import os
+import json
 import re
+import shutil
 from pathlib import Path
 
 try:
@@ -7,11 +9,15 @@ try:
 except ImportError:
     torch = None
 
-from .tensor_io import save_tensor_with_header, create_quantization_stats, print_quantization_summary
+from huggingface_hub import snapshot_download
+from safetensors.torch import load_file
+
+from .tensor_io import save_tensor_with_header, create_quantization_stats, print_quantization_summary, format_config_value
 from .config_utils import cfg_get, detect_model_type, extract_base_config, extract_vision_config, extract_lfm2_config, is_vlm_model, extract_moonshine_config
 from .weight_patterns import (
     EMBED_NAMES, OUTPUT_NAMES, OUTPUT_NORM_NAMES, LAYER_PREFIXES,
     VISION_ITEMS, PROJECTOR_WEIGHTS, WHISPER_GLOBAL_WEIGHTS, MOONSHINE_GLOBAL_WEIGHTS,
+    CLOUD_HANDOFF_GLOBAL_WEIGHTS, CLOUD_HANDOFF_STATS_WEIGHTS,
     get_layer_weight_patterns, get_vision_layer_weights
 )
 
@@ -30,8 +36,13 @@ def convert_hf_model_weights(model, output_dir, precision='INT8', args=None):
 
     cfg = text_cfg if text_cfg is not None else config
 
-    tie_word_embeddings = getattr(config, 'tie_word_embeddings', False)
     model_type_str = cfg_get(cfg, 'model_type', cfg_get(config, 'model_type', '')).lower()
+    tie_word_embeddings = cfg_get(config, 'tie_word_embeddings', None)
+    if tie_word_embeddings is None:
+        # HF snapshots for lfm2_moe may omit this field; runtime expects tied embeddings by default.
+        tie_word_embeddings = (model_type_str == 'lfm2_moe')
+    else:
+        tie_word_embeddings = bool(tie_word_embeddings)
 
     detected_model_type = detect_model_type(cfg, config, output_dir)
 
@@ -42,7 +53,18 @@ def convert_hf_model_weights(model, output_dir, precision='INT8', args=None):
     if is_vlm and vision_cfg is not None:
         model_config.update(extract_vision_config(config, vision_cfg))
 
-    if detected_model_type == 'lfm2':
+    if model_type_str in (
+        'cloud_handoff',
+        'cloud-handoff',
+        'moonshine_cloud_handoff',
+        'moonshine-cloud-handoff',
+        'cloudhandoff',
+    ) or detected_model_type == 'cloud_handoff':
+        raise ValueError(
+            "cloud_handoff is not an LLM checkpoint. Convert a Whisper model instead; "
+            "Whisper conversion bundles cloud_handoff automatically."
+        )
+    elif detected_model_type == 'lfm2':
         model_config.update(extract_lfm2_config(cfg))
     elif detected_model_type == 'moonshine':
         model_config.update(extract_moonshine_config(cfg))
@@ -83,6 +105,7 @@ def convert_hf_model_weights(model, output_dir, precision='INT8', args=None):
                 
                 save_tensor_with_header(tensor, output_dir / save_name, precision, transpose=False, stats_tracker=quantization_stats, args=args, model_type=detected_model_type)
                 saved_tensor_full_names.add(name)
+
         embedding_found = True
         model_config['dec_hidden_act'] = cfg.decoder_hidden_act
         model_config['enc_hidden_act'] = cfg.encoder_hidden_act
@@ -177,6 +200,34 @@ def convert_hf_model_weights(model, output_dir, precision='INT8', args=None):
             for name_patterns, tensor_precision, output_name, should_transpose in weight_patterns:
                 found = False
                 for pattern in name_patterns:
+                    if '{channel}' in pattern:
+                        num_channels = int(model_config.get('num_experts', 0))
+                        if num_channels <= 0:
+                            continue
+
+                        matched_any_channel = False
+                        for channel_idx in range(num_channels):
+                            full_name = layer_prefix + pattern.replace('{channel}', str(channel_idx))
+                            if full_name not in state_dict:
+                                continue
+
+                            channel_output_name = output_name.replace('{channel}', str(channel_idx))
+                            tensor = state_dict[full_name]
+                            if model_type_str == 'whisper':
+                                temp = layer_prefix[:layer_prefix.find('.')] + "." + channel_output_name
+                                save_tensor_with_header(tensor, output_dir / temp, tensor_precision, transpose=should_transpose, stats_tracker=quantization_stats, args=args, model_type=detected_model_type)
+                            elif model_type_str == 'moonshine' and 'encoder' in layer_prefix:
+                                enc_output_name = "encoder_" + channel_output_name
+                                save_tensor_with_header(tensor, output_dir / enc_output_name, tensor_precision, transpose=should_transpose, stats_tracker=quantization_stats, args=args, model_type=detected_model_type)
+                            else:
+                                save_tensor_with_header(tensor, output_dir / channel_output_name, tensor_precision, transpose=should_transpose, stats_tracker=quantization_stats, args=args, model_type=detected_model_type)
+                            saved_tensor_full_names.add(full_name)
+                            matched_any_channel = True
+
+                        if matched_any_channel:
+                            found = True
+                            break
+
                     full_name = layer_prefix + pattern
                     if full_name in state_dict:
                         tensor = state_dict[full_name]
@@ -353,6 +404,16 @@ def convert_hf_model_weights(model, output_dir, precision='INT8', args=None):
             except Exception as e:
                 print(f"Warning: Failed to bundle VAD weights: {e}")
 
+    if detected_model_type == 'whisper':
+        cloud_precision = "FP16" if precision in ("INT8", "INT4") else precision
+        print("Bundling Whisper cloud_handoff weights...")
+        if bundle_whisper_cloud_handoff_weights(
+            output_dir=output_dir,
+            precision=cloud_precision,
+            args=args,
+        ):
+            print("Whisper cloud_handoff weights bundled successfully")
+
     return model_config
 
 
@@ -428,6 +489,163 @@ def convert_silero_vad_weights(model, output_dir, precision="FP16", args=None):
     config_path = output_dir / "config.txt"
     with open(config_path, "w") as f:
         for key, value in config.items():
-            f.write(f"{key}={value}\n")
+            f.write(f"{key}={format_config_value(value)}\n")
 
     return config
+
+
+def convert_cloud_handoff_weights(state_dict, output_dir, precision="FP16", args=None, meta=None):
+    """Convert Cloud Handoff classifier weights to Cactus binary format."""
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    quantization_stats = create_quantization_stats()
+
+    required = {"classifier.fc1.weight", "classifier.fc2.weight"}
+    missing = [name for name in required if name not in state_dict]
+    if missing:
+        raise ValueError(f"Missing required Cloud Handoff weights: {', '.join(sorted(missing))}")
+
+    for name, save_name in CLOUD_HANDOFF_GLOBAL_WEIGHTS:
+        if name in state_dict:
+            save_tensor_with_header(
+                state_dict[name],
+                output_dir / save_name,
+                precision=precision,
+                transpose=False,
+                stats_tracker=quantization_stats,
+                args=args,
+                model_type="cloud_handoff",
+            )
+
+    for name, save_name in CLOUD_HANDOFF_STATS_WEIGHTS:
+        if name in state_dict:
+            save_tensor_with_header(
+                state_dict[name],
+                output_dir / save_name,
+                precision="FP32",
+                transpose=False,
+                stats_tracker=quantization_stats,
+                args=args,
+                model_type="cloud_handoff",
+            )
+
+    fc1 = state_dict["classifier.fc1.weight"]
+    fc2 = state_dict["classifier.fc2.weight"]
+
+    config = {
+        "model_type": "cloud_handoff",
+        "model_variant": "cloud_handoff",
+        "num_layers": 0,
+        "tie_word_embeddings": False,
+        "cloud_handoff_enabled": True,
+        "cloud_handoff_has_feature_stats": (
+            "feature_mean" in state_dict and "feature_std" in state_dict
+        ),
+        "precision": "FP16" if precision in ("INT8", "INT4") else precision,
+    }
+
+    if hasattr(fc1, "shape") and len(fc1.shape) == 2:
+        config["cloud_handoff_input_dim"] = int(fc1.shape[1])
+        config["cloud_handoff_hidden_dim"] = int(fc1.shape[0])
+        config["hidden_dim"] = int(fc1.shape[1])
+
+    if hasattr(fc2, "shape") and len(fc2.shape) == 2:
+        config["cloud_handoff_output_dim"] = int(fc2.shape[0])
+
+    if isinstance(meta, dict):
+        for key in ("threshold", "dropout", "activation", "input_dim", "hidden_dim"):
+            if key in meta:
+                config[f"cloud_handoff_{key}"] = meta[key]
+
+    config_path = output_dir / "config.txt"
+    with open(config_path, "w") as f:
+        for key, value in config.items():
+            f.write(f"{key}={format_config_value(value)}\n")
+
+    print_quantization_summary(quantization_stats, args)
+    return config
+
+
+def bundle_whisper_cloud_handoff_weights(output_dir, precision="FP16", args=None):
+    """Download and bundle Whisper cloud_handoff sidecar weights."""
+    if snapshot_download is None or load_file is None:
+        print("Warning: huggingface_hub/safetensors missing, skipping cloud_handoff bundling")
+        return False
+
+    repo_id = "Cactus-Compute/whisper-cloud-handoff"
+
+    snapshot_kwargs = {
+        "repo_id": repo_id,
+        "repo_type": "model",
+        "allow_patterns": [
+            "classifier_head.safetensors",
+            "classifier_meta.json",
+            "classifier_features.json",
+            "feature_stats.safetensors",
+        ],
+    }
+    if args is not None:
+        token = getattr(args, "token", None)
+        cache_dir = getattr(args, "cache_dir", None)
+        revision = getattr(args, "revision", None)
+        if token:
+            snapshot_kwargs["token"] = token
+        if cache_dir:
+            snapshot_kwargs["cache_dir"] = cache_dir
+        if revision:
+            snapshot_kwargs["revision"] = revision
+
+    try:
+        local_dir = Path(snapshot_download(**snapshot_kwargs))
+    except Exception as e:
+        print(f"Warning: Failed to download cloud_handoff repo {repo_id}: {e}")
+        return False
+
+    head_path = local_dir / "classifier_head.safetensors"
+    if not head_path.exists():
+        print(f"Warning: Missing classifier_head.safetensors in {repo_id}, skipping")
+        return False
+
+    state_dict = {}
+    try:
+        state_dict.update(load_file(str(head_path)))
+    except Exception as e:
+        print(f"Warning: Failed to load cloud_handoff head from {repo_id}: {e}")
+        return False
+
+    stats_path = local_dir / "feature_stats.safetensors"
+    if stats_path.exists():
+        try:
+            state_dict.update(load_file(str(stats_path)))
+        except Exception as e:
+            print(f"Warning: Failed to load cloud_handoff feature stats from {repo_id}: {e}")
+            return False
+
+    meta = {}
+    meta_path = local_dir / "classifier_meta.json"
+    if meta_path.exists():
+        try:
+            meta = json.loads(meta_path.read_text())
+        except Exception:
+            print("Warning: Could not parse classifier_meta.json for cloud_handoff; continuing")
+
+    cloud_handoff_output_dir = Path(output_dir) / "cloud_handoff"
+    try:
+        convert_cloud_handoff_weights(
+            state_dict=state_dict,
+            output_dir=cloud_handoff_output_dir,
+            precision=precision,
+            args=args,
+            meta=meta,
+        )
+    except Exception as e:
+        print(f"Warning: Failed to convert cloud_handoff weights from {repo_id}: {e}")
+        return False
+
+    for filename in ("classifier_meta.json", "classifier_features.json"):
+        src = local_dir / filename
+        if src.exists():
+            shutil.copy2(src, cloud_handoff_output_dir / filename)
+
+    return True
