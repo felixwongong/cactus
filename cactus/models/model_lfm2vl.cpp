@@ -110,7 +110,7 @@ void Lfm2VlModel::load_weights_to_graph(CactusGraph* gb) {
     projector_weights_.linear_1_bias = gb->mmap_weights(resolve_weight("projector_linear_1.bias.weights", "projector_linear1.bias.weights"));
     projector_weights_.linear_2_weight = gb->mmap_weights(resolve_weight("projector_linear_2.weights", "projector_linear2.weights"));
     projector_weights_.linear_2_bias = gb->mmap_weights(resolve_weight("projector_linear_2.bias.weights", "projector_linear2.bias.weights"));
-    output_weight_node_id_ = gb->mmap_weights(resolve_weight("output_weight.weights"));
+    output_weight_node_id_ = gb->mmap_weights(resolve_weight("token_embeddings.weights"));
 }
 
 size_t Lfm2VlModel::pixel_unshuffle(CactusGraph* gb, size_t hidden_states, 
