@@ -81,4 +81,4 @@ Together with Cactus, these choices enable lightning fast inference at low energ
 
 For our use cases, this model is the sweet spot for mac use. The 8B model was too big for mobile use cases, but not quite hefty enough for mac use. This model filled that niche: it's fast enough to still be usable, while also being big enough to have some intelligence. This model has finally made edge coding truly usable (I know I'll be running this on my next plane flight). It provides real world value to the Cactus team. Here is a video of me demoing the model with Cactus in int4!
 
-[![Watch the demo](https://img.youtube.com/vi/WG3nJW7vZLE/maxresdefault.jpg)](https://youtu.be/WG3nJW7vZLE?si=x_9x3CVgd_qtsYug)
+[![Watch the demo](https://youtu.be/-duR4gh_O10)
