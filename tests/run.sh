@@ -178,6 +178,26 @@ if [ ${#executable_tests[@]} -eq 0 ]; then
 fi
 
 test_executables=("${executable_tests[@]}")
+if [ -z "$ONLY_EXEC" ]; then
+    has_split_suite=false
+    for split_name in llm stt vlm rag; do
+        if [ -x "./test_${split_name}" ]; then
+            has_split_suite=true
+            break
+        fi
+    done
+
+    if [ "$has_split_suite" = true ]; then
+        filtered_tests=()
+        for test_file in "${test_executables[@]}"; do
+            if [ "$(basename "$test_file")" = "test_engine" ]; then
+                continue
+            fi
+            filtered_tests+=("$test_file")
+        done
+        test_executables=("${filtered_tests[@]}")
+    fi
+fi
 
 # If --only is set, execute only the named test
 if [ -n "$ONLY_EXEC" ]; then
