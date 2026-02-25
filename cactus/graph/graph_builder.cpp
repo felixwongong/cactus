@@ -559,9 +559,7 @@ size_t CactusGraph::conv1d_k7s3(size_t input, size_t weight, size_t bias) {
     params.output_precision = xin.precision;
 
     std::vector<size_t> out_shape{N, C_out, L_out};
-    const size_t conv_out = add_node(OpType::CONV1D_K7S3, {input, weight}, out_shape, params);
-    const size_t bias_bc = reshape(bias, {C_out, static_cast<size_t>(1)});
-    return add(conv_out, bias_bc);
+    return add_node(OpType::CONV1D_K7S3, {input, weight, bias}, out_shape, params);
 }
 
 size_t CactusGraph::conv1d(size_t input, size_t weight, size_t stride) {
@@ -597,9 +595,7 @@ size_t CactusGraph::conv1d(size_t input, size_t weight, size_t bias, size_t stri
     if (b.total_size != C_out) throw std::runtime_error("conv1d bias size mismatch");
     
     OpParams params{.stride = stride, .output_precision = xin.precision};
-    const size_t conv_out = add_node(OpType::CONV1D, {input, weight}, {N, C_out, L_out}, params);
-    const size_t bias_bc = reshape(bias, {C_out, static_cast<size_t>(1)});
-    return add(conv_out, bias_bc);
+    return add_node(OpType::CONV1D, {input, weight, bias}, {N, C_out, L_out}, params);
 }
 
 size_t CactusGraph::conv1d_same_depthwise_k9(size_t input, size_t weight) {
@@ -629,6 +625,40 @@ size_t CactusGraph::conv1d_same_depthwise_k9(size_t input, size_t weight) {
     OpParams params{};
     params.output_precision = xin.precision;
     return add_node(OpType::CONV1D_SAME_DEPTHWISE_K9, {input, weight}, {N, L, C}, params);
+}
+
+size_t CactusGraph::conv1d_same_depthwise_k9(size_t input, size_t weight, size_t bias) {
+    const auto& xin = get_output_buffer(input);
+    const auto& w = get_output_buffer(weight);
+    const auto& b = get_output_buffer(bias);
+
+    if (xin.shape.size() != 3) {
+        throw std::runtime_error("conv1d_same_depthwise_k9 expects input [N, L, C]");
+    }
+
+    const size_t N = xin.shape[0];
+    const size_t L = xin.shape[1];
+    const size_t C = xin.shape[2];
+
+    if (w.shape.size() == 2) {
+        if (w.shape[0] != C || w.shape[1] != 9) {
+            throw std::runtime_error("conv1d_same_depthwise_k9 weight must be [C, 9]");
+        }
+    } else if (w.shape.size() == 3) {
+        if (w.shape[0] != C || w.shape[1] != 1 || w.shape[2] != 9) {
+            throw std::runtime_error("conv1d_same_depthwise_k9 weight must be [C, 1, 9]");
+        }
+    } else {
+        throw std::runtime_error("conv1d_same_depthwise_k9 weight must be rank 2 or 3");
+    }
+
+    if (b.total_size != C) {
+        throw std::runtime_error("conv1d_same_depthwise_k9 bias size mismatch");
+    }
+
+    OpParams params{};
+    params.output_precision = xin.precision;
+    return add_node(OpType::CONV1D_SAME_DEPTHWISE_K9, {input, weight, bias}, {N, L, C}, params);
 }
 
 size_t CactusGraph::conv1d_pointwise(size_t input, size_t weight) {
@@ -693,8 +723,9 @@ size_t CactusGraph::conv1d_pointwise(size_t input, size_t weight, size_t bias) {
         throw std::runtime_error("conv1d_pointwise bias size mismatch");
     }
 
-    const size_t conv_out = conv1d_pointwise(input, weight);
-    return add(conv_out, bias);
+    OpParams params{};
+    params.output_precision = xin.precision;
+    return add_node(OpType::CONV1D_POINTWISE, {input, weight, bias}, {xin.shape[0], xin.shape[1], C_out}, params);
 }
 
 size_t CactusGraph::conv2d_k3s2p1(size_t input, size_t weight) {
@@ -756,9 +787,13 @@ size_t CactusGraph::conv2d_k3s2p1(size_t input, size_t weight, size_t bias) {
         throw std::runtime_error("conv2d_k3s2p1 input spatial dimensions must be > 0");
     }
 
-    const size_t conv_out = conv2d_k3s2p1(input, weight);
-    const size_t bias_bc = reshape(bias, {C_out, static_cast<size_t>(1), static_cast<size_t>(1)});
-    return add(conv_out, bias_bc);
+    const size_t N = xin.shape[0];
+    const size_t H_out = (H - 1) / 2 + 1;
+    const size_t W_out = (W - 1) / 2 + 1;
+
+    OpParams params{};
+    params.output_precision = xin.precision;
+    return add_node(OpType::CONV2D_K3S2P1, {input, weight, bias}, {N, C_out, H_out, W_out}, params);
 }
 
 size_t CactusGraph::conv2d_depthwise_k3s2p1(size_t input, size_t weight) {
@@ -829,9 +864,13 @@ size_t CactusGraph::conv2d_depthwise_k3s2p1(size_t input, size_t weight, size_t 
         throw std::runtime_error("conv2d_depthwise_k3s2p1 input spatial dimensions must be > 0");
     }
 
-    const size_t conv_out = conv2d_depthwise_k3s2p1(input, weight);
-    const size_t bias_bc = reshape(bias, {C, static_cast<size_t>(1), static_cast<size_t>(1)});
-    return add(conv_out, bias_bc);
+    const size_t N = xin.shape[0];
+    const size_t H_out = (H - 1) / 2 + 1;
+    const size_t W_out = (W - 1) / 2 + 1;
+
+    OpParams params{};
+    params.output_precision = xin.precision;
+    return add_node(OpType::CONV2D_DEPTHWISE_K3S2P1, {input, weight, bias}, {N, C, H_out, W_out}, params);
 }
 
 size_t CactusGraph::conv2d_pointwise_1x1(size_t input, size_t weight) {
@@ -906,9 +945,9 @@ size_t CactusGraph::conv2d_pointwise_1x1(size_t input, size_t weight, size_t bia
         throw std::runtime_error("conv2d_pointwise_1x1 input spatial dimensions must be > 0");
     }
 
-    const size_t conv_out = conv2d_pointwise_1x1(input, weight);
-    const size_t bias_bc = reshape(bias, {C_out, static_cast<size_t>(1), static_cast<size_t>(1)});
-    return add(conv_out, bias_bc);
+    OpParams params{};
+    params.output_precision = xin.precision;
+    return add_node(OpType::CONV2D_POINTWISE_1X1, {input, weight, bias}, {xin.shape[0], C_out, H, W}, params);
 }
 
 size_t CactusGraph::lstm_cell(size_t input, size_t h_prev, size_t c_prev, size_t weight_ih, size_t weight_hh, size_t bias_ih, size_t bias_hh) {

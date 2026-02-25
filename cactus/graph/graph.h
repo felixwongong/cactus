@@ -532,6 +532,7 @@ public:
     size_t conv1d(size_t input, size_t weight, size_t stride);
     size_t conv1d(size_t input, size_t weight, size_t bias, size_t stride);
     size_t conv1d_same_depthwise_k9(size_t input, size_t weight);
+    size_t conv1d_same_depthwise_k9(size_t input, size_t weight, size_t bias);
     size_t conv1d_pointwise(size_t input, size_t weight);
     size_t conv1d_pointwise(size_t input, size_t weight, size_t bias);
     size_t conv2d_k3s2p1(size_t input, size_t weight);

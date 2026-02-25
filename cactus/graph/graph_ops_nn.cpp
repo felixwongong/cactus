@@ -929,8 +929,19 @@ void compute_conv1d_node(GraphNode& node, const std::vector<std::unique_ptr<Grap
                          const std::unordered_map<size_t, size_t>& node_index_map) {
     const auto& X = nodes[node_index_map.at(node.input_ids[0])]->output_buffer;
     const auto& W = nodes[node_index_map.at(node.input_ids[1])]->output_buffer;
+    const BufferDesc* B = nullptr;
+    if (node.input_ids.size() >= 3) {
+        B = &nodes[node_index_map.at(node.input_ids[2])]->output_buffer;
+    }
 
     auto& Y = node.output_buffer;
+
+    if (X.shape.size() != 3) {
+        throw std::runtime_error("conv1d expects input [N, C_in, L]");
+    }
+    if (W.shape.size() != 3) {
+        throw std::runtime_error("conv1d weight must be [C_out, C_in, K]");
+    }
 
     const size_t N = X.shape[0];
     const size_t C_in = X.shape[1];
@@ -939,11 +950,32 @@ void compute_conv1d_node(GraphNode& node, const std::vector<std::unique_ptr<Grap
     const size_t K = W.shape[2];
     const size_t stride = node.params.stride;
 
+    if (W.shape[1] != C_in) {
+        throw std::runtime_error("conv1d weight C_in mismatch");
+    }
+
     if (X.precision != Precision::FP16 || W.precision != Precision::FP16) {
         throw std::runtime_error("Conv1d only supports FP16");
     }
 
-    cactus_conv1d_f16(X.data_as<__fp16>(), W.data_as<__fp16>(),
+    const __fp16* bias_ptr = nullptr;
+    std::vector<__fp16> bias_fp16;
+    if (B) {
+        if (B->total_size != C_out) {
+            throw std::runtime_error("conv1d bias size mismatch");
+        }
+        if (B->precision == Precision::FP16) {
+            bias_ptr = B->data_as<__fp16>();
+        } else if (B->precision == Precision::FP32) {
+            bias_fp16.resize(C_out);
+            cactus_fp32_to_fp16(B->data_as<float>(), bias_fp16.data(), C_out);
+            bias_ptr = bias_fp16.data();
+        } else {
+            throw std::runtime_error("conv1d bias only supports FP16/FP32");
+        }
+    }
+
+    cactus_conv1d_f16(X.data_as<__fp16>(), W.data_as<__fp16>(), bias_ptr,
                       Y.data_as<__fp16>(), N, L, C_in, C_out, K, stride);
 }
 
@@ -955,6 +987,10 @@ void compute_conv1d_same_depthwise_k9_node(GraphNode& node, const std::vector<st
 
     const auto& X = nodes[node_index_map.at(node.input_ids[0])]->output_buffer;
     const auto& W = nodes[node_index_map.at(node.input_ids[1])]->output_buffer;
+    const BufferDesc* B = nullptr;
+    if (node.input_ids.size() >= 3) {
+        B = &nodes[node_index_map.at(node.input_ids[2])]->output_buffer;
+    }
     auto& Y = node.output_buffer;
 
     if (X.shape.size() != 3) {
@@ -984,10 +1020,28 @@ void compute_conv1d_same_depthwise_k9_node(GraphNode& node, const std::vector<st
     Y.shape = {N, L, C};
     Y.precision = Precision::FP16;
 
+    const __fp16* bias_ptr = nullptr;
+    std::vector<__fp16> bias_fp16;
+    if (B) {
+        if (B->total_size != C) {
+            throw std::runtime_error("conv1d_same_depthwise_k9 bias size mismatch");
+        }
+        if (B->precision == Precision::FP16) {
+            bias_ptr = B->data_as<__fp16>();
+        } else if (B->precision == Precision::FP32) {
+            bias_fp16.resize(C);
+            cactus_fp32_to_fp16(B->data_as<float>(), bias_fp16.data(), C);
+            bias_ptr = bias_fp16.data();
+        } else {
+            throw std::runtime_error("conv1d_same_depthwise_k9 bias only supports FP16/FP32");
+        }
+    }
+
     if (W.precision == Precision::FP16) {
         cactus_conv1d_same_depthwise_f16_k9(
             X.data_as<__fp16>(),
             W.data_as<__fp16>(),
+            bias_ptr,
             Y.data_as<__fp16>(),
             N, L, C
         );
@@ -1025,6 +1079,7 @@ void compute_conv1d_same_depthwise_k9_node(GraphNode& node, const std::vector<st
         cactus_conv1d_same_depthwise_f16_k9(
             X.data_as<__fp16>(),
             W_fp16.data(),
+            bias_ptr,
             Y.data_as<__fp16>(),
             N, L, C
         );
@@ -1042,6 +1097,10 @@ void compute_conv2d_k3s2p1_node(GraphNode& node, const std::vector<std::unique_p
 
     const auto& X = nodes[node_index_map.at(node.input_ids[0])]->output_buffer;
     const auto& W = nodes[node_index_map.at(node.input_ids[1])]->output_buffer;
+    const BufferDesc* B = nullptr;
+    if (node.input_ids.size() >= 3) {
+        B = &nodes[node_index_map.at(node.input_ids[2])]->output_buffer;
+    }
     auto& Y = node.output_buffer;
 
     if (X.shape.size() != 4) {
@@ -1072,10 +1131,28 @@ void compute_conv2d_k3s2p1_node(GraphNode& node, const std::vector<std::unique_p
     Y.shape = {N, C_out, H_out, W_out};
     Y.precision = Precision::FP16;
 
+    const __fp16* bias_ptr = nullptr;
+    std::vector<__fp16> bias_fp16;
+    if (B) {
+        if (B->total_size != C_out) {
+            throw std::runtime_error("conv2d_k3s2p1 bias size mismatch");
+        }
+        if (B->precision == Precision::FP16) {
+            bias_ptr = B->data_as<__fp16>();
+        } else if (B->precision == Precision::FP32) {
+            bias_fp16.resize(C_out);
+            cactus_fp32_to_fp16(B->data_as<float>(), bias_fp16.data(), C_out);
+            bias_ptr = bias_fp16.data();
+        } else {
+            throw std::runtime_error("conv2d_k3s2p1 bias only supports FP16/FP32");
+        }
+    }
+
     if (W.precision == Precision::FP16) {
         cactus_conv2d_f16_k3s2p1_nchw(
             X.data_as<__fp16>(),
             W.data_as<__fp16>(),
+            bias_ptr,
             Y.data_as<__fp16>(),
             N, C_in, H, W_in, C_out
         );
@@ -1113,6 +1190,7 @@ void compute_conv2d_k3s2p1_node(GraphNode& node, const std::vector<std::unique_p
         cactus_conv2d_f16_k3s2p1_nchw(
             X.data_as<__fp16>(),
             W_fp16.data(),
+            bias_ptr,
             Y.data_as<__fp16>(),
             N, C_in, H, W_in, C_out
         );
@@ -1130,6 +1208,10 @@ void compute_conv2d_depthwise_k3s2p1_node(GraphNode& node, const std::vector<std
 
     const auto& X = nodes[node_index_map.at(node.input_ids[0])]->output_buffer;
     const auto& W = nodes[node_index_map.at(node.input_ids[1])]->output_buffer;
+    const BufferDesc* B = nullptr;
+    if (node.input_ids.size() >= 3) {
+        B = &nodes[node_index_map.at(node.input_ids[2])]->output_buffer;
+    }
     auto& Y = node.output_buffer;
 
     if (X.shape.size() != 4) {
@@ -1164,10 +1246,28 @@ void compute_conv2d_depthwise_k3s2p1_node(GraphNode& node, const std::vector<std
     Y.shape = {N, C, H_out, W_out};
     Y.precision = Precision::FP16;
 
+    const __fp16* bias_ptr = nullptr;
+    std::vector<__fp16> bias_fp16;
+    if (B) {
+        if (B->total_size != C) {
+            throw std::runtime_error("conv2d_depthwise_k3s2p1 bias size mismatch");
+        }
+        if (B->precision == Precision::FP16) {
+            bias_ptr = B->data_as<__fp16>();
+        } else if (B->precision == Precision::FP32) {
+            bias_fp16.resize(C);
+            cactus_fp32_to_fp16(B->data_as<float>(), bias_fp16.data(), C);
+            bias_ptr = bias_fp16.data();
+        } else {
+            throw std::runtime_error("conv2d_depthwise_k3s2p1 bias only supports FP16/FP32");
+        }
+    }
+
     if (W.precision == Precision::FP16) {
         cactus_conv2d_depthwise_f16_k3s2p1_nchw(
             X.data_as<__fp16>(),
             W.data_as<__fp16>(),
+            bias_ptr,
             Y.data_as<__fp16>(),
             N, C, H, W_in
         );
@@ -1205,6 +1305,7 @@ void compute_conv2d_depthwise_k3s2p1_node(GraphNode& node, const std::vector<std
         cactus_conv2d_depthwise_f16_k3s2p1_nchw(
             X.data_as<__fp16>(),
             W_fp16.data(),
+            bias_ptr,
             Y.data_as<__fp16>(),
             N, C, H, W_in
         );
@@ -1222,6 +1323,10 @@ void compute_conv2d_pointwise_1x1_node(GraphNode& node, const std::vector<std::u
 
     const auto& X = nodes[node_index_map.at(node.input_ids[0])]->output_buffer;
     const auto& W = nodes[node_index_map.at(node.input_ids[1])]->output_buffer;
+    const BufferDesc* B = nullptr;
+    if (node.input_ids.size() >= 3) {
+        B = &nodes[node_index_map.at(node.input_ids[2])]->output_buffer;
+    }
     auto& Y = node.output_buffer;
 
     if (X.shape.size() != 4) {
@@ -1257,10 +1362,28 @@ void compute_conv2d_pointwise_1x1_node(GraphNode& node, const std::vector<std::u
     Y.shape = {N, C_out, H, W_in};
     Y.precision = Precision::FP16;
 
+    const __fp16* bias_ptr = nullptr;
+    std::vector<__fp16> bias_fp16;
+    if (B) {
+        if (B->total_size != C_out) {
+            throw std::runtime_error("conv2d_pointwise_1x1 bias size mismatch");
+        }
+        if (B->precision == Precision::FP16) {
+            bias_ptr = B->data_as<__fp16>();
+        } else if (B->precision == Precision::FP32) {
+            bias_fp16.resize(C_out);
+            cactus_fp32_to_fp16(B->data_as<float>(), bias_fp16.data(), C_out);
+            bias_ptr = bias_fp16.data();
+        } else {
+            throw std::runtime_error("conv2d_pointwise_1x1 bias only supports FP16/FP32");
+        }
+    }
+
     if (W.precision == Precision::FP16) {
         cactus_conv2d_pointwise_f16_1x1_nchw_gemm(
             X.data_as<__fp16>(),
             W.data_as<__fp16>(),
+            bias_ptr,
             Y.data_as<__fp16>(),
             N, C_in, H, W_in, C_out
         );
@@ -1298,6 +1421,7 @@ void compute_conv2d_pointwise_1x1_node(GraphNode& node, const std::vector<std::u
         cactus_conv2d_pointwise_f16_1x1_nchw_gemm(
             X.data_as<__fp16>(),
             W_fp16.data(),
+            bias_ptr,
             Y.data_as<__fp16>(),
             N, C_in, H, W_in, C_out
         );
@@ -1315,6 +1439,10 @@ void compute_conv1d_pointwise_node(GraphNode& node, const std::vector<std::uniqu
 
     const auto& X = nodes[node_index_map.at(node.input_ids[0])]->output_buffer;
     const auto& W = nodes[node_index_map.at(node.input_ids[1])]->output_buffer;
+    const BufferDesc* B = nullptr;
+    if (node.input_ids.size() >= 3) {
+        B = &nodes[node_index_map.at(node.input_ids[2])]->output_buffer;
+    }
     auto& Y = node.output_buffer;
 
     if (X.shape.size() != 3) {
@@ -1346,10 +1474,28 @@ void compute_conv1d_pointwise_node(GraphNode& node, const std::vector<std::uniqu
     Y.shape = {N, L, C_out};
     Y.precision = Precision::FP16;
 
+    const __fp16* bias_ptr = nullptr;
+    std::vector<__fp16> bias_fp16;
+    if (B) {
+        if (B->total_size != C_out) {
+            throw std::runtime_error("conv1d_pointwise bias size mismatch");
+        }
+        if (B->precision == Precision::FP16) {
+            bias_ptr = B->data_as<__fp16>();
+        } else if (B->precision == Precision::FP32) {
+            bias_fp16.resize(C_out);
+            cactus_fp32_to_fp16(B->data_as<float>(), bias_fp16.data(), C_out);
+            bias_ptr = bias_fp16.data();
+        } else {
+            throw std::runtime_error("conv1d_pointwise bias only supports FP16/FP32");
+        }
+    }
+
     if (W.precision == Precision::FP16) {
         cactus_conv1d_pointwise_f16_gemm(
             X.data_as<__fp16>(),
             W.data_as<__fp16>(),
+            bias_ptr,
             Y.data_as<__fp16>(),
             N, L, C_in, C_out
         );
@@ -1387,6 +1533,7 @@ void compute_conv1d_pointwise_node(GraphNode& node, const std::vector<std::uniqu
         cactus_conv1d_pointwise_f16_gemm(
             X.data_as<__fp16>(),
             W_fp16.data(),
+            bias_ptr,
             Y.data_as<__fp16>(),
             N, L, C_in, C_out
         );
@@ -1566,6 +1713,10 @@ void compute_conv1d_k7s3_node(GraphNode& node, const std::vector<std::unique_ptr
                          const std::unordered_map<size_t, size_t>& node_index_map) {
     const auto& X = nodes[node_index_map.at(node.input_ids[0])]->output_buffer;
     const auto& W = nodes[node_index_map.at(node.input_ids[1])]->output_buffer; // Expected packed [C_in, K, C_out]
+    const BufferDesc* B = nullptr;
+    if (node.input_ids.size() >= 3) {
+        B = &nodes[node_index_map.at(node.input_ids[2])]->output_buffer;
+    }
 
     auto& Y = node.output_buffer;
 
@@ -1590,9 +1741,27 @@ void compute_conv1d_k7s3_node(GraphNode& node, const std::vector<std::unique_ptr
     Y.shape = {N, C_out, L_out};
     Y.precision = Precision::FP16;
 
+    const __fp16* bias_ptr = nullptr;
+    std::vector<__fp16> bias_fp16;
+    if (B) {
+        if (B->total_size != C_out) {
+            throw std::runtime_error("conv1d_k7s3 bias size mismatch");
+        }
+        if (B->precision == Precision::FP16) {
+            bias_ptr = B->data_as<__fp16>();
+        } else if (B->precision == Precision::FP32) {
+            bias_fp16.resize(C_out);
+            cactus_fp32_to_fp16(B->data_as<float>(), bias_fp16.data(), C_out);
+            bias_ptr = bias_fp16.data();
+        } else {
+            throw std::runtime_error("conv1d_k7s3 bias only supports FP16/FP32");
+        }
+    }
+
     cactus_conv1d_f16_k7s3_oc8(
         X.data_as<__fp16>(), 
         W.data_as<__fp16>(), 
+        bias_ptr,
         Y.data_as<__fp16>(), 
         N, L, C_in, C_out
     );

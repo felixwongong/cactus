@@ -203,6 +203,7 @@ void cactus_conv1d_f16_k3(
 void cactus_conv1d_f16(
     const __fp16* input,
     const __fp16* weight,
+    const __fp16* bias,
     __fp16* output,
     size_t N,
     size_t L,
@@ -225,6 +226,7 @@ void cactus_stft_f16(
 void cactus_conv1d_f16_k7s3_oc8(
     const __fp16* input,
     const __fp16* Wpack,
+    const __fp16* bias,
     __fp16* output,
     size_t N,
     size_t L,
@@ -235,6 +237,7 @@ void cactus_conv1d_f16_k7s3_oc8(
 void cactus_conv1d_same_depthwise_f16_k9(
     const __fp16* input,
     const __fp16* weight,
+    const __fp16* bias,
     __fp16* output,
     size_t N,
     size_t L,
@@ -244,6 +247,7 @@ void cactus_conv1d_same_depthwise_f16_k9(
 void cactus_conv2d_f16_k3s2p1_nchw(
     const __fp16* input,
     const __fp16* weight,
+    const __fp16* bias,
     __fp16* output,
     size_t N,
     size_t C_in,
@@ -255,6 +259,7 @@ void cactus_conv2d_f16_k3s2p1_nchw(
 void cactus_conv2d_depthwise_f16_k3s2p1_nchw(
     const __fp16* input,
     const __fp16* weight,
+    const __fp16* bias,
     __fp16* output,
     size_t N,
     size_t C,
@@ -265,6 +270,7 @@ void cactus_conv2d_depthwise_f16_k3s2p1_nchw(
 void cactus_conv2d_pointwise_f16_1x1_nchw_gemm(
     const __fp16* input,
     const __fp16* weight,
+    const __fp16* bias,
     __fp16* output,
     size_t N,
     size_t C_in,
@@ -276,6 +282,7 @@ void cactus_conv2d_pointwise_f16_1x1_nchw_gemm(
 void cactus_conv1d_pointwise_f16_gemm(
     const __fp16* input,
     const __fp16* weight,
+    const __fp16* bias,
     __fp16* output,
     size_t N,
     size_t L,

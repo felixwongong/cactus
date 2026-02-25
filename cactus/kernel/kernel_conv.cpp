@@ -707,6 +707,7 @@ void cactus_stft_f16(
 void cactus_conv1d_same_depthwise_f16_k9(
     const __fp16* input,
     const __fp16* weight,
+    const __fp16* bias,
     __fp16* output,
     size_t N, size_t L, size_t C)
 {
@@ -722,6 +723,7 @@ void cactus_conv1d_same_depthwise_f16_k9(
         __fp16* Yb = output + n * bs;
 
         const __fp16* Wc = weight + c * K;
+        const float b = bias ? (float)bias[c] : 0.0f;
 
         const float w0 = (float)Wc[0];
         const float w1 = (float)Wc[1];
@@ -771,7 +773,7 @@ void cactus_conv1d_same_depthwise_f16_k9(
             const float32x4_t xv1_0 = {x4_0, x5_0, x6_0, x7_0};
             acc0v = vfmaq_f32(acc0v, xv0_0, wv0);
             acc0v = vfmaq_f32(acc0v, xv1_0, wv1);
-            float acc0 = vaddvq_f32(acc0v) + (w8 * x8_0);
+            float acc0 = vaddvq_f32(acc0v) + (w8 * x8_0) + b;
 
             float acc1 = 0.f;
             if (have_t1) {
@@ -806,7 +808,7 @@ void cactus_conv1d_same_depthwise_f16_k9(
                 const float32x4_t xv1_1 = {x4_1, x5_1, x6_1, x7_1};
                 acc1v = vfmaq_f32(acc1v, xv0_1, wv0);
                 acc1v = vfmaq_f32(acc1v, xv1_1, wv1);
-                acc1 = vaddvq_f32(acc1v) + (w8 * x8_1);
+                acc1 = vaddvq_f32(acc1v) + (w8 * x8_1) + b;
             }
 
             Yb[t0 * C + c] = (__fp16)acc0;
@@ -819,6 +821,7 @@ void cactus_conv1d_same_depthwise_f16_k9(
 void cactus_conv2d_f16_k3s2p1_nchw(
     const __fp16* input,
     const __fp16* weight,
+    const __fp16* bias,
     __fp16* output,
     size_t N,
     size_t C_in, size_t H, size_t W,
@@ -846,7 +849,7 @@ void cactus_conv2d_f16_k3s2p1_nchw(
                                  : CactusThreading::Thresholds::ATTENTION;
 
     CactusThreading::parallel_for_2d(N, C_out, cfg, [&](size_t n, size_t oc) {
-        const float b0 = 0.f;
+        const float b0 = bias ? (float)bias[oc] : 0.0f;
 
         for (size_t oh = 0; oh < H_out; ++oh) {
             const ptrdiff_t ih0 = (ptrdiff_t)oh * 2 - 1;
@@ -989,6 +992,7 @@ void cactus_conv2d_f16_k3s2p1_nchw(
 void cactus_conv2d_depthwise_f16_k3s2p1_nchw(
     const __fp16* input,
     const __fp16* weight,
+    const __fp16* bias,
     __fp16* output,
     size_t N,
     size_t C,
@@ -1017,7 +1021,7 @@ void cactus_conv2d_depthwise_f16_k3s2p1_nchw(
         const float w00 = (float)Wc[0], w01 = (float)Wc[1], w02 = (float)Wc[2];
         const float w10 = (float)Wc[3], w11 = (float)Wc[4], w12 = (float)Wc[5];
         const float w20 = (float)Wc[6], w21 = (float)Wc[7], w22 = (float)Wc[8];
-        const float b0 = 0.f;
+        const float b0 = bias ? (float)bias[c] : 0.0f;
 
         for (size_t oh = 0; oh < H_out; ++oh) {
             const ptrdiff_t ih0 = (ptrdiff_t)oh * 2 - 1;
@@ -1131,6 +1135,7 @@ void cactus_conv2d_depthwise_f16_k3s2p1_nchw(
 void cactus_conv2d_pointwise_f16_1x1_nchw_gemm(
     const __fp16* input,
     const __fp16* weight,
+    const __fp16* bias,
     __fp16* output,
     size_t N,
     size_t C_in,
@@ -1175,7 +1180,9 @@ void cactus_conv2d_pointwise_f16_1x1_nchw_gemm(
                     const size_t w = hw - h * W;
                     const __fp16* row = packed_out.data() + hw * C_out;
                     for (size_t oc = 0; oc < C_out; ++oc) {
-                        Yn[(oc * H + h) * W + w] = row[oc];
+                        float outv = (float)row[oc];
+                        if (bias) outv += (float)bias[oc];
+                        Yn[(oc * H + h) * W + w] = (__fp16)outv;
                     }
                 }
             }
@@ -1185,6 +1192,7 @@ void cactus_conv2d_pointwise_f16_1x1_nchw_gemm(
 void cactus_conv1d_pointwise_f16_gemm(
     const __fp16* input,
     const __fp16* weight,
+    const __fp16* bias,
     __fp16* output,
     size_t N,
     size_t L,
@@ -1195,4 +1203,13 @@ void cactus_conv1d_pointwise_f16_gemm(
     if (M == 0) return;
 
     cactus_matmul_f16(input, weight, output, M, C_in, C_out);
+
+    if (bias) {
+        for (size_t m = 0; m < M; ++m) {
+            __fp16* row = output + m * C_out;
+            for (size_t oc = 0; oc < C_out; ++oc) {
+                row[oc] = (__fp16)((float)row[oc] + (float)bias[oc]);
+            }
+        }
+    }
 }
