@@ -18,20 +18,8 @@ namespace ffi {
 
 namespace {
 
-std::string trim_whitespace(std::string value) {
-    size_t start = 0;
-    while (start < value.size() && std::isspace(static_cast<unsigned char>(value[start]))) {
-        ++start;
-    }
-    size_t end = value.size();
-    while (end > start && std::isspace(static_cast<unsigned char>(value[end - 1]))) {
-        --end;
-    }
-    return value.substr(start, end - start);
-}
-
 std::string compact_error_detail(std::string detail) {
-    detail = trim_whitespace(detail);
+    detail = trim_string(detail);
     if (detail.empty()) return {};
 
     for (char& c : detail) {
@@ -69,7 +57,7 @@ std::string resolve_cloud_api_key(const char* cloud_key_param) {
         resolved_cloud_key = cactus::telemetry::loadCachedCloudApiKey();
     }
 
-    resolved_cloud_key = trim_whitespace(resolved_cloud_key);
+    resolved_cloud_key = trim_string(resolved_cloud_key);
 
     const bool should_cache =
         !resolved_cloud_key.empty() &&
@@ -85,11 +73,6 @@ namespace {
 
 #ifdef CACTUS_USE_CURL
 static std::atomic<bool> g_warned_missing_cloud_api_key{false};
-
-static bool cloud_insecure_ssl_enabled() {
-    const char* strict = std::getenv("CACTUS_CLOUD_STRICT_SSL");
-    return !(strict && strict[0] != '\0' && !(strict[0] == '0' && strict[1] == '\0'));
-}
 
 static void apply_curl_tls_trust(CURL* curl) {
     if (!curl) return;
@@ -111,106 +94,6 @@ static size_t curl_write_cb(void* ptr, size_t size, size_t nmemb, void* userdata
     auto* s = static_cast<std::string*>(userdata);
     s->append(static_cast<char*>(ptr), size * nmemb);
     return size * nmemb;
-}
-
-static std::string json_string_field(const std::string& json, const std::string& key) {
-    std::string pattern = "\"" + key + "\":";
-    size_t pos = json.find(pattern);
-    if (pos == std::string::npos) return {};
-
-    size_t i = pos + pattern.size();
-    while (i < json.size() && std::isspace(static_cast<unsigned char>(json[i]))) i++;
-    if (i >= json.size() || json[i] != '"') return {};
-    ++i;
-
-    std::string out;
-    out.reserve(128);
-    while (i < json.size()) {
-        char c = json[i++];
-        if (c == '"') {
-            return out;
-        }
-        if (c == '\\' && i < json.size()) {
-            char e = json[i++];
-            switch (e) {
-                case '"': out.push_back('"'); break;
-                case '\\': out.push_back('\\'); break;
-                case '/': out.push_back('/'); break;
-                case 'b': out.push_back('\b'); break;
-                case 'f': out.push_back('\f'); break;
-                case 'n': out.push_back('\n'); break;
-                case 'r': out.push_back('\r'); break;
-                case 't': out.push_back('\t'); break;
-                default: out.push_back(e); break;
-            }
-            continue;
-        }
-        out.push_back(c);
-    }
-    return {};
-}
-
-static std::string json_array_field(const std::string& json, const std::string& key) {
-    std::string pattern = "\"" + key + "\":";
-    size_t pos = json.find(pattern);
-    if (pos == std::string::npos) return "[]";
-    size_t start = pos + pattern.size();
-    while (start < json.size() && std::isspace(static_cast<unsigned char>(json[start]))) ++start;
-    if (start >= json.size() || json[start] != '[') return "[]";
-
-    int depth = 1;
-    size_t end = start + 1;
-    while (end < json.size() && depth > 0) {
-        if (json[end] == '[') depth++;
-        else if (json[end] == ']') depth--;
-        end++;
-    }
-    return json.substr(start, end - start);
-}
-
-static std::vector<std::string> split_top_level_json_array(const std::string& array_json) {
-    std::vector<std::string> out;
-    if (array_json.size() < 2 || array_json.front() != '[' || array_json.back() != ']') return out;
-
-    size_t i = 1;
-    while (i + 1 < array_json.size()) {
-        while (i + 1 < array_json.size() && (std::isspace(static_cast<unsigned char>(array_json[i])) || array_json[i] == ',')) i++;
-        if (i + 1 >= array_json.size() || array_json[i] != '{') break;
-
-        size_t start = i;
-        int depth = 0;
-        bool in_str = false;
-        bool esc = false;
-        for (; i < array_json.size(); ++i) {
-            char c = array_json[i];
-            if (in_str) {
-                if (esc) esc = false;
-                else if (c == '\\') esc = true;
-                else if (c == '"') in_str = false;
-                continue;
-            }
-            if (c == '"') {
-                in_str = true;
-                continue;
-            }
-            if (c == '{') depth++;
-            if (c == '}') {
-                depth--;
-                if (depth == 0) {
-                    out.push_back(array_json.substr(start, i - start + 1));
-                    i++;
-                    break;
-                }
-            }
-        }
-    }
-    return out;
-}
-
-static std::string env_or_default(const char* key, const char* fallback) {
-    const char* v = std::getenv(key);
-    if (v && v[0] != '\0') return std::string(v);
-    return std::string(fallback);
 }
 
 static bool read_file_bytes(const std::string& path, std::vector<uint8_t>& out) {
@@ -236,25 +119,6 @@ static std::string infer_mime_type(const std::string& path) {
     if (ext == "webp") return "image/webp";
     if (ext == "gif") return "image/gif";
     return "image/jpeg";
-}
-
-static std::string serialize_tools_json(const std::vector<ToolFunction>& tools) {
-    if (tools.empty()) return "[]";
-    std::ostringstream oss;
-    oss << "[";
-    for (size_t i = 0; i < tools.size(); ++i) {
-        if (i > 0) oss << ",";
-        oss << "{\"type\":\"function\",\"function\":{";
-        oss << "\"name\":\"" << escape_json_string(tools[i].name) << "\",";
-        oss << "\"description\":\"" << escape_json_string(tools[i].description) << "\"";
-        auto it = tools[i].parameters.find("schema");
-        if (it != tools[i].parameters.end()) {
-            oss << ",\"parameters\":" << it->second;
-        }
-        oss << "}}";
-    }
-    oss << "]";
-    return oss.str();
 }
 
 static std::string build_cloud_text_prompt(const CloudCompletionRequest& request) {
@@ -319,7 +183,7 @@ static std::string call_cloud_endpoint(const std::string& url,
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response_body);
     curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, timeout_ms);
 
-    if (cloud_insecure_ssl_enabled()) {
+    if (!env_flag_enabled("CACTUS_CLOUD_STRICT_SSL")) {
         curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L);
         curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0L);
     } else {
@@ -525,7 +389,7 @@ CloudCompletionResult cloud_complete_request(const CloudCompletionRequest& reque
     std::vector<std::string> function_calls;
     std::string calls_json = json_array_field(body, "function_calls");
     if (calls_json != "[]") {
-        function_calls = split_top_level_json_array(calls_json);
+        function_calls = split_json_array(calls_json);
     }
 
     std::string response = json_string_field(body, "text");
@@ -546,7 +410,7 @@ CloudCompletionResult cloud_complete_request(const CloudCompletionRequest& reque
             std::string trimmed = response.substr(first, last - first + 1);
             if (!trimmed.empty() && trimmed.front() == '[' && trimmed.back() == ']' &&
                 trimmed.find("\"name\"") != std::string::npos) {
-                function_calls = split_top_level_json_array(trimmed);
+                function_calls = split_json_array(trimmed);
                 response.clear();
             }
         }

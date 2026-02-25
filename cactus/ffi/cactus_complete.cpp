@@ -236,7 +236,7 @@ int cactus_complete(
         if (model_type == Config::ModelType::GEMMA) {
             formatted_tools = gemma::format_tools(tools);
         } else {
-            formatted_tools = format_tools_for_prompt(tools);
+            formatted_tools = serialize_tools_json(tools);
         }
         std::string full_prompt = tokenizer->format_chat_prompt(messages, true, formatted_tools);
 
