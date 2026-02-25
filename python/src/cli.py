@@ -7,7 +7,6 @@ import json
 import subprocess
 import shutil
 import platform
-import json
 from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).parent.resolve()
@@ -920,7 +919,7 @@ def _cmd_transcribe_android(weights_dir, audio_file, args):
         print_color(RED, "Failed to push audio file to device")
         return 1
 
-    cloud_api_key = os.environ.get("CACTUS_CLOUD_KEY", "")
+    cloud_api_key = os.environ.get("CACTUS_CLOUD_KEY", os.environ.get("CACTUS_CLOUD_API_KEY", ""))
     cloud_strict_ssl = os.environ.get("CACTUS_CLOUD_STRICT_SSL", "")
     cloud_handoff_threshold = os.environ.get("CACTUS_CLOUD_HANDOFF_THRESHOLD", "")
     ca_bundle = os.environ.get("CACTUS_CA_BUNDLE", "")

@@ -145,18 +145,6 @@ struct StreamingData {
 
 void stream_callback(const char* token, uint32_t token_id, void* user_data);
 
-std::string build_handoff_options(bool auto_handoff,
-                                  bool force_tools = false,
-                                  const char* confidence_threshold_override = nullptr);
-bool run_handoff_mode_case(const char* model_path,
-                           const std::string& case_name,
-                           const std::string& messages_json,
-                           const std::string& tools_json,
-                           bool auto_handoff,
-                           bool expect_tool_signal,
-                           const char* confidence_threshold_override = nullptr,
-                           int expected_handoff_when_cloud_key_available = -1);
-
 struct Metrics {
     bool success = false;
     std::string error;

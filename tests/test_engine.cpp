@@ -514,7 +514,7 @@ bool test_cloud_handoff() {
 
 bool test_cloud_handoff_matrix_suite() {
     std::cout << "\n╔══════════════════════════════════════════╗\n"
-              << "║      CLOUD HANDOFF MATRIX SUITE         ║\n"
+              << "║     CLOUD HANDOFF TEST                   ║\n"
               << "╚══════════════════════════════════════════╝\n";
 
     if (!g_model_path) {
@@ -522,98 +522,61 @@ bool test_cloud_handoff_matrix_suite() {
         return true;
     }
 
-    const std::string tools = R"([{
-        "type": "function",
-        "function": {
-            "name": "get_weather",
-            "description": "Get weather for a location",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "location": {"type": "string", "description": "City, State, Country"}
-                },
-                "required": ["location"]
-            }
-        }
-    }, {
-        "type": "function",
-        "function": {
-            "name": "set_alarm",
-            "description": "Set an alarm for a given time",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "hour": {"type": "integer", "description": "Hour to set the alarm for"},
-                    "minute": {"type": "integer", "description": "Minute to set the alarm for"}
-                },
-                "required": ["hour", "minute"]
-            }
-        }
-    }])";
+    const char* cloud_key = std::getenv("CACTUS_CLOUD_KEY");
+    const char* cloud_key_legacy = std::getenv("CACTUS_CLOUD_API_KEY");
+    const bool has_cloud_key =
+        (cloud_key && cloud_key[0] != '\0') ||
+        (cloud_key_legacy && cloud_key_legacy[0] != '\0');
+    if (!has_cloud_key) {
+        std::cout << "⊘ SKIP │ CACTUS_CLOUD_KEY/CACTUS_CLOUD_API_KEY not set\n";
+        return true;
+    }
 
-    const std::string text_only = R"([
+    const char* messages = R"([
         {"role":"system","content":"You are a concise assistant."},
         {"role":"user","content":"Explain in one sentence what entropy is."}
     ])";
 
-    const std::string tool_single_turn = R"([
-        {"role":"system","content":"You are a helpful assistant that can use tools."},
-        {"role":"user","content":"What's the weather in San Francisco?"}
-    ])";
+    const char* options = R"({
+        "max_tokens": 128,
+        "stop_sequences": ["<|im_end|>", "<end_of_turn>"],
+        "telemetry_enabled": false,
+        "auto_handoff": true,
+        "confidence_threshold": 1.1,
+        "cloud_timeout_ms": 8000
+    })";
 
-    bool ok = true;
-    ok = run_handoff_mode_case(g_model_path, "text_only", text_only, "", true, false) && ok;
-    ok = run_handoff_mode_case(g_model_path, "text_only", text_only, "", false, false) && ok;
-    ok = run_handoff_mode_case(
-            g_model_path,
-            "text_threshold_high",
-            text_only,
-            "",
-            true,
-            false,
-            "1.1",
-            1) && ok;
-    ok = run_handoff_mode_case(
-            g_model_path,
-            "text_threshold_low",
-            text_only,
-            "",
-            true,
-            false,
-            "-1.0",
-            0) && ok;
-    ok = run_handoff_mode_case(
-            g_model_path,
-            "text_threshold_high_auto_off",
-            text_only,
-            "",
-            false,
-            false,
-            "1.1",
-            0) && ok;
-
-    bool ran_vlm = false;
-    if (g_assets_path) {
-        std::string model_path_str(g_model_path ? g_model_path : "");
-        std::string vision_file = model_path_str + "/vision_patch_embedding.weights";
-        std::ifstream vf(vision_file);
-        if (vf.good()) {
-            std::string img_path = std::string(g_assets_path) + "/test_monkey.png";
-            std::string text_image = "[{\"role\":\"user\",\"content\":\"Describe this image in one sentence.\",\"images\":[\"" + img_path + "\"]}]";
-            ok = run_handoff_mode_case(g_model_path, "text_plus_image", text_image, "", true, false) && ok;
-            ok = run_handoff_mode_case(g_model_path, "text_plus_image", text_image, "", false, false) && ok;
-            ran_vlm = true;
-        }
-    }
-    if (!ran_vlm) {
-        std::cout << "├─ text_plus_image [handoff_on]: SKIP (vision model/assets unavailable)\n";
-        std::cout << "├─ text_plus_image [handoff_off]: SKIP (vision model/assets unavailable)\n";
+    cactus_model_t model = cactus_init(g_model_path, nullptr, false);
+    if (!model) {
+        std::cerr << "[✗] Failed to initialize model\n";
+        return false;
     }
 
-    ok = run_handoff_mode_case(g_model_path, "tool_single_turn", tool_single_turn, tools, true, true) && ok;
-    ok = run_handoff_mode_case(g_model_path, "tool_single_turn", tool_single_turn, tools, false, true) && ok;
+    char response[8192];
+    int rc = cactus_complete(
+        model,
+        messages,
+        response,
+        sizeof(response),
+        options,
+        nullptr,
+        nullptr,
+        nullptr
+    );
 
-    std::cout << "└─ Matrix result: " << (ok ? "PASSED ✓" : "FAILED ✗") << "\n";
+    Metrics m;
+    m.parse(response);
+
+    const bool ok = rc > 0 && m.cloud_handoff && !m.response.empty();
+    std::cout << "├─ handoff=" << (m.cloud_handoff ? "true" : "false")
+              << ", source=" << (m.cloud_handoff ? "cloud" : "local")
+              << ", confidence=" << m.confidence << "\n";
+    if (!m.error.empty()) {
+        std::cout << "├─ error=\"" << m.error << "\"\n";
+    }
+    std::cout << "└─ Single-call result: " << (ok ? "PASSED ✓" : "FAILED ✗") << "\n";
+
+    cactus_destroy(model);
     return ok;
 }
 

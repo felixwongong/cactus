@@ -16,20 +16,64 @@
 namespace cactus {
 namespace ffi {
 
+namespace {
+
+std::string trim_whitespace(std::string value) {
+    size_t start = 0;
+    while (start < value.size() && std::isspace(static_cast<unsigned char>(value[start]))) {
+        ++start;
+    }
+    size_t end = value.size();
+    while (end > start && std::isspace(static_cast<unsigned char>(value[end - 1]))) {
+        --end;
+    }
+    return value.substr(start, end - start);
+}
+
+std::string compact_error_detail(std::string detail) {
+    detail = trim_whitespace(detail);
+    if (detail.empty()) return {};
+
+    for (char& c : detail) {
+        if (c == '\n' || c == '\r' || c == '\t') c = ' ';
+    }
+    while (detail.find("  ") != std::string::npos) {
+        detail.erase(detail.find("  "), 1);
+    }
+
+    constexpr size_t kMaxLen = 160;
+    if (detail.size() > kMaxLen) {
+        detail = detail.substr(0, kMaxLen) + "...";
+    }
+    return detail;
+}
+
+} // namespace
+
 std::string resolve_cloud_api_key(const char* cloud_key_param) {
     const char* env_cloud = std::getenv("CACTUS_CLOUD_KEY");
+    const char* env_cloud_legacy = std::getenv("CACTUS_CLOUD_API_KEY"); // keeping this cuz Matthew Hayes had some code reliant on Cactus_cloud_api_key
     std::string resolved_cloud_key;
+    bool key_from_param_or_env = false;
+
     if (cloud_key_param && *cloud_key_param) {
         resolved_cloud_key = cloud_key_param;
+        key_from_param_or_env = true;
     } else if (env_cloud && *env_cloud) {
         resolved_cloud_key = env_cloud;
+        key_from_param_or_env = true;
+    } else if (env_cloud_legacy && *env_cloud_legacy) {
+        resolved_cloud_key = env_cloud_legacy;
+        key_from_param_or_env = true;
     } else {
         resolved_cloud_key = cactus::telemetry::loadCachedCloudApiKey();
     }
 
+    resolved_cloud_key = trim_whitespace(resolved_cloud_key);
+
     const bool should_cache =
         !resolved_cloud_key.empty() &&
-        ((cloud_key_param && *cloud_key_param) || (env_cloud && *env_cloud));
+        key_from_param_or_env;
     if (should_cache) {
         cactus::telemetry::cacheCloudApiKey(resolved_cloud_key.c_str());
     }
@@ -250,7 +294,7 @@ static std::string call_cloud_endpoint(const std::string& url,
     std::string api_key = resolve_cloud_api_key(cloud_key_param);
     if (api_key.empty()) {
         if (!g_warned_missing_cloud_api_key.exchange(true)) {
-            CACTUS_LOG_WARN("cloud_handoff", "No cloud key found (cloud_key param or CACTUS_CLOUD_KEY env); cloud handoff will fall back to local output");
+            CACTUS_LOG_WARN("cloud_handoff", "No cloud key found (cloud_key param, CACTUS_CLOUD_KEY, or CACTUS_CLOUD_API_KEY env); cloud handoff will fall back to local output");
         }
         err_out = "missing_api_key";
         return {};
@@ -285,11 +329,26 @@ static std::string call_cloud_endpoint(const std::string& url,
     }
 
     CURLcode res = curl_easy_perform(curl);
+    long http_status = 0;
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_status);
     curl_slist_free_all(headers);
     curl_easy_cleanup(curl);
 
     if (res != CURLE_OK) {
         err_out = curl_easy_strerror(res);
+        return {};
+    }
+
+    if (http_status >= 400) {
+        std::string detail = json_string_field(response_body, "error");
+        if (detail.empty()) detail = json_string_field(response_body, "message");
+        if (detail.empty()) detail = json_string_field(response_body, "detail");
+        detail = compact_error_detail(detail);
+
+        err_out = "http_" + std::to_string(http_status);
+        if (!detail.empty()) {
+            err_out += ":" + detail;
+        }
         return {};
     }
 
@@ -373,6 +432,19 @@ CloudResponse cloud_transcribe_request(const std::string& audio_b64,
         transcript = json_string_field(body, "text");
     }
     if (transcript.empty()) {
+        transcript = json_string_field(body, "response");
+    }
+    if (transcript.empty()) {
+        transcript = json_string_field(body, "analysis");
+    }
+    if (transcript.empty()) {
+        std::string detail = json_string_field(body, "error");
+        if (detail.empty()) detail = json_string_field(body, "message");
+        if (detail.empty()) detail = json_string_field(body, "detail");
+        detail = compact_error_detail(detail);
+        if (!detail.empty()) {
+            return {fallback_text, "", false, "missing_transcript:" + detail};
+        }
         return {fallback_text, "", false, "missing_transcript"};
     }
 
@@ -395,12 +467,22 @@ CloudCompletionResult cloud_complete_request(const CloudCompletionRequest& reque
     std::string payload;
 
     if (request.has_images) {
-        std::string image_path;
-        for (auto it = request.messages.rbegin(); it != request.messages.rend(); ++it) {
-            if (!it->images.empty()) {
-                image_path = it->images.front();
-                break;
+        std::vector<std::string> image_paths;
+        for (const auto& message : request.messages) {
+            for (const auto& image : message.images) {
+                if (!image.empty()) {
+                    image_paths.push_back(image);
+                }
             }
+        }
+
+        if (image_paths.size() > 1) {
+            return {false, false, "", {}, "multiple_images_not_supported"};
+        }
+
+        std::string image_path;
+        if (!image_paths.empty()) {
+            image_path = image_paths.back();
         }
         if (image_path.empty()) {
             return {false, false, "", {}, "missing_image_path"};
@@ -440,27 +522,24 @@ CloudCompletionResult cloud_complete_request(const CloudCompletionRequest& reque
         return {false, false, "", {}, err.empty() ? "request_failed" : err};
     }
 
-    std::string response = json_string_field(body, "text");
-    if (response.empty()) {
-        response = json_string_field(body, "analysis");
-    }
-    if (response.empty()) {
-        return {false, false, "", {}, "missing_text"};
-    }
-
     std::vector<std::string> function_calls;
     std::string calls_json = json_array_field(body, "function_calls");
     if (calls_json != "[]") {
         function_calls = split_top_level_json_array(calls_json);
     }
 
-    if (function_calls.empty()) {
+    std::string response = json_string_field(body, "text");
+    if (response.empty()) {
+        response = json_string_field(body, "analysis");
+    }
+
+    if (!response.empty() && function_calls.empty()) {
         std::string regular_response;
         parse_function_calls_from_response(response, regular_response, function_calls);
         response = regular_response;
     }
 
-    if (function_calls.empty()) {
+    if (!response.empty() && function_calls.empty()) {
         auto first = response.find_first_not_of(" \t\n\r");
         auto last = response.find_last_not_of(" \t\n\r");
         if (first != std::string::npos && last != std::string::npos) {
@@ -471,6 +550,10 @@ CloudCompletionResult cloud_complete_request(const CloudCompletionRequest& reque
                 response.clear();
             }
         }
+    }
+
+    if (response.empty() && function_calls.empty()) {
+        return {false, false, "", {}, "missing_text"};
     }
 
     CloudCompletionResult out;

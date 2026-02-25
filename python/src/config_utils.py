@@ -20,6 +20,8 @@ class CactusConfig:
 
     def get_api_key(self):
         env_key = os.getenv("CACTUS_CLOUD_KEY")
+        if not env_key:
+            env_key = os.getenv("CACTUS_CLOUD_API_KEY")
         if env_key:
             return env_key
         config = self.load_config()

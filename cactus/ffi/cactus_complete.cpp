@@ -385,7 +385,10 @@ int cactus_complete(
             maybe_start_cloud_handoff(regular_response, function_calls);
         }
 
-        std::string local_completion = regular_response.empty() ? response_text : regular_response;
+        std::string local_completion = regular_response;
+        if (local_completion.empty() && function_calls.empty()) {
+            local_completion = response_text;
+        }
         std::string primary_response = local_completion;
         std::vector<std::string> primary_function_calls = function_calls;
 

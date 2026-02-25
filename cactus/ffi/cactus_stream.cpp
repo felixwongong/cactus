@@ -205,6 +205,10 @@ static std::string build_stream_response(
     double prefill_tokens = json_number(raw_json_str, "prefill_tokens");
     double decode_tokens = json_number(raw_json_str, "decode_tokens");
     double total_tokens = json_number(raw_json_str, "total_tokens");
+    std::string effective_confirmed = confirmed;
+    if (cloud_result.used_cloud && !cloud_result.transcript.empty()) {
+        effective_confirmed = cloud_result.transcript;
+    }
 
     std::ostringstream json_builder;
     json_builder << "{";
@@ -215,7 +219,16 @@ static std::string build_stream_response(
     json_builder << "\"cloud_job_id\":" << cloud_job_id << ",";
     json_builder << "\"cloud_result_job_id\":" << cloud_result_job_id << ",";
     json_builder << "\"cloud_result\":\"" << escape_json(cloud_result.transcript) << "\",";
-    json_builder << "\"confirmed\":\"" << escape_json(confirmed) << "\",";
+    json_builder << "\"cloud_result_used_cloud\":" << (cloud_result.used_cloud ? "true" : "false") << ",";
+    json_builder << "\"cloud_result_error\":";
+    if (cloud_result.error.empty()) {
+        json_builder << "null,";
+    } else {
+        json_builder << "\"" << escape_json(cloud_result.error) << "\",";
+    }
+    json_builder << "\"cloud_result_source\":\"" << (cloud_result.used_cloud ? "cloud" : "fallback") << "\",";
+    json_builder << "\"confirmed_local\":\"" << escape_json(confirmed) << "\",";
+    json_builder << "\"confirmed\":\"" << escape_json(effective_confirmed) << "\",";
     json_builder << "\"pending\":\"" << escape_json(pending) << "\",";
     json_builder << "\"function_calls\":" << function_calls << ",";
     json_builder << "\"confidence\":" << confidence << ",";
@@ -423,6 +436,11 @@ int cactus_stream_transcribe_process(
                 auto wav = cloud_build_wav(confirmed_audio.data(), confirmed_audio.size());
                 std::string b64 = cloud_base64_encode(wav.data(), wav.size());
                 cloud_job_id = handle->next_cloud_job_id++;
+                CACTUS_LOG_INFO(
+                    "cloud_handoff",
+                    "Queued stream cloud job id=" << cloud_job_id
+                        << " confirmed_chars=" << confirmed.size()
+                        << " audio_bytes=" << confirmed_audio.size());
                 handle->pending_cloud_jobs.push_back({
                     cloud_job_id,
                     std::async(std::launch::async, cloud_transcribe_request, b64, confirmed, 15L, nullptr)
@@ -444,7 +462,14 @@ int cactus_stream_transcribe_process(
 
         for (auto it = handle->pending_cloud_jobs.begin(); it != handle->pending_cloud_jobs.end(); ) {
             if (it->result.wait_for(std::chrono::milliseconds(0)) == std::future_status::ready) {
-                handle->completed_cloud_results.push_back({it->id, it->result.get()});
+                CloudResponse job_result = it->result.get();
+                CACTUS_LOG_INFO(
+                    "cloud_handoff",
+                    "Completed stream cloud job id=" << it->id
+                        << " used_cloud=" << (job_result.used_cloud ? "true" : "false")
+                        << " error=" << (job_result.error.empty() ? "none" : job_result.error)
+                        << " transcript_chars=" << job_result.transcript.size());
+                handle->completed_cloud_results.push_back({it->id, std::move(job_result)});
                 it = handle->pending_cloud_jobs.erase(it);
             } else {
                 ++it;
