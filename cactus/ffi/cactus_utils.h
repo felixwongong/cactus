@@ -59,7 +59,6 @@ inline double get_ram_usage_mb() {
 struct CactusModelHandle {
     std::unique_ptr<cactus::engine::Model> model;
     std::unique_ptr<cactus::engine::Model> vad_model;
-    std::unique_ptr<cactus::engine::WhisperCloudHandoffModel> cloud_handoff_model;
     std::atomic<bool> should_stop;
     std::vector<uint32_t> processed_tokens;
     std::mutex model_mutex;

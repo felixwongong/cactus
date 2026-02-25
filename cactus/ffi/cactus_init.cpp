@@ -414,26 +414,6 @@ cactus_model_t cactus_init(const char* model_path, const char* corpus_dir, bool 
                 return nullptr;
             }
 
-            const std::string cloud_handoff_path = model_path_str + "/cloud_handoff";
-            if (cactus::ffi::env_flag_enabled("CACTUS_ENABLE_AUDIO_HANDOFF_CLASSIFIER")) {
-                if (std::filesystem::exists(cloud_handoff_path) && std::filesystem::is_directory(cloud_handoff_path)) {
-                    handle->cloud_handoff_model = std::make_unique<WhisperCloudHandoffModel>();
-                    std::string cloud_handoff_error;
-                    if (!handle->cloud_handoff_model->init(cloud_handoff_path, &cloud_handoff_error)) {
-                        CACTUS_LOG_WARN("cloud_handoff",
-                            "Failed to initialize cloud_handoff sidecar at " << cloud_handoff_path
-                            << ": " << cloud_handoff_error
-                            << ". Falling back to entropy-based audio handoff");
-                        handle->cloud_handoff_model.reset();
-                    } else {
-                        CACTUS_LOG_INFO("init", "Loaded cloud_handoff sidecar model from: " << cloud_handoff_path);
-                    }
-                } else {
-                    CACTUS_LOG_WARN("cloud_handoff",
-                        "CACTUS_ENABLE_AUDIO_HANDOFF_CLASSIFIER=1 but no cloud_handoff sidecar directory found at "
-                        << cloud_handoff_path << "; using entropy-based audio handoff");
-                }
-            }
         }
 
         if (corpus_dir != nullptr && strlen(corpus_dir) > 0) {
