@@ -3,6 +3,7 @@
 #include "../kernel/kernel.h"
 #include <algorithm>
 #include <stdexcept>
+#include <algorithm>
 
 namespace cactus {
 namespace engine {
