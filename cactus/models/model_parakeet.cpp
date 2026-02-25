@@ -304,28 +304,15 @@ size_t ParakeetModel::build_subsampling(CactusGraph* gb, const std::vector<float
     size_t x = gb->input({1, 1, frames, num_mels}, Precision::FP16);
     gb->set_input(x, features_f16.data(), Precision::FP16);
 
-    auto add_bias_2d = [&](size_t node, size_t bias_node) -> size_t {
-        const auto& bias_shape = gb->get_output_buffer(bias_node).shape;
-        if (bias_shape.empty()) return node;
-        size_t c = bias_shape[0];
-        size_t bias_bc = gb->reshape(bias_node, {c, static_cast<size_t>(1), static_cast<size_t>(1)});
-        return gb->add(node, bias_bc);
-    };
-
-    x = gb->conv2d_k3s2p1(x, weight_nodes_.subsampling_conv0_weight);
-    x = add_bias_2d(x, weight_nodes_.subsampling_conv0_bias);
+    x = gb->conv2d_k3s2p1(x, weight_nodes_.subsampling_conv0_weight, weight_nodes_.subsampling_conv0_bias);
     x = gb->relu(x);
 
-    x = gb->conv2d_depthwise_k3s2p1(x, weight_nodes_.subsampling_depthwise1_weight);
-    x = add_bias_2d(x, weight_nodes_.subsampling_depthwise1_bias);
-    x = gb->conv2d_pointwise_1x1(x, weight_nodes_.subsampling_pointwise1_weight);
-    x = add_bias_2d(x, weight_nodes_.subsampling_pointwise1_bias);
+    x = gb->conv2d_depthwise_k3s2p1(x, weight_nodes_.subsampling_depthwise1_weight, weight_nodes_.subsampling_depthwise1_bias);
+    x = gb->conv2d_pointwise_1x1(x, weight_nodes_.subsampling_pointwise1_weight, weight_nodes_.subsampling_pointwise1_bias);
     x = gb->relu(x);
 
-    x = gb->conv2d_depthwise_k3s2p1(x, weight_nodes_.subsampling_depthwise2_weight);
-    x = add_bias_2d(x, weight_nodes_.subsampling_depthwise2_bias);
-    x = gb->conv2d_pointwise_1x1(x, weight_nodes_.subsampling_pointwise2_weight);
-    x = add_bias_2d(x, weight_nodes_.subsampling_pointwise2_bias);
+    x = gb->conv2d_depthwise_k3s2p1(x, weight_nodes_.subsampling_depthwise2_weight, weight_nodes_.subsampling_depthwise2_bias);
+    x = gb->conv2d_pointwise_1x1(x, weight_nodes_.subsampling_pointwise2_weight, weight_nodes_.subsampling_pointwise2_bias);
     x = gb->relu(x);
 
     const auto& conv_shape = gb->get_output_buffer(x).shape;
@@ -451,18 +438,10 @@ size_t ParakeetModel::build_convolution_module(CactusGraph* gb, size_t hidden, u
     const size_t D = hidden_shape[1];
 
     size_t x = gb->reshape(hidden, {1, T, D});
-    x = gb->conv1d_pointwise(x, layer.conv_pointwise1_weight);
-    {
-        size_t bias_bc = gb->reshape(layer.conv_pointwise1_bias, {1, static_cast<size_t>(1), static_cast<size_t>(2 * D)});
-        x = gb->add(x, bias_bc);
-    }
+    x = gb->conv1d_pointwise(x, layer.conv_pointwise1_weight, layer.conv_pointwise1_bias);
     x = gb->glu(x, -1);
 
-    x = gb->conv1d_same_depthwise_k9(x, layer.conv_depthwise_weight);
-    {
-        size_t bias_bc = gb->reshape(layer.conv_depthwise_bias, {1, static_cast<size_t>(1), D});
-        x = gb->add(x, bias_bc);
-    }
+    x = gb->conv1d_same_depthwise_k9(x, layer.conv_depthwise_weight, layer.conv_depthwise_bias);
 
     x = gb->batchnorm(
         x,
@@ -484,11 +463,7 @@ size_t ParakeetModel::build_convolution_module(CactusGraph* gb, size_t hidden, u
         x = gb->silu(x);
     }
 
-    x = gb->conv1d_pointwise(x, layer.conv_pointwise2_weight);
-    {
-        size_t bias_bc = gb->reshape(layer.conv_pointwise2_bias, {1, static_cast<size_t>(1), D});
-        x = gb->add(x, bias_bc);
-    }
+    x = gb->conv1d_pointwise(x, layer.conv_pointwise2_weight, layer.conv_pointwise2_bias);
 
     x = gb->reshape(x, {T, D});
     return x;
@@ -619,12 +594,9 @@ size_t ParakeetModel::build_ctc_logits(CactusGraph* gb, size_t hidden_states) {
     const size_t D = hidden_shape[1];
 
     size_t hidden_nlc = gb->reshape(hidden_states, {1, T, D});
-    size_t logits_nlc = gb->conv1d_pointwise(hidden_nlc, weight_nodes_.ctc_head_weight);
-
     const auto& ctc_w_shape = gb->get_output_buffer(weight_nodes_.ctc_head_weight).shape;
     size_t vocab_size = ctc_w_shape.empty() ? config_.vocab_size : ctc_w_shape[0];
-    size_t bias_bc = gb->reshape(weight_nodes_.ctc_head_bias, {1, static_cast<size_t>(1), vocab_size});
-    logits_nlc = gb->add(logits_nlc, bias_bc);
+    size_t logits_nlc = gb->conv1d_pointwise(hidden_nlc, weight_nodes_.ctc_head_weight, weight_nodes_.ctc_head_bias);
 
     return gb->reshape(logits_nlc, {T, vocab_size});
 }
