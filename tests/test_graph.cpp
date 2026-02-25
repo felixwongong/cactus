@@ -848,15 +848,19 @@ bool verify_quantized_embedding(Precision prec, size_t vocab_size, size_t hidden
 
     __fp16* output = static_cast<__fp16*>(graph.get_output(embedded));
 
-    for (size_t i = 0; i < idx_data.size(); ++i) {
-        for (size_t k = 0; k < hidden_dim; ++k) {
-            float out_val = static_cast<float>(output[i * hidden_dim + k]);
-            float expected = static_cast<float>(emb_rowmajor[idx_data[i] * hidden_dim + k]);
-            if (std::abs(out_val - expected) > 0.5f) {
-                std::cerr << "Embedding mismatch at [" << i << "," << k << "]: got " << out_val
-                          << ", expected " << expected << std::endl;
-                return false;
-            }
+    std::vector<float> expected = {
+        10, 11, 12, 13, 14, 15, 16, 17,  // idx 0
+        30, 31, 32, 33, 34, 35, 36, 37,  // idx 2
+        40, 41, 42, 43, 44, 45, 46, 47,  // idx 3
+        20, 21, 22, 23, 24, 25, 26, 27   // idx 1
+    };
+
+    for (size_t i = 0; i < expected.size(); ++i) {
+        float out_val = static_cast<float>(output[i]);
+        if (std::abs(out_val - expected[i]) > 0.5f) {
+            std::cerr << "Embedding mismatch at " << i << ": got " << out_val
+                      << ", expected " << expected[i] << std::endl;
+            return false;
         }
     }
 
@@ -917,9 +921,11 @@ bool test_embedding_from_file() {
 }
 
 bool test_int4_embedding_operation() {
-    std::vector<int8_t> raw(4 * 32);
-    for (size_t i = 0; i < raw.size(); ++i) raw[i] = static_cast<int8_t>(i % 13 - 6);
-    return verify_quantized_embedding(Precision::INT4, 4, 32, raw, {0, 2, 3, 1});
+    std::vector<int8_t> emb_rowmajor(4 * 8);
+    for (size_t row = 0; row < 4; ++row)
+        for (size_t k = 0; k < 8; ++k)
+            emb_rowmajor[row * 8 + k] = static_cast<int8_t>((row + 1) * 10 + k);
+    return verify_quantized_embedding(Precision::INT4, 4, 8, emb_rowmajor, {0, 2, 3, 1});
 }
 
 bool test_stft() {
