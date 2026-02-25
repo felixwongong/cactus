@@ -1,4 +1,5 @@
 #!/bin/bash
+# for running the golden tests locally
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -48,7 +49,7 @@ for entry in "${MODELS[@]}"; do
     MODEL_PATH="$PROJECT_ROOT/weights/$MODEL_DIR"
 
     export CACTUS_GOLDEN_GENERATE=1
-    export CACTUS_TEST_GOLDEN_DIR="$GOLDEN_DIR"
+    export CACTUS_TEST_GOLDEN_FILE="$GOLDEN_DIR/golden.json"
     export CACTUS_TEST_GOLDEN_FAMILY="$family"
     export CACTUS_TEST_GOLDEN_PRECISION="$precision"
     export CACTUS_TEST_ASSETS="$PROJECT_ROOT/tests/assets"
@@ -72,8 +73,8 @@ echo "=== Golden generation complete ==="
 echo "Passed: $PASSED"
 echo "Failed: $FAILED"
 echo ""
-echo "Golden files are in: $GOLDEN_DIR"
-echo "After verifying outputs, update the golden JSON files with the actual expected values,"
-echo "then commit them to the repository."
+echo "Golden file: $GOLDEN_DIR/golden.json"
+echo "After verifying outputs, update golden.json with the actual expected values,"
+echo "then commit it to the repository."
 
 exit $FAILED

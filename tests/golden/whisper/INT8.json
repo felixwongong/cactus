@@ -1,8 +1,0 @@
-{
-    "model_family": "whisper",
-    "precision": "INT8",
-    "test_type": "stt",
-    "audio_file": "test.wav",
-    "reference_transcript": "Hello hello hello, just quickly testing out creating a WAV file through voice memos. The goal is to use this WAV file to test out Whisper. Hopefully this will transcribe properly. That's all I can hope for. Alright, here we go.",
-    "wer_threshold": 0.15
-}

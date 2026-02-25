@@ -223,7 +223,7 @@ jobs:
         run: |
           export ${{ matrix.env_var }}="${{ github.workspace }}/weights/${{ matrix.model_dir }}"
           export CACTUS_TEST_ASSETS="${{ github.workspace }}/tests/assets"
-          export CACTUS_TEST_GOLDEN_DIR="${{ github.workspace }}/tests/golden"
+          export CACTUS_TEST_GOLDEN_FILE="${{ github.workspace }}/tests/golden/golden.json"
           export CACTUS_TEST_GOLDEN_FAMILY="${{ matrix.family }}"
           export CACTUS_TEST_GOLDEN_PRECISION="${{ matrix.precision }}"
           if [ "${{ matrix.family }}" = "whisper" ] || [ "${{ matrix.family }}" = "moonshine" ]; then

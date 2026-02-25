@@ -10,7 +10,7 @@ using namespace EngineTestUtils;
 static const char* g_model_path      = std::getenv("CACTUS_TEST_MODEL");
 static const char* g_transcribe_path = std::getenv("CACTUS_TEST_TRANSCRIBE_MODEL");
 static const char* g_assets_path     = std::getenv("CACTUS_TEST_ASSETS");
-static const char* g_golden_dir      = std::getenv("CACTUS_TEST_GOLDEN_DIR");
+static const char* g_golden_file     = std::getenv("CACTUS_TEST_GOLDEN_FILE");
 static const char* g_golden_family   = std::getenv("CACTUS_TEST_GOLDEN_FAMILY");
 static const char* g_golden_prec     = std::getenv("CACTUS_TEST_GOLDEN_PRECISION");
 static bool g_generate = std::getenv("CACTUS_GOLDEN_GENERATE") &&
@@ -20,6 +20,31 @@ static std::string read_file(const std::string& path) {
     std::ifstream f(path);
     if (!f.is_open()) return "";
     return std::string((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+}
+
+static std::string find_golden_entry(const std::string& s, const std::string& family, const std::string& precision) {
+    size_t i = 0;
+    for (; i < s.size() && s[i] != '{'; i++);
+    while (i < s.size()) {
+        size_t start = i;
+        int depth = 1;
+        i++;
+        for (;i < s.size() && depth > 0; i++) {
+            if (s[i] == '"') {
+                i++;
+                for (;i < s.size() && s[i] != '"'; i++) {
+                    if (s[i] == '\\') i++;
+                }
+            }
+            else if (s[i] == '{') depth++;
+            else if (s[i] == '}') depth--;
+        }
+        std::string entry = s.substr(start, i - start);
+        if (json_string(entry, "model_family") == family && json_string(entry, "precision") == precision)
+            return entry;
+        for (; i < s.size() && s[i] != '{'; i++);
+    }
+    return "";
 }
 
 static std::string tolower(const std::string& s) {
@@ -199,14 +224,15 @@ static bool test_stt_golden(const std::string& golden, const std::string& family
 }
 
 int main() {
-    if (!g_golden_dir || !g_golden_family || !g_golden_prec) {
-        std::cerr << "Required: CACTUS_TEST_GOLDEN_DIR, CACTUS_TEST_GOLDEN_FAMILY, CACTUS_TEST_GOLDEN_PRECISION\n";
+    if (!g_golden_file || !g_golden_family || !g_golden_prec) {
+        std::cerr << "Required: CACTUS_TEST_GOLDEN_FILE, CACTUS_TEST_GOLDEN_FAMILY, CACTUS_TEST_GOLDEN_PRECISION\n";
         return 1;
     }
 
-    std::string path = std::string(g_golden_dir) + "/" + g_golden_family + "/" + g_golden_prec + ".json";
-    std::string json = read_file(path);
-    if (json.empty()) { std::cerr << "Cannot read: " << path << "\n"; return 1; }
+    std::string all = read_file(g_golden_file);
+    if (all.empty()) { std::cerr << "Cannot read: " << g_golden_file << "\n"; return 1; }
+    std::string json = find_golden_entry(all, g_golden_family, g_golden_prec);
+    if (json.empty()) { std::cerr << "No golden entry for " << g_golden_family << "/" << g_golden_prec << "\n"; return 1; }
 
     std::string type = json_string(json, "test_type");
     std::string family(g_golden_family);
