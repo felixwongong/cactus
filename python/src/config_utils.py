@@ -72,6 +72,8 @@ def detect_model_type(cfg, config, output_dir=None):
         return 'bert'
     elif 'whisper' in model_type_str:
         return 'whisper'
+    elif 'parakeet' in model_type_str:
+        return 'parakeet'
     else:
         if model_type_str:
             print(f"  Warning: Unknown model type '{model_type_str}', defaulting to 'qwen'")
