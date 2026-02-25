@@ -300,7 +300,6 @@ def convert_hf_model_weights(model, output_dir, precision='INT8', args=None):
         for i in range(num_layers):
             layer_prefixes = [p.format(i=i) for p in LAYER_PREFIXES]
 
-<<<<<<< HEAD
             existing_prefixes = set()
             for prefix in layer_prefixes:
                 for key in state_dict.keys():
@@ -406,43 +405,6 @@ def convert_hf_model_weights(model, output_dir, precision='INT8', args=None):
                                     b = state_dict[b_name]
                                 else:
                                     b = None
-=======
-        for layer_prefix in existing_prefixes:
-            for name_patterns, tensor_precision, output_name, should_transpose in weight_patterns:
-                found = False
-                for pattern in name_patterns:
-                    if '{channel}' in pattern:
-                        num_channels = int(model_config.get('num_experts', 0))
-                        if num_channels <= 0:
-                            continue
-
-                        matched_any_channel = False
-                        for channel_idx in range(num_channels):
-                            full_name = layer_prefix + pattern.replace('{channel}', str(channel_idx))
-                            if full_name not in state_dict:
-                                continue
-
-                            channel_output_name = output_name.replace('{channel}', str(channel_idx))
-                            tensor = state_dict[full_name]
-                            if model_type_str == 'whisper':
-                                temp = layer_prefix[:layer_prefix.find('.')] + "." + channel_output_name
-                                save_tensor_with_header(tensor, output_dir / temp, tensor_precision, transpose=should_transpose, stats_tracker=quantization_stats, args=args, model_type=detected_model_type)
-                            elif model_type_str == 'moonshine' and 'encoder' in layer_prefix:
-                                enc_output_name = "encoder_" + channel_output_name
-                                save_tensor_with_header(tensor, output_dir / enc_output_name, tensor_precision, transpose=should_transpose, stats_tracker=quantization_stats, args=args, model_type=detected_model_type)
-                            else:
-                                save_tensor_with_header(tensor, output_dir / channel_output_name, tensor_precision, transpose=should_transpose, stats_tracker=quantization_stats, args=args, model_type=detected_model_type)
-                            saved_tensor_full_names.add(full_name)
-                            matched_any_channel = True
-
-                        if matched_any_channel:
-                            found = True
-                            break
-
-                    full_name = layer_prefix + pattern
-                    if full_name in state_dict:
-                        tensor = state_dict[full_name]
->>>>>>> main
 
                                 inter_size = model_config.get('intermediate_size', 0)
                                 if inter_size == 0:
