@@ -2,15 +2,16 @@
 import sys
 import os
 import argparse
+import json
 import subprocess
 import shutil
 import platform
-import json
 from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).parent.resolve()
 PROJECT_ROOT = SCRIPT_DIR.parent.parent
 DEFAULT_MODEL_ID = "LiquidAI/LFM2.5-1.2B-Instruct"
+DEFAULT_TEST_TRANSCRIBE_MODEL_ID = "openai/whisper-small"
 
 RED = '\033[0;31m'
 GREEN = '\033[0;32m'
@@ -63,8 +64,12 @@ def run_command(cmd, cwd=None, check=True):
 
 
 def ensure_vad_weights(model_id, weights_dir, precision='INT8'):
-    """Bundle Silero VAD weights into <weights_dir>/vad/ for whisper/moonshine models."""
-    is_asr = 'whisper' in model_id.lower() or 'moonshine' in model_id.lower()
+    """Bundle Silero VAD weights into <weights_dir>/vad/ for ASR models."""
+    is_asr = (
+        'whisper' in model_id.lower()
+        or 'moonshine' in model_id.lower()
+        or 'parakeet' in model_id.lower()
+    )
     if not is_asr:
         return
     vad_dir = weights_dir / "vad"
@@ -230,7 +235,7 @@ def cmd_download(args):
 
     print(f"Converting {model_id} to {precision}...")
 
-    from transformers import AutoTokenizer, AutoModelForCausalLM, AutoProcessor, AutoModelForImageTextToText, AutoModel, AutoConfig
+    from transformers import AutoTokenizer, AutoModelForCausalLM, AutoModel
 
     def _download_config_json(repo_id):
         from huggingface_hub import hf_hub_download
@@ -292,10 +297,12 @@ def cmd_download(args):
 
     is_vlm = 'vl' in model_id.lower() or 'vlm' in model_id.lower()
     is_whisper = 'whisper' in model_id.lower()
+    is_parakeet = 'parakeet' in model_id.lower()
     is_vad = 'silero-vad' in model_id.lower()
 
     try:
         if is_vlm:
+            from transformers import AutoProcessor, AutoModelForImageTextToText, AutoConfig
             missing_deps = []
             try:
                 from PIL import Image
@@ -357,6 +364,49 @@ def cmd_download(args):
         elif is_whisper:
             tokenizer = AutoTokenizer.from_pretrained(model_id, cache_dir=cache_dir, trust_remote_code=True, token=token)
             model = AutoModel.from_pretrained(model_id, cache_dir=cache_dir, trust_remote_code=True, token=token)
+
+        elif is_parakeet:
+            from transformers import AutoConfig
+            from huggingface_hub import hf_hub_download, snapshot_download
+            from safetensors.torch import load_file as load_safetensors
+
+            tokenizer = AutoTokenizer.from_pretrained(model_id, cache_dir=cache_dir, trust_remote_code=True, token=token)
+            config_obj = AutoConfig.from_pretrained(model_id, cache_dir=cache_dir, trust_remote_code=True, token=token)
+
+            state_dict = None
+            try:
+                weights_path = hf_hub_download(
+                    repo_id=model_id,
+                    filename="model.safetensors",
+                    cache_dir=cache_dir,
+                    token=token
+                )
+                state_dict = load_safetensors(weights_path, device="cpu")
+            except Exception:
+                snapshot_path = snapshot_download(repo_id=model_id, cache_dir=cache_dir, token=token)
+                index_path = Path(snapshot_path) / "model.safetensors.index.json"
+                if not index_path.exists():
+                    raise
+                with open(index_path, "r", encoding="utf-8") as f:
+                    index_data = json.load(f)
+                shard_files = sorted(set(index_data.get("weight_map", {}).values()))
+                if not shard_files:
+                    raise RuntimeError("Parakeet safetensors index has no shard entries")
+                state_dict = {}
+                for shard_name in shard_files:
+                    shard_path = Path(snapshot_path) / shard_name
+                    shard_state = load_safetensors(str(shard_path), device="cpu")
+                    state_dict.update(shard_state)
+
+            class _StateDictModel:
+                def __init__(self, config, state_dict):
+                    self.config = config
+                    self._state_dict = state_dict
+
+                def state_dict(self):
+                    return self._state_dict
+
+            model = _StateDictModel(config_obj, state_dict)
 
         elif is_vad:
             import urllib.request
@@ -606,6 +656,7 @@ def cmd_build(args):
         else:
             print_color(YELLOW, "SDL2 not found - live transcription will be disabled")
             print_color(YELLOW, "Install SDL2 for live mic support: brew install sdl2 (macOS)")
+            print_color(YELLOW, "Then run `cactus build`")
 
         if is_darwin:
             cmd = [
@@ -788,7 +839,7 @@ def cmd_run(args):
     api_key = prompt_for_api_key(config)
 
     if api_key:
-        os.environ["CACTUS_CLOUD_API_KEY"] = api_key
+        os.environ["CACTUS_CLOUD_KEY"] = api_key
 
     model_id = args.model_id
 
@@ -939,7 +990,7 @@ def _cmd_transcribe_android(weights_dir, audio_file, args):
         print_color(RED, "Failed to push audio file to device")
         return 1
 
-    cloud_api_key = os.environ.get("CACTUS_CLOUD_API_KEY", "")
+    cloud_api_key = os.environ.get("CACTUS_CLOUD_KEY", os.environ.get("CACTUS_CLOUD_API_KEY", ""))
     cloud_strict_ssl = os.environ.get("CACTUS_CLOUD_STRICT_SSL", "")
     cloud_handoff_threshold = os.environ.get("CACTUS_CLOUD_HANDOFF_THRESHOLD", "")
     ca_bundle = os.environ.get("CACTUS_CA_BUNDLE", "")
@@ -947,7 +998,7 @@ def _cmd_transcribe_android(weights_dir, audio_file, args):
     force_handoff = os.environ.get("CACTUS_FORCE_HANDOFF", "")
     env_exports = []
     if cloud_api_key:
-        env_exports.append(f"export CACTUS_CLOUD_API_KEY='{cloud_api_key}'")
+        env_exports.append(f"export CACTUS_CLOUD_KEY='{cloud_api_key}'")
     if cloud_strict_ssl:
         env_exports.append(f"export CACTUS_CLOUD_STRICT_SSL='{cloud_strict_ssl}'")
     if cloud_handoff_threshold:
@@ -1000,7 +1051,7 @@ def cmd_transcribe(args):
     api_key = prompt_for_api_key(config)
 
     if api_key:
-        os.environ["CACTUS_CLOUD_API_KEY"] = api_key
+        os.environ["CACTUS_CLOUD_KEY"] = api_key
 
     model_id = getattr(args, 'model_id', DEFAULT_ASR_MODEL_ID)
     audio_file = getattr(args, 'audio_file', None)
@@ -1218,13 +1269,13 @@ def cmd_test(args):
 
     if getattr(args, 'large', False):
         args.model = 'LiquidAI/LFM2.5-VL-1.6B'
-        args.transcribe_model = 'openai/whisper-small'
+        args.transcribe_model = DEFAULT_TEST_TRANSCRIBE_MODEL_ID
         print_color(BLUE, f"Using large models: {args.model}, {args.transcribe_model}, {args.vad_model}")
 
     if getattr(args, 'reconvert', False):
         for model_id in [
             getattr(args, 'model', 'LiquidAI/LFM2-VL-450M'),
-            getattr(args, 'transcribe_model', 'openai/whisper-small'),
+            getattr(args, 'transcribe_model', DEFAULT_TEST_TRANSCRIBE_MODEL_ID),
             getattr(args, 'vad_model', 'snakers4/silero-vad')
         ]:
             class DownloadArgs:
@@ -1311,6 +1362,15 @@ def cmd_clean(args):
         shutil.rmtree(telemetry_cache)
     else:
         print(f"Telemetry cache not found: {telemetry_cache}")
+
+    # Re-cache API key from config so users don't need to run `cactus auth` again
+    from .config_utils import CactusConfig
+    config = CactusConfig()
+    saved_key = config.load_config().get("api_key", "")
+    if saved_key:
+        config.cache_api_key(saved_key)
+        masked = saved_key[:4] + "..." + saved_key[-4:]
+        print(f"Restored cached API key: {masked}")
 
     print()
     print("Removing compiled libraries and frameworks...")
@@ -1584,7 +1644,7 @@ def create_parser():
     Optional flags:
     --model <model>                    default: LFM2-VL-450M
     --transcribe_model <model>         default: openai/whisper-small
-    --large                            use larger models (LFM2.5-VL-1.6B + openai/whisper-small)
+    --large                            use larger models (LFM2.5-VL-1.6B + openai/whisper-large)
     --precision INT4|INT8|FP16         regenerates weights with precision
     --reconvert                        force model weights reconversion from source
     --no-rebuild                       skip building library and tests
@@ -1702,12 +1762,12 @@ def create_parser():
     test_parser = subparsers.add_parser('test', help='Run the test suite')
     test_parser.add_argument('--model', default='LiquidAI/LFM2-VL-450M',
                              help='Model to use for tests')
-    test_parser.add_argument('--transcribe_model', default='openai/whisper-small',
+    test_parser.add_argument('--transcribe_model', default=DEFAULT_TEST_TRANSCRIBE_MODEL_ID,
                              help='Transcribe model to use')
     test_parser.add_argument('--vad_model', default='snakers4/silero-vad',
                              help='VAD model to use')
     test_parser.add_argument('--large', action='store_true',
-                             help='Use larger models (LFM2.5-VL-1.6B + openai/whisper-small)')
+                             help='Use larger models (LFM2.5-VL-1.6B + nvidia/parakeet-ctc-1.1b)')
     test_parser.add_argument('--precision', choices=['INT4', 'INT8', 'FP16'],
                              help='Regenerate weights with this precision (deletes existing weights)')
     test_parser.add_argument('--no-rebuild', action='store_true',
