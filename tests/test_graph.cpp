@@ -779,21 +779,17 @@ bool test_mmap_gather() {
     return passed;
 }
 
-bool test_embedding_operation() {
+bool verify_quantized_embedding(Precision prec, size_t vocab_size, size_t hidden_dim, const std::vector<int8_t>& idx_data) {
     CactusGraph graph;
 
-    const size_t vocab_size = 4;
-    const size_t hidden_dim = 8;
-    const size_t group_size = 8;
+    const size_t group_size = hidden_dim;
     const size_t num_groups = hidden_dim / group_size;
     const size_t BLOCK_SIZE = 4;
 
     std::vector<int8_t> emb_rowmajor(vocab_size * hidden_dim);
-    for (size_t row = 0; row < vocab_size; ++row) {
-        for (size_t k = 0; k < hidden_dim; ++k) {
-            emb_rowmajor[row * hidden_dim + k] = static_cast<int8_t>((row + 1) * 10 + k);
-        }
-    }
+    for (size_t row = 0; row < vocab_size; ++row)
+        for (size_t k = 0; k < hidden_dim; ++k)
+            emb_rowmajor[row * hidden_dim + k] = static_cast<int8_t>((row * hidden_dim + k) % 13 - 6);
 
     std::vector<int8_t> emb_interleaved(vocab_size * hidden_dim);
     size_t N_blocks = vocab_size / BLOCK_SIZE;
@@ -828,27 +824,38 @@ bool test_embedding_operation() {
         }
     }
 
-    size_t embeddings = graph.input({vocab_size, hidden_dim}, Precision::INT8);
-    graph.set_input(embeddings, emb_interleaved.data(), Precision::INT8);
+    std::vector<uint8_t> emb_packed;
+    const void* emb_data = emb_interleaved.data();
+    if (prec == Precision::INT4) {
+        emb_packed.resize(vocab_size * hidden_dim / 2);
+        for (size_t c = 0; c < vocab_size * hidden_dim / 64; ++c) {
+            const int8_t* s = emb_interleaved.data() + c * 64;
+            for (size_t i = 0; i < 16; ++i) {
+                emb_packed[c * 32 + i]      = ((s[16+i] & 0xF) << 4) | (s[i] & 0xF);
+                emb_packed[c * 32 + 16 + i] = ((s[48+i] & 0xF) << 4) | (s[32+i] & 0xF);
+            }
+        }
+        emb_data = emb_packed.data();
+    }
+
+    size_t embeddings = graph.input({vocab_size, hidden_dim}, prec);
+    graph.set_input(embeddings, emb_data, prec);
 
     graph.set_grouped_scales(embeddings, group_size, num_groups, scales_interleaved.data());
     graph.set_interleaved(embeddings, true, vocab_size);
 
-    size_t indices = graph.input({4}, Precision::INT8);
+    size_t indices = graph.input({idx_data.size()}, Precision::INT8);
     size_t embedded = graph.embedding(embeddings, indices);
 
-    std::vector<int8_t> idx_data = {0, 2, 3, 1};  
     graph.set_input(indices, idx_data.data(), Precision::INT8);
     graph.execute();
 
     __fp16* output = static_cast<__fp16*>(graph.get_output(embedded));
 
-    std::vector<float> expected = {
-        10, 11, 12, 13, 14, 15, 16, 17,  // idx 0
-        30, 31, 32, 33, 34, 35, 36, 37,  // idx 2
-        40, 41, 42, 43, 44, 45, 46, 47,  // idx 3
-        20, 21, 22, 23, 24, 25, 26, 27   // idx 1
-    };
+    std::vector<float> expected(idx_data.size() * hidden_dim);
+    for (size_t i = 0; i < idx_data.size(); ++i)
+        for (size_t k = 0; k < hidden_dim; ++k)
+            expected[i * hidden_dim + k] = static_cast<float>(emb_rowmajor[idx_data[i] * hidden_dim + k]);
 
     for (size_t i = 0; i < expected.size(); ++i) {
         float out_val = static_cast<float>(output[i]);
@@ -860,6 +867,14 @@ bool test_embedding_operation() {
     }
 
     return true;
+}
+
+bool test_int8_embedding_operation() {
+    return verify_quantized_embedding(Precision::INT8, 4, 32, {0, 2, 3, 1});
+}
+
+bool test_int4_embedding_operation() {
+    return verify_quantized_embedding(Precision::INT4, 4, 32, {0, 2, 3, 1});
 }
 
 bool test_embedding_from_file() {
@@ -991,7 +1006,8 @@ int main() {
     runner.run_test("Gather 3D Tensor", test_gather_3d_tensor());
     runner.run_test("Gather FP16", test_gather_fp16());
     runner.run_test("Memory-Mapped Gather", test_mmap_gather());
-    runner.run_test("Embedding Operation", test_embedding_operation());
+    runner.run_test("INT8 Embedding Operation", test_int8_embedding_operation());
+    runner.run_test("INT4 Embedding Operation", test_int4_embedding_operation());
     runner.run_test("Embedding from File", test_embedding_from_file());
     runner.run_test("STFT Complex", test_stft());
     runner.print_summary();
