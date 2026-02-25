@@ -104,7 +104,7 @@ graph.hard_reset();
 | Galaxy S25 Ultra | 255tps/37tps (1.2GB RAM) | 2.6s/34tps (2GB RAM) | 2.3s/90tps (363MB RAM) |
 
 **Budget Devices**
-| Device | LFM2-350m-INT4<br>(1k-Prefill/100-Decode) | LFM2-VL-450m-INT4<br>(256px-Latency & Decode) | Moonshine-Base-67m-INT4<br>(30s-audio-Latency & Decode)
+| Device | LFM2-350m-INT4<br>(1k-Prefill/100-Decode) | LFM2-VL-450m-INT4<br>(256px-Latency & Decode) | Moonshine-Base-67m-INT8<br>(30s-audio-Latency & Decode)
 |--------|--------|--------|----------|
 | iPhone 13 Mini (Apple A15) | 516tps/65tps (29MB RAM) | 0.3s/69tps (20MB RAM) | 0.7s/413tps (10MB RAM) |
 | Pixel 6a (Google Tensor G1) | 218tps/44tps (395MB RAM)| 2.5s/36tps (631MB RAM) | 1.5s/189tps (111MB RAM)|
