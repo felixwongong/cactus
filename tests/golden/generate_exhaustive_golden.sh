@@ -21,6 +21,7 @@ MODELS=(
     "gemma:google/gemma-3-270m-it:INT8:llm:CACTUS_TEST_MODEL"
     "whisper:openai/whisper-small:INT8:stt:CACTUS_TEST_TRANSCRIBE_MODEL"
     "moonshine:UsefulSensors/moonshine-base:INT8:stt:CACTUS_TEST_TRANSCRIBE_MODEL"
+    "parakeet:nvidia/parakeet-ctc-0.6b:INT8:stt:CACTUS_TEST_TRANSCRIBE_MODEL"
     "lfm2vl:LiquidAI/LFM2-VL-450M:INT8:vlm:CACTUS_TEST_MODEL"
     "lfm2vl:LiquidAI/LFM2-VL-450M:INT4:vlm:CACTUS_TEST_MODEL"
     "lfm2vl:LiquidAI/LFM2-VL-450M:FP16:vlm:CACTUS_TEST_MODEL"

@@ -528,6 +528,10 @@ static void compute_spectrogram_f32(
             for (size_t i = 0; i < pad_length; i++) {
                 padded_waveform[pad_length + waveform_length + i] = waveform[waveform_length - 2 - i];
             }
+        } else if (std::strcmp(pad_mode, "constant") == 0) {
+            std::fill(padded_waveform.begin(), padded_waveform.begin() + pad_length, 0.0f);
+            std::copy(waveform, waveform + waveform_length, padded_waveform.data() + pad_length);
+            std::fill(padded_waveform.begin() + pad_length + waveform_length, padded_waveform.end(), 0.0f);
         } else {
             throw std::invalid_argument("Unsupported pad_mode: " + std::string(pad_mode));
         }

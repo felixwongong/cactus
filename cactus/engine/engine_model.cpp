@@ -151,7 +151,7 @@ bool Model::init_internal(CactusGraph* gb, const std::string& model_folder, size
 
     initialized_ = true;
 
-    if (do_warmup && config_.model_type != Config::ModelType::WHISPER && config_.model_type != Config::ModelType::MOONSHINE) {
+    if (do_warmup && config_.model_type != Config::ModelType::WHISPER && config_.model_type != Config::ModelType::MOONSHINE && config_.model_type != Config::ModelType::PARAKEET) {
         std::string warmup_text = system_prompt.empty() ? "Hello" : system_prompt;
         auto warmup_tokens = tokenizer_->encode(warmup_text);
         forward(warmup_tokens);
@@ -477,6 +477,7 @@ bool Config::from_json(const std::string& config_path) {
             else if (value == "whisper" || value == "WHISPER") model_type = ModelType::WHISPER;
             else if (value == "moonshine" || value == "MOONSHINE") model_type = ModelType::MOONSHINE;
             else if (value == "silero_vad" || value == "SILERO_VAD") model_type = ModelType::SILERO_VAD;
+            else if (value == "parakeet" || value == "PARAKEET") model_type = ModelType::PARAKEET;
             else model_type = ModelType::QWEN;
         }
         else if (key == "model_variant") {
@@ -513,6 +514,9 @@ bool Config::from_json(const std::string& config_path) {
         else if (key == "num_encoder_layers") num_encoder_layers = static_cast<uint32_t>(std::stoul(value));
         else if (key == "num_decoder_layers") num_decoder_layers = static_cast<uint32_t>(std::stoul(value));
         else if (key == "partial_rotary_factor") partial_rotary_factor = std::stof(value);
+        else if (key == "num_mel_bins") num_mel_bins = static_cast<size_t>(std::stoul(value));
+        else if (key == "pad_token_id") pad_token_id = static_cast<uint32_t>(std::stoul(value));
+        else if (key == "encoder_hidden_act") encoder_hidden_act = value;
     }
 
     if (model_type == ModelType::GEMMA) {
@@ -590,6 +594,8 @@ std::unique_ptr<Model> create_model(const std::string& model_folder) {
             return std::make_unique<MoonshineModel>(config);
         case Config::ModelType::SILERO_VAD:
             return std::make_unique<SileroVADModel>(config);
+        case Config::ModelType::PARAKEET:
+            return std::make_unique<ParakeetModel>(config);
         default:
             return std::make_unique<QwenModel>(config);
     }

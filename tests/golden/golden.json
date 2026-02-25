@@ -68,6 +68,14 @@
         "wer_threshold": 0.15
     },
     {
+        "model_family": "parakeet",
+        "precision": "INT8",
+        "test_type": "stt",
+        "audio_file": "test.wav",
+        "reference_transcript": "hello hello hello quickly testing out creating a way file through voice memos the goal is to use this wh file to test out whisper hopefully this will transcribe properly that's all i can hope for all right here we go",
+        "wer_threshold": 0.15
+    },
+    {
         "model_family": "nomic",
         "precision": "INT8",
         "test_type": "embedding",
