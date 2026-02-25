@@ -124,6 +124,8 @@ struct Config {
     std::vector<std::string> layer_types;
     size_t conv_L_cache = 0;
     size_t num_mel_bins = 80;
+    uint32_t pad_token_id = 0;
+    std::string encoder_hidden_act = "swish";
 
     bool from_json(const std::string& json_path);
     std::string to_json() const;
