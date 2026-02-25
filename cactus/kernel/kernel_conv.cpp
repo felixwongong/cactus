@@ -306,6 +306,7 @@ void cactus_conv1d_f16_k3(
 static void conv1d_f16_accelerate(
     const __fp16* input,
     const __fp16* weight,
+    const __fp16* bias,
     __fp16* output,
     size_t N, size_t L,
     size_t C_in, size_t C_out,
@@ -328,8 +329,9 @@ static void conv1d_f16_accelerate(
         const __fp16* Xb  = input  + n * in_bs;
         __fp16*       Yoc = output + n * out_bs + oc * out_len;
         const __fp16* Woc = weight + oc * (C_in * K);
+        const float   b   = bias ? (float)bias[oc] : 0.f;
 
-        std::vector<float> out_f32(out_len, 0.f);
+        std::vector<float> out_f32(out_len, b);
         std::vector<float> input_f32(L);
         std::vector<float> weight_f32(K);
 
@@ -366,6 +368,7 @@ static void conv1d_f16_accelerate(
 static void conv1d_f16_neon(
     const __fp16* input,
     const __fp16* weight,
+    const __fp16* bias,
     __fp16* output,
     size_t N, size_t L,
     size_t C_in, size_t C_out,
@@ -388,10 +391,11 @@ static void conv1d_f16_neon(
         const __fp16* Xb  = input  + n * in_bs;
         __fp16*       Yoc = output + n * out_bs + oc * out_len;
         const __fp16* Woc = weight + oc * (C_in * K);
+        const float   b   = bias ? (float)bias[oc] : 0.f;
 
         for (size_t out_t = 0; out_t < out_len; ++out_t) {
             const size_t t = out_t * stride;
-            float sum = 0.f;
+            float sum = b;
 
             for (size_t ic = 0; ic < C_in; ++ic) {
                 const __fp16* Xc = Xb  + ic * L + t;
@@ -433,6 +437,7 @@ static void conv1d_f16_neon(
 void cactus_conv1d_f16(
     const __fp16* input,
     const __fp16* weight,
+    const __fp16* bias,
     __fp16* output,
     size_t N, size_t L,
     size_t C_in, size_t C_out,
@@ -441,16 +446,17 @@ void cactus_conv1d_f16(
 ){
 #ifdef __APPLE__
     if (K >= ACCELERATE_K_THRESHOLD && L >= ACCELERATE_L_THRESHOLD) {
-        conv1d_f16_accelerate(input, weight, output, N, L, C_in, C_out, K, stride);
+        conv1d_f16_accelerate(input, weight, bias, output, N, L, C_in, C_out, K, stride);
         return;
     }
 #endif
-    conv1d_f16_neon(input, weight, output, N, L, C_in, C_out, K, stride);
+    conv1d_f16_neon(input, weight, bias, output, N, L, C_in, C_out, K, stride);
 }
 
 inline void conv1d_k7s3_oc8_t4(
     const __fp16* Xb,
     const __fp16* Wpack,
+    const __fp16* bias,
     __fp16* Yb,
     size_t L,
     size_t out_len,
@@ -462,6 +468,11 @@ inline void conv1d_k7s3_oc8_t4(
     float32x4_t acc[4][2];
     float32x4_t b0 = vdupq_n_f32(0.f);
     float32x4_t b1 = vdupq_n_f32(0.f);
+    if (bias) {
+        float16x8_t bv = vld1q_f16(bias + oc0);
+        b0 = vcvt_f32_f16(vget_low_f16(bv));
+        b1 = vcvt_f32_f16(vget_high_f16(bv));
+    }
 
     for (int j = 0; j < 4; ++j) {
         acc[j][0] = b0;
@@ -505,6 +516,7 @@ inline void conv1d_k7s3_oc8_t4(
 inline void conv1d_k7s3_oc8_scalar(
     const __fp16* Xb,
     const __fp16* Wpack,
+    const __fp16* bias,
     __fp16* Yb,
     size_t L,
     size_t out_len,
@@ -515,6 +527,12 @@ inline void conv1d_k7s3_oc8_scalar(
 ){
     float32x4_t acc0 = vdupq_n_f32(0.f);
     float32x4_t acc1 = vdupq_n_f32(0.f);
+
+    if (bias) {
+        float16x8_t bv = vld1q_f16(bias + oc0);
+        acc0 = vcvt_f32_f16(vget_low_f16(bv));
+        acc1 = vcvt_f32_f16(vget_high_f16(bv));
+    }
 
     const size_t t_base = out_t * 3;
     
@@ -545,6 +563,7 @@ inline void conv1d_k7s3_oc8_scalar(
 void cactus_conv1d_f16_k7s3_oc8(
     const __fp16* input,
     const __fp16* Wpack,
+    const __fp16* bias,
     __fp16* output,
     size_t N,
     size_t L,
@@ -562,11 +581,11 @@ void cactus_conv1d_f16_k7s3_oc8(
 
         size_t out_t = 0;
         for (; out_t + 4 <= out_len; out_t += 4) {
-            conv1d_k7s3_oc8_t4(Xb, Wpack, Yb, L, out_len, C_in, C_out, out_t, oc0);
+            conv1d_k7s3_oc8_t4(Xb, Wpack, bias, Yb, L, out_len, C_in, C_out, out_t, oc0);
         }
 
         for (; out_t < out_len; ++out_t) {
-            conv1d_k7s3_oc8_scalar(Xb, Wpack, Yb, L, out_len, C_in, C_out, out_t, oc0);
+            conv1d_k7s3_oc8_scalar(Xb, Wpack, bias, Yb, L, out_len, C_in, C_out, out_t, oc0);
         }
     });
 }
