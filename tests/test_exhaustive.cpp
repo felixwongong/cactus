@@ -225,8 +225,8 @@ static bool test_stt_golden(const std::string& golden, const std::string& family
 
 int main() {
     if (!g_golden_file || !g_golden_family || !g_golden_prec) {
-        std::cerr << "Required: CACTUS_TEST_GOLDEN_FILE, CACTUS_TEST_GOLDEN_FAMILY, CACTUS_TEST_GOLDEN_PRECISION\n";
-        return 1;
+        std::cout << "Skipping exhaustive tests (CACTUS_TEST_GOLDEN_FILE, CACTUS_TEST_GOLDEN_FAMILY, CACTUS_TEST_GOLDEN_PRECISION not set)\n";
+        return 0;
     }
 
     std::string all = read_file(g_golden_file);
@@ -238,7 +238,7 @@ int main() {
     std::string family(g_golden_family);
     std::string label = type + "_" + family + "_" + g_golden_prec;
 
-    TestUtils::TestRunner runner("Ground Truth Tests");
+    TestUtils::TestRunner runner("Exhaustive Tests");
 
     if (type == "llm" || type == "vlm")  runner.run_test(label, test_completion_golden(json));
     else if (type == "embedding")        runner.run_test(label, test_embedding_golden(json));

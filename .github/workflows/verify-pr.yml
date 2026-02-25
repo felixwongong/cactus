@@ -151,7 +151,7 @@ jobs:
         run: |
           mkdir -p "$CACTUS_INDEX_PATH"
           FAILED=0
-          for test in test_graph test_kernel test_kv_cache test_index; do
+          for test in test_graph test_kernel test_kv_cache test_index test_model_loading; do
             echo "=== Running $test ==="
             if ! ./tests/build/$test; then
               FAILED=$((FAILED + 1))
@@ -159,19 +159,7 @@ jobs:
           done
           if [ $FAILED -gt 0 ]; then exit 1; fi
 
-  loading-tests:
-    needs: build
-    runs-on: [self-hosted, linux, arm64]
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          clean: false
-      - name: Run model loading tests
-        env:
-          CACTUS_NO_CLOUD_TELE: "1"
-        run: ./tests/build/test_model_loading
-
-  model-tests:
+  exhaustive-tests:
     needs: build
     runs-on: [self-hosted, linux, arm64]
     strategy:
@@ -222,7 +210,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           clean: false
-      - name: Run ground truth test
+      - name: Run exhaustive test
         env:
           CACTUS_NO_CLOUD_TELE: "1"
         run: |
@@ -234,4 +222,4 @@ jobs:
           if [ "${{ matrix.family }}" = "whisper" ] || [ "${{ matrix.family }}" = "moonshine" ]; then
             export CACTUS_TEST_VAD_MODEL="${{ github.workspace }}/weights/silero-vad"
           fi
-          ./tests/build/test_groundtruth
+          ./tests/build/test_exhaustive

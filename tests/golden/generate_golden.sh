@@ -7,8 +7,8 @@ PROJECT_ROOT="$(dirname "$(dirname "$SCRIPT_DIR")")"
 GOLDEN_DIR="$SCRIPT_DIR"
 TEST_BUILD_DIR="$PROJECT_ROOT/tests/build"
 
-if [ ! -f "$TEST_BUILD_DIR/test_groundtruth" ]; then
-    echo "Error: test_groundtruth not found at $TEST_BUILD_DIR/test_groundtruth"
+if [ ! -f "$TEST_BUILD_DIR/test_exhaustive" ]; then
+    echo "Error: test_exhaustive not found at $TEST_BUILD_DIR/test_exhaustive"
     echo "Build tests first: cd tests && mkdir -p build && cd build && cmake .. && make -j\$(nproc)"
     exit 1
 fi
@@ -60,7 +60,7 @@ for entry in "${MODELS[@]}"; do
         export CACTUS_TEST_VAD_MODEL="$PROJECT_ROOT/weights/silero-vad"
     fi
 
-    if "$TEST_BUILD_DIR/test_groundtruth"; then
+    if "$TEST_BUILD_DIR/test_exhaustive"; then
         echo "    OK"
         PASSED=$((PASSED + 1))
     else
