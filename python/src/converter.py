@@ -7,7 +7,7 @@ try:
 except ImportError:
     torch = None
 
-from .tensor_io import save_tensor_with_header, create_quantization_stats, print_quantization_summary, format_config_value
+from .tensor_io import save_tensor_with_header, create_quantization_stats, print_quantization_summary
 from .config_utils import cfg_get, detect_model_type, extract_base_config, extract_vision_config, extract_lfm2_config, is_vlm_model, extract_moonshine_config
 from .weight_patterns import (
     EMBED_NAMES, OUTPUT_NAMES, OUTPUT_NORM_NAMES, LAYER_PREFIXES,
@@ -47,18 +47,7 @@ def convert_hf_model_weights(model, output_dir, precision='INT8', args=None):
     if is_vlm and vision_cfg is not None:
         model_config.update(extract_vision_config(config, vision_cfg))
 
-    if model_type_str in (
-        'cloud_handoff',
-        'cloud-handoff',
-        'moonshine_cloud_handoff',
-        'moonshine-cloud-handoff',
-        'cloudhandoff',
-    ) or detected_model_type == 'cloud_handoff':
-        raise ValueError(
-            "cloud_handoff is not an LLM checkpoint. Convert a Whisper model instead; "
-            "Whisper conversion bundles cloud_handoff automatically."
-        )
-    elif detected_model_type == 'lfm2':
+    if detected_model_type == 'lfm2':
         model_config.update(extract_lfm2_config(cfg))
     elif detected_model_type == 'moonshine':
         model_config.update(extract_moonshine_config(cfg))
@@ -99,7 +88,6 @@ def convert_hf_model_weights(model, output_dir, precision='INT8', args=None):
                 
                 save_tensor_with_header(tensor, output_dir / save_name, precision, transpose=False, stats_tracker=quantization_stats, args=args, model_type=detected_model_type)
                 saved_tensor_full_names.add(name)
-
         embedding_found = True
         model_config['dec_hidden_act'] = cfg.decoder_hidden_act
         model_config['enc_hidden_act'] = cfg.encoder_hidden_act
@@ -473,7 +461,6 @@ def convert_silero_vad_weights(model, output_dir, precision="FP16", args=None):
     config_path = output_dir / "config.txt"
     with open(config_path, "w") as f:
         for key, value in config.items():
-            f.write(f"{key}={format_config_value(value)}\n")
+            f.write(f"{key}={value}\n")
 
     return config
-

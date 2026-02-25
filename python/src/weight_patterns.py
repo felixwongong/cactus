@@ -103,6 +103,7 @@ WHISPER_GLOBAL_WEIGHTS = [
     ('encoder.layer_norm.weight', 'encoder_norm_weight.weights')
 ]
 
+
 def get_layer_weight_patterns(i, precision, model_type=None):
     is_whisper = model_type == 'whisper'
 

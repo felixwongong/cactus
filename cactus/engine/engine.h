@@ -701,69 +701,6 @@ public:
         const std::vector<float>& waveform,
         const SpectrogramConfig& config);
 
-    void compute_stft_power(
-        const std::vector<float>& waveform,
-        size_t sampling_rate,
-        const SpectrogramConfig& config,
-        std::vector<float>& stft_power,
-        std::vector<float>& freqs_hz,
-        size_t& num_frames) const;
-
-    float high_freq_energy_ratio_mean(
-        const std::vector<float>& stft_power,
-        const std::vector<float>& freqs_hz,
-        size_t num_frames,
-        float cutoff_hz) const;
-
-    float high_freq_energy_ratio_std(
-        const std::vector<float>& stft_power,
-        const std::vector<float>& freqs_hz,
-        size_t num_frames,
-        float cutoff_hz) const;
-
-    float spectral_flatness_mean(
-        const std::vector<float>& stft_power,
-        size_t num_frames) const;
-
-    float spectral_flatness_std(
-        const std::vector<float>& stft_power,
-        size_t num_frames) const;
-
-    float spectral_entropy_mean(
-        const std::vector<float>& stft_power,
-        size_t num_frames) const;
-
-    float spectral_entropy_std(
-        const std::vector<float>& stft_power,
-        size_t num_frames) const;
-
-    float overlap_pitch_lag_cv(
-        const std::vector<float>& waveform,
-        size_t sample_rate,
-        size_t frame_length = 512,
-        size_t hop_length = 128,
-        float fmin = 80.0f,
-        float fmax = 300.0f,
-        float energy_gate = 0.01f) const;
-
-    float overlap_spectral_peak_spacing_cv_mean(
-        const std::vector<float>& waveform,
-        size_t sample_rate,
-        size_t frame_length = 512,
-        size_t hop_length = 128,
-        size_t n_fft = 512,
-        float peak_prominence = 6.0f,
-        float energy_gate = 0.01f) const;
-
-    float overlap_yin_conf_p95(
-        const std::vector<float>& waveform,
-        size_t sample_rate,
-        size_t frame_length = 512,
-        size_t hop_length = 128,
-        float fmin = 80.0f,
-        float fmax = 300.0f,
-        float energy_gate = 0.01f) const;
-
     static std::vector<float> compute_irfft(
         const std::vector<float>& complex_input,
         size_t n,
