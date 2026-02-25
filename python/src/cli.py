@@ -577,6 +577,7 @@ def cmd_build(args):
         else:
             print_color(YELLOW, "SDL2 not found - live transcription will be disabled")
             print_color(YELLOW, "Install SDL2 for live mic support: brew install sdl2 (macOS)")
+            print_color(YELLOW, "Then run `cactus build`")
 
         if is_darwin:
             cmd = [
@@ -1282,6 +1283,15 @@ def cmd_clean(args):
         shutil.rmtree(telemetry_cache)
     else:
         print(f"Telemetry cache not found: {telemetry_cache}")
+
+    # Re-cache API key from config so users don't need to run `cactus auth` again
+    from .config_utils import CactusConfig
+    config = CactusConfig()
+    saved_key = config.load_config().get("api_key", "")
+    if saved_key:
+        config.cache_api_key(saved_key)
+        masked = saved_key[:4] + "..." + saved_key[-4:]
+        print(f"Restored cached API key: {masked}")
 
     print()
     print("Removing compiled libraries and frameworks...")
