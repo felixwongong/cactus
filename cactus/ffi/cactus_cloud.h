@@ -34,6 +34,7 @@ struct CloudCompletionResult {
 
 std::string cloud_base64_encode(const uint8_t* data, size_t len);
 std::vector<uint8_t> cloud_build_wav(const uint8_t* pcm, size_t pcm_bytes);
+std::string resolve_cloud_api_key(const char* cloud_key_param);
 CloudResponse cloud_transcribe_request(const std::string& audio_b64,
                                        const std::string& fallback_text,
                                        long timeout_seconds = 15L,

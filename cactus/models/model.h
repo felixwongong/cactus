@@ -959,7 +959,7 @@ private:
 
     bool initialized_ = false;
     std::string activation_ = "relu";
-    float threshold_ = 0.5f;
+    float threshold_ = 0.8f;
     float high_freq_cutoff_hz_ = 3000.0f;
 
     size_t input_dim_ = 0;

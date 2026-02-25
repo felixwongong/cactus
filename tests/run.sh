@@ -179,6 +179,35 @@ fi
 
 test_executables=("${executable_tests[@]}")
 
+if [ -z "$ONLY_EXEC" ]; then
+    has_engine=false
+    for test_file in "${test_executables[@]}"; do
+        if [ "$(basename "$test_file")" = "test_engine" ]; then
+            has_engine=true
+            break
+        fi
+    done
+
+    if [ "$has_engine" = true ]; then
+        filtered_tests=()
+        skipped_overlaps=()
+        for test_file in "${test_executables[@]}"; do
+            base="$(basename "$test_file")"
+            case "$base" in
+                test_llm|test_rag|test_vlm|test_embed|test_stt)
+                    skipped_overlaps+=("$base")
+                    continue
+                    ;;
+            esac
+            filtered_tests+=("$test_file")
+        done
+        test_executables=("${filtered_tests[@]}")
+        if [ ${#skipped_overlaps[@]} -gt 0 ]; then
+            echo "Skipping overlapping suites covered by test_engine: ${skipped_overlaps[*]}"
+        fi
+    fi
+fi
+
 # If --only is set, execute only the named test
 if [ -n "$ONLY_EXEC" ]; then
     allowed=()

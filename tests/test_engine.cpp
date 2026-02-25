@@ -564,6 +564,33 @@ bool test_cloud_handoff_matrix_suite() {
     bool ok = true;
     ok = run_handoff_mode_case(g_model_path, "text_only", text_only, "", true, false) && ok;
     ok = run_handoff_mode_case(g_model_path, "text_only", text_only, "", false, false) && ok;
+    ok = run_handoff_mode_case(
+            g_model_path,
+            "text_threshold_high",
+            text_only,
+            "",
+            true,
+            false,
+            "1.1",
+            1) && ok;
+    ok = run_handoff_mode_case(
+            g_model_path,
+            "text_threshold_low",
+            text_only,
+            "",
+            true,
+            false,
+            "-1.0",
+            0) && ok;
+    ok = run_handoff_mode_case(
+            g_model_path,
+            "text_threshold_high_auto_off",
+            text_only,
+            "",
+            false,
+            false,
+            "1.1",
+            0) && ok;
 
     bool ran_vlm = false;
     if (g_assets_path) {

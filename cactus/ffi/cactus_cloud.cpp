@@ -1,4 +1,5 @@
 #include "cactus_cloud.h"
+#include "telemetry/telemetry.h"
 
 #include <algorithm>
 #include <atomic>
@@ -15,21 +16,31 @@
 namespace cactus {
 namespace ffi {
 
-namespace {
-
-#ifdef CACTUS_USE_CURL
-static std::atomic<bool> g_warned_missing_cloud_api_key{false};
-
-static std::string resolve_cloud_api_key(const char* cloud_key_param) {
+std::string resolve_cloud_api_key(const char* cloud_key_param) {
     const char* env_cloud = std::getenv("CACTUS_CLOUD_KEY");
     std::string resolved_cloud_key;
     if (cloud_key_param && *cloud_key_param) {
         resolved_cloud_key = cloud_key_param;
     } else if (env_cloud && *env_cloud) {
         resolved_cloud_key = env_cloud;
+    } else {
+        resolved_cloud_key = cactus::telemetry::loadCachedCloudApiKey();
     }
+
+    const bool should_cache =
+        !resolved_cloud_key.empty() &&
+        ((cloud_key_param && *cloud_key_param) || (env_cloud && *env_cloud));
+    if (should_cache) {
+        cactus::telemetry::cacheCloudApiKey(resolved_cloud_key.c_str());
+    }
+
     return resolved_cloud_key;
 }
+
+namespace {
+
+#ifdef CACTUS_USE_CURL
+static std::atomic<bool> g_warned_missing_cloud_api_key{false};
 
 static bool cloud_insecure_ssl_enabled() {
     const char* strict = std::getenv("CACTUS_CLOUD_STRICT_SSL");

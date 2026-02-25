@@ -116,7 +116,7 @@ bool WhisperCloudHandoffModel::init(const std::string& model_folder, std::string
     input_dim_ = 0;
     hidden_dim_ = 0;
     output_dim_ = 0;
-    threshold_ = 0.5f;
+    threshold_ = 0.8f;
     high_freq_cutoff_hz_ = 3000.0f;
     activation_ = "relu";
 

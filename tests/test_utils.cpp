@@ -1,4 +1,5 @@
 #include "test_utils.h"
+#include <cstdlib>
 #include <random>
 #include <sstream>
 
@@ -278,16 +279,24 @@ void stream_callback(const char* token, uint32_t token_id, void* user_data) {
     }
 }
 
-std::string build_handoff_options(bool auto_handoff, bool force_tools) {
+static std::string truncate_for_log(const std::string& text, size_t max_len = 120) {
+    if (text.size() <= max_len) return text;
+    if (max_len < 4) return text.substr(0, max_len);
+    return text.substr(0, max_len - 3) + "...";
+}
+
+std::string build_handoff_options(bool auto_handoff, bool force_tools, const char* confidence_threshold_override) {
     std::ostringstream oss;
     oss << "{";
     oss << "\"max_tokens\":256,";
     oss << "\"stop_sequences\":[\"<|im_end|>\",\"<end_of_turn>\"],";
     oss << "\"telemetry_enabled\":false,";
-    oss << "\"confidence_threshold\":1.1,";
     oss << "\"cloud_timeout_ms\":2500,";
     oss << "\"handoff_with_images\":true,";
     oss << "\"auto_handoff\":" << (auto_handoff ? "true" : "false");
+    if (confidence_threshold_override && confidence_threshold_override[0] != '\0') {
+        oss << ",\"confidence_threshold\":" << confidence_threshold_override;
+    }
     if (force_tools) {
         oss << ",\"force_tools\":true";
     }
@@ -300,18 +309,18 @@ bool run_handoff_mode_case(const char* model_path,
                            const std::string& messages_json,
                            const std::string& tools_json,
                            bool auto_handoff,
-                           bool expect_tool_signal) {
+                           bool expect_tool_signal,
+                           const char* confidence_threshold_override,
+                           int expected_handoff_when_cloud_key_available) {
     cactus_model_t model = cactus_init(model_path, nullptr, false);
     if (!model) {
         std::cerr << "[✗] Failed to initialize model for " << case_name << "\n";
         return false;
     }
 
-    StreamingData data;
-    data.model = model;
     char response[8192];
 
-    std::string options = build_handoff_options(auto_handoff, expect_tool_signal);
+    std::string options = build_handoff_options(auto_handoff, expect_tool_signal, confidence_threshold_override);
     int rc = cactus_complete(
         model,
         messages_json.c_str(),
@@ -319,8 +328,8 @@ bool run_handoff_mode_case(const char* model_path,
         sizeof(response),
         options.c_str(),
         tools_json.empty() ? nullptr : tools_json.c_str(),
-        stream_callback,
-        &data
+        nullptr,
+        nullptr
     );
 
     Metrics m;
@@ -332,6 +341,11 @@ bool run_handoff_mode_case(const char* model_path,
         m.function_calls.find("set_alarm") != std::string::npos;
 
     bool ok = (rc > 0);
+    const char* cloud_key = std::getenv("CACTUS_CLOUD_KEY");
+    const bool cloud_key_available = cloud_key && cloud_key[0] != '\0';
+    if (cloud_key_available && expected_handoff_when_cloud_key_available >= 0) {
+        ok = ok && (m.cloud_handoff == (expected_handoff_when_cloud_key_available != 0));
+    }
     if (!auto_handoff) ok = ok && !m.cloud_handoff;
     if (expect_tool_signal) {
         ok = ok && (has_function_calls || has_tool);
@@ -339,12 +353,17 @@ bool run_handoff_mode_case(const char* model_path,
         ok = ok && !m.response.empty();
     }
 
-    std::cout << "├─ " << case_name << " [" << (auto_handoff ? "handoff_on" : "handoff_off") << "]: "
+    std::cout << "├─ " << case_name << " [" << (auto_handoff ? "handoff_on" : "handoff_off");
+    if (confidence_threshold_override && confidence_threshold_override[0] != '\0') {
+        std::cout << ", threshold=" << confidence_threshold_override;
+    }
+    std::cout << "]: "
               << (ok ? "PASS" : "FAIL") << "\n";
-    std::cout << "│  cloud_handoff=" << (m.cloud_handoff ? "true" : "false")
+    std::cout << "│  handoff=" << (m.cloud_handoff ? "true" : "false")
+              << ", source=" << (m.cloud_handoff ? "cloud" : "local")
               << ", confidence=" << m.confidence << "\n";
-    std::cout << "│  response=\"" << m.response << "\"\n";
-    std::cout << "│  function_calls=" << m.function_calls << "\n";
+    std::cout << "│  response=\"" << truncate_for_log(m.response) << "\"\n";
+    std::cout << "│  function_calls=" << truncate_for_log(m.function_calls, 100) << "\n";
 
     cactus_destroy(model);
     return ok;

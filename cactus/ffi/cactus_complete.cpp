@@ -3,7 +3,6 @@
 #include "cactus_utils.h"
 #include "telemetry/telemetry.h"
 #include <chrono>
-#include <cstdlib>
 #include <cstring>
 #include <future>
 
@@ -21,17 +20,6 @@ std::string extract_last_user_query(const std::vector<ChatMessage>& messages) {
         }
     }
     return {};
-}
-
-std::string resolve_cloud_key_for_request(const char* cloud_key_param) {
-    const char* env_cloud = std::getenv("CACTUS_CLOUD_KEY");
-    std::string resolved_cloud_key;
-    if (cloud_key_param && *cloud_key_param) {
-        resolved_cloud_key = cloud_key_param;
-    } else if (env_cloud && *env_cloud) {
-        resolved_cloud_key = env_cloud;
-    }
-    return resolved_cloud_key;
 }
 
 void inject_rag_context(CactusModelHandle* handle, std::vector<ChatMessage>& messages) {
@@ -312,7 +300,7 @@ int cactus_complete(
             request.local_output = local_output_hint;
             request.local_function_calls = local_calls_hint;
             request.has_images = has_images;
-            request.cloud_key = resolve_cloud_key_for_request(nullptr);
+            request.cloud_key = resolve_cloud_api_key(nullptr);
 
             cloud_future_started = true;
             cloud_future = std::async(std::launch::async, [request, cloud_timeout_ms]() {

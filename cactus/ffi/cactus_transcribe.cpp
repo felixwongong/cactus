@@ -144,14 +144,17 @@ int cactus_transcribe(
 
         (void)telemetry_enabled;
 
+        const bool classifier_enabled = cactus::ffi::env_flag_enabled("CACTUS_ENABLE_AUDIO_HANDOFF_CLASSIFIER");
         bool is_moonshine = handle->model->get_config().model_type == cactus::engine::Config::ModelType::MOONSHINE;
         WhisperCloudHandoffModel* cloud_handoff_model = handle->cloud_handoff_model.get();
-        bool use_cloud_handoff_model = (!is_moonshine && cloud_handoff_model != nullptr && cloud_handoff_model->ready());
+        bool use_cloud_handoff_model = classifier_enabled && (!is_moonshine && cloud_handoff_model != nullptr && cloud_handoff_model->ready());
         if (!use_cloud_handoff_model) {
-            if (is_moonshine) {
-                CACTUS_LOG_WARN("cloud_handoff", "Cloud handoff classifier currently supports Whisper path only");
-            } else {
-                CACTUS_LOG_WARN("cloud_handoff", "Cloud handoff sidecar not loaded; classifier gate disabled");
+            if (classifier_enabled) {
+                if (is_moonshine) {
+                    CACTUS_LOG_WARN("cloud_handoff", "Cloud handoff classifier currently supports Whisper path only; using entropy fallback");
+                } else {
+                    CACTUS_LOG_WARN("cloud_handoff", "Cloud handoff sidecar not loaded; using entropy fallback");
+                }
             }
             if (require_cloud_handoff) {
                 const std::string err = "require_cloud_handoff=true but cloud_handoff classifier is unavailable";
@@ -287,7 +290,7 @@ int cactus_transcribe(
             try {
                 encoder_mean_features = handle->model->get_audio_embeddings(audio_buffer);
             } catch (const std::exception& e) {
-                CACTUS_LOG_WARN("cloud_handoff", "Failed to compute encoder mean features: " << e.what());
+                CACTUS_LOG_WARN("cloud_handoff", "Failed to compute encoder mean features; using entropy fallback: " << e.what());
                 use_cloud_handoff_model = false;
                 if (require_cloud_handoff) {
                     const std::string err = "require_cloud_handoff=true but failed to compute encoder features";
@@ -459,12 +462,14 @@ int cactus_transcribe(
             cleaned_text.erase(0, 1);
         }
 
-        bool cloud_handoff = cloud_handoff_classifier_fire;
+        bool entropy_handoff = false;
         if (!cleaned_text.empty() && cleaned_text.length() > 5) {
              if (cloud_handoff_threshold > 0.0f && max_token_entropy_norm > cloud_handoff_threshold) {
-                 cloud_handoff = true;
+                 entropy_handoff = true;
              }
         }
+        const bool cloud_handoff =
+            cloud_handoff_classifier_used ? cloud_handoff_classifier_fire : entropy_handoff;
 
         std::string json = construct_response_json(
             cleaned_text,

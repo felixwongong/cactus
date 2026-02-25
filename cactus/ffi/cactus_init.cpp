@@ -8,7 +8,6 @@
 #include <sstream>
 #include <dirent.h>
 #include <sys/stat.h>
-#include <cstdlib>
 #include <chrono>
 #include <filesystem>
 
@@ -20,8 +19,7 @@ static constexpr size_t RAG_MIN_CHUNK_TOKENS = 24;
 static constexpr size_t RAG_CHUNK_OVERLAP = 32;
 
 static void apply_no_cloud_telemetry_env() {
-    const char* env = std::getenv("CACTUS_NO_CLOUD_TELE");
-    if (env && env[0] != '\0' && !(env[0] == '0' && env[1] == '\0')) {
+    if (cactus::ffi::env_flag_enabled("CACTUS_NO_CLOUD_TELE")) {
         cactus::telemetry::setCloudDisabled(true);
     }
 }
@@ -417,16 +415,24 @@ cactus_model_t cactus_init(const char* model_path, const char* corpus_dir, bool 
             }
 
             const std::string cloud_handoff_path = model_path_str + "/cloud_handoff";
-            if (std::filesystem::exists(cloud_handoff_path) && std::filesystem::is_directory(cloud_handoff_path)) {
-                handle->cloud_handoff_model = std::make_unique<WhisperCloudHandoffModel>();
-                std::string cloud_handoff_error;
-                if (!handle->cloud_handoff_model->init(cloud_handoff_path, &cloud_handoff_error)) {
-                    last_error_message = "Failed to initialize cloud_handoff model at " + cloud_handoff_path + ": " + cloud_handoff_error;
-                    CACTUS_LOG_ERROR("init", last_error_message);
-                    delete handle;
-                    return nullptr;
+            if (cactus::ffi::env_flag_enabled("CACTUS_ENABLE_AUDIO_HANDOFF_CLASSIFIER")) {
+                if (std::filesystem::exists(cloud_handoff_path) && std::filesystem::is_directory(cloud_handoff_path)) {
+                    handle->cloud_handoff_model = std::make_unique<WhisperCloudHandoffModel>();
+                    std::string cloud_handoff_error;
+                    if (!handle->cloud_handoff_model->init(cloud_handoff_path, &cloud_handoff_error)) {
+                        CACTUS_LOG_WARN("cloud_handoff",
+                            "Failed to initialize cloud_handoff sidecar at " << cloud_handoff_path
+                            << ": " << cloud_handoff_error
+                            << ". Falling back to entropy-based audio handoff");
+                        handle->cloud_handoff_model.reset();
+                    } else {
+                        CACTUS_LOG_INFO("init", "Loaded cloud_handoff sidecar model from: " << cloud_handoff_path);
+                    }
+                } else {
+                    CACTUS_LOG_WARN("cloud_handoff",
+                        "CACTUS_ENABLE_AUDIO_HANDOFF_CLASSIFIER=1 but no cloud_handoff sidecar directory found at "
+                        << cloud_handoff_path << "; using entropy-based audio handoff");
                 }
-                CACTUS_LOG_INFO("init", "Loaded cloud_handoff sidecar model from: " << cloud_handoff_path);
             }
         }
 

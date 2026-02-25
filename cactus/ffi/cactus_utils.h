@@ -13,6 +13,7 @@
 #include <iostream>
 #include <filesystem>
 #include <cctype>
+#include <cstdlib>
 #include <memory>
 #include <atomic>
 #include <mutex>
@@ -108,6 +109,11 @@ inline cactus::engine::AudioProcessor::SpectrogramConfig get_whisper_spectrogram
 
 namespace cactus {
 namespace ffi {
+
+inline bool env_flag_enabled(const char* key) {
+    const char* value = std::getenv(key);
+    return value && value[0] != '\0' && !(value[0] == '0' && value[1] == '\0');
+}
 
 inline std::string generateUUID() {
 #ifdef __APPLE__
