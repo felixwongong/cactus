@@ -1,8 +1,19 @@
-# The Sweet Spot for Mac Code Use: Reviewing LFM2 24B MoE A2B with Cactus
+---
+title: "The Sweet Spot for Mac Code Use: Reviewing LFM2 24B MoE A2B with Cactus"
+description: "LFM2-24B-A2B features 24B total parameters but only activates 2B during inference. We break down the MoE architecture, GQA, gated convolutions, and show how to run it locally with Cactus."
+date: "2026-02-24"
+readTime: "10 min read"
+authors:
+  - name: "Noah Cylich"
+    role: "Co-founder"
+  - name: "Henry Ndubuaku"
+    role: "Co-founder & CTO"
+tags: ["Models", "Applications"]
+youtubeId: "-duR4gh_O10"
+featured: true
+---
 
-*By Noah Cylich and Henry Ndubuaku*
-
-[![Video Title](https://img.youtube.com/vi/-duR4gh_O10/maxresdefault.jpg)](https://youtu.be/-duR4gh_O10)
+[![Watch the video](https://img.youtube.com/vi/-duR4gh_O10/maxresdefault.jpg)](https://youtu.be/-duR4gh_O10)
 
 LFM2-24B-A2B is a really great next step to see over the LFM2-8B-A1B model. The model features 24B total parameters, but only activates a sparse subset of 2B during inference. This allows it to be competitive in inference speed to 2B dense models, while delivering far greater performance.
 
