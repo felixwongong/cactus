@@ -1558,14 +1558,6 @@ void compute_stft_node(GraphNode& node, const std::vector<std::unique_ptr<GraphN
         throw std::runtime_error("stft only supports FP16");
     }
 
-    const size_t N            = X.shape[0];
-    const size_t C_in         = X.shape[1];
-    const size_t L            = X.shape[2];
-    const size_t C_out        = W.shape[0];
-    const size_t K            = W.shape[2];
-    const size_t stride       = node.params.stride;
-    const size_t num_fft_bins = node.params.num_fft_bins;
-
     cactus_stft_f16(X.data_as<__fp16>(), W.data_as<__fp16>(),
                             Y.data_as<__fp16>(), N, L, C_in, C_out, K, stride, num_fft_bins);
 }
