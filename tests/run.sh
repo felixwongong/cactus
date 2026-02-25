@@ -7,7 +7,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 
 DEFAULT_MODEL="LiquidAI/LFM2-VL-450M"
-DEFAULT_TRANSCRIBE_MODEL="nvidia/parakeet-ctc-1.1b"
+DEFAULT_TRANSCRIBE_MODEL="openai/whisper-small"
 DEFAULT_VAD_MODEL="snakers4/silero-vad"
 
 MODEL_NAME="$DEFAULT_MODEL"
