@@ -779,13 +779,17 @@ bool test_mmap_gather() {
     return passed;
 }
 
-bool verify_quantized_embedding(Precision prec, size_t vocab_size, size_t hidden_dim,
-                                const std::vector<int8_t>& emb_rowmajor, const std::vector<int8_t>& idx_data) {
+bool verify_quantized_embedding(Precision prec, size_t vocab_size, size_t hidden_dim, const std::vector<int8_t>& idx_data) {
     CactusGraph graph;
 
     const size_t group_size = hidden_dim;
     const size_t num_groups = hidden_dim / group_size;
     const size_t BLOCK_SIZE = 4;
+
+    std::vector<int8_t> emb_rowmajor(vocab_size * hidden_dim);
+    for (size_t row = 0; row < vocab_size; ++row)
+        for (size_t k = 0; k < hidden_dim; ++k)
+            emb_rowmajor[row * hidden_dim + k] = static_cast<int8_t>((row * hidden_dim + k) % 13 - 6);
 
     std::vector<int8_t> emb_interleaved(vocab_size * hidden_dim);
     size_t N_blocks = vocab_size / BLOCK_SIZE;
@@ -848,12 +852,10 @@ bool verify_quantized_embedding(Precision prec, size_t vocab_size, size_t hidden
 
     __fp16* output = static_cast<__fp16*>(graph.get_output(embedded));
 
-    std::vector<float> expected = {
-        10, 11, 12, 13, 14, 15, 16, 17,  // idx 0
-        30, 31, 32, 33, 34, 35, 36, 37,  // idx 2
-        40, 41, 42, 43, 44, 45, 46, 47,  // idx 3
-        20, 21, 22, 23, 24, 25, 26, 27   // idx 1
-    };
+    std::vector<float> expected(idx_data.size() * hidden_dim);
+    for (size_t i = 0; i < idx_data.size(); ++i)
+        for (size_t k = 0; k < hidden_dim; ++k)
+            expected[i * hidden_dim + k] = static_cast<float>(emb_rowmajor[idx_data[i] * hidden_dim + k]);
 
     for (size_t i = 0; i < expected.size(); ++i) {
         float out_val = static_cast<float>(output[i]);
@@ -868,11 +870,7 @@ bool verify_quantized_embedding(Precision prec, size_t vocab_size, size_t hidden
 }
 
 bool test_int8_embedding_operation() {
-    std::vector<int8_t> emb_rowmajor(4 * 8);
-    for (size_t row = 0; row < 4; ++row)
-        for (size_t k = 0; k < 8; ++k)
-            emb_rowmajor[row * 8 + k] = static_cast<int8_t>((row + 1) * 10 + k);
-    return verify_quantized_embedding(Precision::INT8, 4, 8, emb_rowmajor, {0, 2, 3, 1});
+    return verify_quantized_embedding(Precision::INT8, 4, 32, {0, 2, 3, 1});
 }
 
 bool test_embedding_from_file() {
@@ -921,11 +919,7 @@ bool test_embedding_from_file() {
 }
 
 bool test_int4_embedding_operation() {
-    std::vector<int8_t> emb_rowmajor(4 * 8);
-    for (size_t row = 0; row < 4; ++row)
-        for (size_t k = 0; k < 8; ++k)
-            emb_rowmajor[row * 8 + k] = static_cast<int8_t>((row + 1) * 10 + k);
-    return verify_quantized_embedding(Precision::INT4, 4, 8, emb_rowmajor, {0, 2, 3, 1});
+    return verify_quantized_embedding(Precision::INT4, 4, 32, {0, 2, 3, 1});
 }
 
 bool test_stft() {
