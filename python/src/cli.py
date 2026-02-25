@@ -12,6 +12,7 @@ from pathlib import Path
 SCRIPT_DIR = Path(__file__).parent.resolve()
 PROJECT_ROOT = SCRIPT_DIR.parent.parent
 DEFAULT_MODEL_ID = "LiquidAI/LFM2.5-1.2B-Instruct"
+DEFAULT_TEST_TRANSCRIBE_MODEL_ID = "nvidia/parakeet-ctc-1.1b"
 
 RED = '\033[0;31m'
 GREEN = '\033[0;32m'
@@ -1147,13 +1148,13 @@ def cmd_test(args):
 
     if getattr(args, 'large', False):
         args.model = 'LiquidAI/LFM2.5-VL-1.6B'
-        args.transcribe_model = 'nvidia/parakeet-ctc-0.6b'
+        args.transcribe_model = DEFAULT_TEST_TRANSCRIBE_MODEL_ID
         print_color(BLUE, f"Using large models: {args.model}, {args.transcribe_model}, {args.vad_model}")
 
     if getattr(args, 'reconvert', False):
         for model_id in [
             getattr(args, 'model', 'LiquidAI/LFM2-VL-450M'),
-            getattr(args, 'transcribe_model', 'nvidia/parakeet-ctc-0.6b'),
+            getattr(args, 'transcribe_model', DEFAULT_TEST_TRANSCRIBE_MODEL_ID),
             getattr(args, 'vad_model', 'snakers4/silero-vad')
         ]:
             class DownloadArgs:
@@ -1510,8 +1511,8 @@ def create_parser():
 
     Optional flags:
     --model <model>                    default: LFM2-VL-450M
-    --transcribe_model <model>         default: nvidia/parakeet-ctc-0.6b
-    --large                            use larger models (LFM2.5-VL-1.6B + nvidia/parakeet-ctc-0.6b)
+    --transcribe_model <model>         default: nvidia/parakeet-ctc-1.1b
+    --large                            use larger models (LFM2.5-VL-1.6B + nvidia/parakeet-ctc-1.1b)
     --precision INT4|INT8|FP16         regenerates weights with precision
     --reconvert                        force model weights reconversion from source
     --no-rebuild                       skip building library and tests
@@ -1627,12 +1628,12 @@ def create_parser():
     test_parser = subparsers.add_parser('test', help='Run the test suite')
     test_parser.add_argument('--model', default='LiquidAI/LFM2-VL-450M',
                              help='Model to use for tests')
-    test_parser.add_argument('--transcribe_model', default='nvidia/parakeet-ctc-0.6b',
+    test_parser.add_argument('--transcribe_model', default=DEFAULT_TEST_TRANSCRIBE_MODEL_ID,
                              help='Transcribe model to use')
     test_parser.add_argument('--vad_model', default='snakers4/silero-vad',
                              help='VAD model to use')
     test_parser.add_argument('--large', action='store_true',
-                             help='Use larger models (LFM2.5-VL-1.6B + nvidia/parakeet-ctc-0.6b)')
+                             help='Use larger models (LFM2.5-VL-1.6B + nvidia/parakeet-ctc-1.1b)')
     test_parser.add_argument('--precision', choices=['INT4', 'INT8', 'FP16'],
                              help='Regenerate weights with this precision (deletes existing weights)')
     test_parser.add_argument('--no-rebuild', action='store_true',

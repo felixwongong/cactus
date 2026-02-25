@@ -586,8 +586,8 @@ int main(int argc, char* argv[]) {
         std::cerr << colored("Error: ", Color::RED + Color::BOLD) << "Missing model path\n";
         std::cerr << "Usage: " << argv[0] << " <model_path> [audio_file]\n";
         std::cerr << "\nModes:\n";
-        std::cerr << "  " << argv[0] << " weights/parakeet-ctc-0.6b              # Live microphone transcription\n";
-        std::cerr << "  " << argv[0] << " weights/parakeet-ctc-0.6b audio.wav    # Transcribe single file\n";
+        std::cerr << "  " << argv[0] << " weights/parakeet-ctc-1.1b              # Live microphone transcription\n";
+        std::cerr << "  " << argv[0] << " weights/parakeet-ctc-1.1b audio.wav    # Transcribe single file\n";
         return 1;
     }
 
