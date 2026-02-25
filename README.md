@@ -110,7 +110,7 @@ graph.hard_reset();
 | Pixel 6a (Google Tensor G1) | 218tps/44tps (395MB RAM)| 2.5s/36tps (631MB RAM) | 1.5s/189tps (111MB RAM)|
 | Galaxy A17 5G (Exxynox 1330) | 87tps/24tps (395MB RAM) | 4.1s/20tps (619MB RAM) | 4.2s/90tps (103MB RAM) |
 | CMF Phone 2 Pro (Mediatek Dimensity 7300) | 146tps/21tps (394MB RAM) | 2.4s/22tps (632MB RAM) | 1.9s/119tps (112MB RAM) |
-| Raspberry Pi 5 | - | - | - |
+| Raspberry Pi 5 | 205tps/27tps (373MB RAM) | 3.4s/31tps (657MB RAM) | 1.7s/118tps (214MB RAM) |
 
  ## Supported Models                                                                                                                                                     
                                                                                                                                                                           
