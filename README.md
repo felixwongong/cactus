@@ -92,27 +92,25 @@ void* output_data = graph.get_output(result);
 graph.hard_reset(); 
 ```
 
-## Benchmark (INT8)
+## Benchmark 
 
-| Device | LFM2.5-1.2B<br>(1k-Prefill/100-Decode) | LFM2.5-VL-1.6B<br>(256px-Latency & Decode) | Whisper-Small-244m<br>(30s-audio-Latency & Decode)
+**High-End Devices**
+| Device | LFM2.5-1.2B-INT4<br>(1k-Prefill/100-Decode) | LFM2.5-VL-1.6B-INT4<br>(256px-Latency & Decode) | Whisper-Small-244-INT8<br>(30s-audio-Latency & Decode)
 |--------|--------|--------|----------|
-| Mac M4 Pro | 582tps/77tps (76MB RAM) | 0.2s/76tps (87MB RAM) | 0.1s/119tps (73MB RAM) |
-| iPad/Mac M4 | 379tps/46tps (30MB RAM) | 0.2s/46tps (53MB RAM) | 0.2s/100tp (122MB RAM) |
-| iPad/Mac M2 | 315tps/42tps (181MB RAM) | 0.3s/42tps (426MB RAM) | 0.3s/86tps (160MB RAM) |
-| iPhone 17 Pro | 300tps/33tps (108MB RAM)| 0.3s/33tps (156MB RAM) | 0.3s/114tps (177MB RAM)|
-| Galaxy S25 Ultra | 226tps/36tps (1.2GB RAM) | 2.6s/33tps (2GB RAM) | 2.3s/90tps (363MB RAM) |
-| Pixel 10 Pro | - | - | - |
-| Vivo X200 Pro | - | - | - |
+| Mac M4 Pro | 582tps/100tps (76MB RAM) | 0.2s/98tps (87MB RAM) | 0.1s/119tps (73MB RAM) |
+| iPad/Mac M4 | 379tps/66tps (30MB RAM) | 0.2s/64tps (53MB RAM) | 0.2s/100tp (122MB RAM) |
+| iPad/Mac M2 | 315tps/60tps (181MB RAM) | 0.3s/58tps (426MB RAM) | 0.3s/86tps (160MB RAM) |
+| iPhone 17 Pro  | 327tps/48tps (108MB RAM)| 0.3s/48tps (156MB RAM) | 0.3s/114tps (177MB RAM)|
+| Galaxy S25 Ultra | 255tps/37tps (1.2GB RAM) | 2.6s/34tps (2GB RAM) | 2.3s/90tps (363MB RAM) |
 
-| Device | LFM2-350m<br>(1k-Prefill/100-Decode) | LFM2-VL-450m<br>(256px-Latency & Decode) | Moonshine-Base-67m<br>(30s-audio-Latency & Decode)
+**Budget Devices**
+| Device | LFM2-350m-INT4<br>(1k-Prefill/100-Decode) | LFM2-VL-450m-INT4<br>(256px-Latency & Decode) | Moonshine-Base-67m-INT8<br>(30s-audio-Latency & Decode)
 |--------|--------|--------|----------|
-| iPad/Mac M2 | 998tps/101tps (334MB RAM) | 0.2s/109tps (146MB RAM) | 0.3s/395tps (201MB RAM) |
-| iPad/Mac M1 | - | - | - |
-| iPhone 13 Mini | - | - | - |
-| Galaxy A56 | - | - | - |
-| Pixel 6a | 218tps/44tps (395MB RAM)| 2.5s/36tps (631MB RAM) | 1.5s/189tps (111MB RAM)|
-| CMF Phone 2 Pro | 146tps/21tps (394MB RAM) | 2.4s/22tps (632MB RAM) | 1.9s/119tps (112MB RAM) |
-| Raspberry Pi 5 | - | - | - |
+| iPhone 13 Mini (Apple A15) | 516tps/65tps (29MB RAM) | 0.3s/69tps (20MB RAM) | 0.7s/413tps (10MB RAM) |
+| Pixel 6a (Google Tensor G1) | 218tps/44tps (395MB RAM)| 2.5s/36tps (631MB RAM) | 1.5s/189tps (111MB RAM)|
+| Galaxy A17 5G (Exxynox 1330) | 87tps/24tps (395MB RAM) | 4.1s/20tps (619MB RAM) | 4.2s/90tps (103MB RAM) |
+| CMF Phone 2 Pro (Mediatek Dimensity 7300) | 146tps/21tps (394MB RAM) | 2.4s/22tps (632MB RAM) | 1.9s/119tps (112MB RAM) |
+| Raspberry Pi 5 | 205tps/27tps (373MB RAM) | 3.4s/31tps (657MB RAM) | 1.7s/118tps (214MB RAM) |
 
  ## Supported Models                                                                                                                                                     
                                                                                                                                                                           
@@ -123,6 +121,7 @@ graph.hard_reset();
 | LiquidAI/LFM2-350M | completion, tools, embed |                                                                                                               
 | Qwen/Qwen3-0.6B | completion, tools, embed |                                                                                                                  
 | LiquidAI/LFM2-700M | completion, tools, embed |                                                                                                               
+| LiquidAI/LFM2-8B-A1B | completion, tools, embed |                                                                                                                
 | google/gemma-3-1b-it | completion |                                                                                                                           
 | LiquidAI/LFM2.5-1.2B-Thinking | completion, tools, embed |                                                                                                    
 | LiquidAI/LFM2.5-1.2B-Instruct | completion, tools, embed |                                                                                                      
@@ -167,11 +166,11 @@ git clone https://github.com/cactus-compute/cactus && cd cactus && source ./setu
 ## Using in your apps 
 
 - [Python for Mac](/python/)
+- [Rust SDK](/rust/)
 - [React Native SDK](https://github.com/cactus-compute/cactus-react-native)
 - [Swift Multiplatform SDK](https://github.com/mhayes853/swift-cactus)
 - [Kotlin Multiplatform SDK](https://github.com/cactus-compute/cactus-kotlin)
 - [Flutter SDK](https://github.com/cactus-compute/cactus-flutter)
-- [Rust SDK](https://github.com/mrsarac/cactus-rs)
 
 ## Try demo apps 
 
@@ -179,8 +178,10 @@ git clone https://github.com/cactus-compute/cactus && cd cactus && source ./setu
 - [Android Demo](https://play.google.com/store/apps/details?id=com.rshemetsubuser.myapp)
 
 ## Maintaining Organisations
-1. [Cactus Compute, Inc](https://cactuscompute.com/) 
-2. [UCLA's BruinAI](https://bruinai.org/) 
+Developed by [Cactus Compute, Inc. (YC S25)](https://cactuscompute.com/), with maintenance from:
+
+1. [UCLA's BruinAI](https://bruinai.org/) 
+2. [Char (YC S25)](https://char.com/)
 3. [Yale's AI Society](https://www.yale-ai.org/team)
 4. [National Unoversity of Singapore's AI Society](https://www.nusaisociety.org/)
 5. [UC Irvine's AI@UCI](https://aiclub.ics.uci.edu/)

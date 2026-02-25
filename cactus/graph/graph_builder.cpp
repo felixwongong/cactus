@@ -285,6 +285,103 @@ size_t CactusGraph::topk(size_t input, size_t k) {
     return add_node(OpType::TOPK, {input}, output_shape, params);
 }
 
+size_t CactusGraph::moe_layer(size_t hidden,
+                              size_t routing_probs,
+                              size_t topk_indices,
+                              const std::vector<size_t>& w1_weights,
+                              const std::vector<size_t>& w3_weights,
+                              const std::vector<size_t>& w2_weights,
+                              size_t num_experts,
+                              size_t num_experts_per_tok,
+                              bool normalize_routing,
+                              float epsilon,
+                              float routed_scaling_factor) {
+    const auto& hidden_buffer = get_output_buffer(hidden);
+    const auto& routing_buffer = get_output_buffer(routing_probs);
+    const auto& topk_buffer = get_output_buffer(topk_indices);
+
+    if (hidden_buffer.shape.size() != 2) {
+        throw std::runtime_error("moe_layer expects [tokens, hidden_dim] for hidden");
+    }
+    if (routing_buffer.shape.size() != 2 || topk_buffer.shape.size() != 2) {
+        throw std::runtime_error("moe_layer expects 2D routing_probs and topk_indices");
+    }
+    if (routing_buffer.shape[0] != hidden_buffer.shape[0] || topk_buffer.shape[0] != hidden_buffer.shape[0]) {
+        throw std::runtime_error("moe_layer token dimension mismatch across inputs");
+    }
+    if (w1_weights.size() != num_experts || w3_weights.size() != num_experts || w2_weights.size() != num_experts) {
+        throw std::runtime_error("moe_layer expects num_experts weight tensors for each of w1, w3, w2");
+    }
+
+    std::vector<size_t> input_ids;
+    input_ids.reserve(3 + 3 * num_experts);
+    input_ids.push_back(hidden);
+    input_ids.push_back(routing_probs);
+    input_ids.push_back(topk_indices);
+    for (size_t i = 0; i < num_experts; ++i) input_ids.push_back(w1_weights[i]);
+    for (size_t i = 0; i < num_experts; ++i) input_ids.push_back(w3_weights[i]);
+    for (size_t i = 0; i < num_experts; ++i) input_ids.push_back(w2_weights[i]);
+
+    OpParams params;
+    params.num_experts = num_experts;
+    params.num_experts_per_tok = num_experts_per_tok;
+    params.normalize_routing = normalize_routing;
+    params.epsilon = epsilon;
+    params.scalar = routed_scaling_factor;
+    params.output_precision = hidden_buffer.precision;
+
+    return add_node(OpType::MOE_LAYER, input_ids, hidden_buffer.shape, params);
+}
+
+size_t CactusGraph::moe_layer(size_t hidden,
+                              size_t routing_probs,
+                              size_t topk_indices,
+                              const std::vector<size_t>& w1_weights,
+                              const std::vector<size_t>& w2_weights,
+                              size_t num_experts,
+                              size_t num_experts_per_tok,
+                              bool normalize_routing,
+                              float epsilon,
+                              float routed_scaling_factor,
+                              Activation activation) {
+    const auto& hidden_buffer = get_output_buffer(hidden);
+    const auto& routing_buffer = get_output_buffer(routing_probs);
+    const auto& topk_buffer = get_output_buffer(topk_indices);
+
+    if (hidden_buffer.shape.size() != 2) {
+        throw std::runtime_error("moe_layer expects [tokens, hidden_dim] for hidden");
+    }
+    if (routing_buffer.shape.size() != 2 || topk_buffer.shape.size() != 2) {
+        throw std::runtime_error("moe_layer expects 2D routing_probs and topk_indices");
+    }
+    if (routing_buffer.shape[0] != hidden_buffer.shape[0] || topk_buffer.shape[0] != hidden_buffer.shape[0]) {
+        throw std::runtime_error("moe_layer token dimension mismatch across inputs");
+    }
+    if (w1_weights.size() != num_experts || w2_weights.size() != num_experts) {
+        throw std::runtime_error("moe_layer expects num_experts weight tensors for each of w1, w2");
+    }
+
+    std::vector<size_t> input_ids;
+    input_ids.reserve(3 + 2 * num_experts);
+    input_ids.push_back(hidden);
+    input_ids.push_back(routing_probs);
+    input_ids.push_back(topk_indices);
+    for (size_t i = 0; i < num_experts; ++i) input_ids.push_back(w1_weights[i]);
+    for (size_t i = 0; i < num_experts; ++i) input_ids.push_back(w2_weights[i]);
+
+    OpParams params;
+    params.num_experts = num_experts;
+    params.num_experts_per_tok = num_experts_per_tok;
+    params.normalize_routing = normalize_routing;
+    params.epsilon = epsilon;
+    params.scalar = routed_scaling_factor;
+    params.output_precision = hidden_buffer.precision;
+    params.moe_gated = false;
+    params.activation = activation;
+
+    return add_node(OpType::MOE_LAYER, input_ids, hidden_buffer.shape, params);
+}
+
 size_t CactusGraph::layernorm(size_t input, size_t weight, size_t bias, float epsilon) {
     OpParams params{.epsilon = epsilon};
     return add_node(OpType::LAYERNORM, {input, weight, bias}, {}, params);
@@ -820,12 +917,12 @@ size_t CactusGraph::lstm_cell(size_t input, size_t h_prev, size_t c_prev, size_t
     return add_node(OpType::LSTM_CELL, {input, h_prev, c_prev, weight_ih, weight_hh, bias_ih, bias_hh}, output_shape, {});
 }
 
-size_t CactusGraph::stft_magnitude(size_t input, size_t weight, size_t stride, size_t num_fft_bins) {
+size_t CactusGraph::stft(size_t input, size_t weight, size_t stride, size_t num_fft_bins) {
     const auto& xin = get_output_buffer(input);
     const auto& w = get_output_buffer(weight);
 
-    if (xin.shape.size() != 3) throw std::runtime_error("stft_magnitude expects N,C,L input");
-    if (w.shape.size() != 3) throw std::runtime_error("stft_magnitude weight expects [C_out, C_in, K]");
+    if (xin.shape.size() != 3) throw std::runtime_error("stft expects N,C,L input");
+    if (w.shape.size() != 3) throw std::runtime_error("stft weight expects [C_out, C_in, K]");
 
     size_t N = xin.shape[0];
     size_t L = xin.shape[2];
@@ -836,7 +933,7 @@ size_t CactusGraph::stft_magnitude(size_t input, size_t weight, size_t stride, s
     params.stride = stride;
     params.num_fft_bins = num_fft_bins;
 
-    return add_node(OpType::STFT_MAGNITUDE, {input, weight}, {N, num_fft_bins, L_out}, params);
+    return add_node(OpType::STFT, {input, weight}, {N, 2 * num_fft_bins, L_out}, params);
 }
 
 size_t CactusGraph::concat(size_t input1, size_t input2, int axis) {
@@ -957,6 +1054,10 @@ size_t CactusGraph::scalar_cos(size_t input) {
 
 size_t CactusGraph::scalar_sin(size_t input) {
     return add_node(OpType::SCALAR_SIN, {input}, {});
+}
+
+size_t CactusGraph::scalar_log(size_t input) {
+    return add_node(OpType::SCALAR_LOG, {input}, {});
 }
 
 size_t CactusGraph::relu(size_t input) {

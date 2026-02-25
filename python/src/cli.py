@@ -7,6 +7,7 @@ import json
 import subprocess
 import shutil
 import platform
+import json
 from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).parent.resolve()
@@ -47,8 +48,18 @@ def check_command(cmd):
 
 
 def run_command(cmd, cwd=None, check=True):
-    """Run a shell command and optionally exit on failure."""
-    result = subprocess.run(cmd, cwd=cwd, shell=isinstance(cmd, str))
+    """Run a script or command and optionally exit on failure.
+
+    Args:
+        cmd: Script path (str) or command list. String paths are executed
+             directly without shell interpretation to handle spaces safely.
+        cwd: Working directory for the command.
+        check: If True, exit on non-zero return code.
+    """
+    # Convert string paths to list to avoid shell=True and handle spaces safely
+    if isinstance(cmd, str):
+        cmd = [cmd]
+    result = subprocess.run(cmd, cwd=cwd)
     if check and result.returncode != 0:
         sys.exit(result.returncode)
     return result
@@ -155,7 +166,7 @@ def cmd_download(args):
     model_id = args.model_id
     weights_dir = get_weights_dir(model_id)
     reconvert = getattr(args, 'reconvert', False)
-    precision = getattr(args, 'precision', 'INT8')
+    precision = getattr(args, 'precision', 'INT4')
 
     if reconvert and weights_dir.exists():
         print_color(YELLOW, f"Removing cached weights for reconversion...")
@@ -190,13 +201,66 @@ def cmd_download(args):
 
     weights_dir.mkdir(parents=True, exist_ok=True)
 
-    precision = getattr(args, 'precision', 'INT8')
+    precision = getattr(args, 'precision', 'INT4')
     cache_dir = getattr(args, 'cache_dir', None)
     token = getattr(args, 'token', None)
 
     print(f"Converting {model_id} to {precision}...")
 
     from transformers import AutoTokenizer, AutoModelForCausalLM, AutoModel
+
+    def _download_config_json(repo_id):
+        from huggingface_hub import hf_hub_download
+        config_path = hf_hub_download(repo_id=repo_id, filename="config.json", cache_dir=cache_dir, token=token)
+        with open(config_path, 'r', encoding='utf-8') as fh:
+            return json.load(fh)
+
+    def _load_raw_hf_state_dict(repo_id):
+        from huggingface_hub import snapshot_download
+        from safetensors.torch import load_file as load_safetensors_file
+
+        snapshot_path = Path(snapshot_download(
+            repo_id=repo_id,
+            cache_dir=cache_dir,
+            token=token,
+            allow_patterns=["*.safetensors", "*.safetensors.index.json", "*.bin", "*.bin.index.json"],
+        ))
+
+        index_candidates = [
+            "model.safetensors.index.json",
+            "pytorch_model.bin.index.json",
+        ]
+
+        shard_files = []
+        for index_name in index_candidates:
+            index_path = snapshot_path / index_name
+            if index_path.exists():
+                with open(index_path, 'r', encoding='utf-8') as fh:
+                    index_data = json.load(fh)
+                shard_files = sorted(set(index_data.get("weight_map", {}).values()))
+                if shard_files:
+                    break
+
+        if not shard_files:
+            shard_files = sorted([p.name for p in snapshot_path.glob("*.safetensors")])
+        if not shard_files:
+            shard_files = sorted([p.name for p in snapshot_path.glob("*.bin")])
+
+        if not shard_files:
+            raise RuntimeError("No checkpoint shard files found in HuggingFace snapshot.")
+
+        merged_state_dict = {}
+        for shard_name in shard_files:
+            shard_path = snapshot_path / shard_name
+            if shard_name.endswith(".safetensors"):
+                shard_state = load_safetensors_file(str(shard_path), device="cpu")
+            elif shard_name.endswith(".bin"):
+                shard_state = torch.load(str(shard_path), map_location="cpu")
+            else:
+                continue
+            merged_state_dict.update(shard_state)
+
+        return merged_state_dict
 
     try:
         from transformers import Lfm2VlForConditionalGeneration
@@ -338,11 +402,37 @@ def cmd_download(args):
             return 0
 
         else:
-            tokenizer = AutoTokenizer.from_pretrained(model_id, cache_dir=cache_dir, trust_remote_code=True, token=token)
+            config_json = _download_config_json(model_id)
+            model_type = str(config_json.get('model_type', '')).lower()
+
             try:
-                model = AutoModelForCausalLM.from_pretrained(model_id, cache_dir=cache_dir, trust_remote_code=True, token=token)
-            except ValueError:
-                model = AutoModel.from_pretrained(model_id, cache_dir=cache_dir, trust_remote_code=True, token=token)
+                tokenizer = AutoTokenizer.from_pretrained(model_id, cache_dir=cache_dir, trust_remote_code=True, token=token)
+            except Exception as tok_err:
+                if "TokenizersBackend" in str(tok_err) or "does not exist or is not currently imported" in str(tok_err):
+                    from transformers import PreTrainedTokenizerFast
+                    print("  Note: Using PreTrainedTokenizerFast fallback for invalid tokenizer_class...")
+                    tokenizer = PreTrainedTokenizerFast.from_pretrained(model_id, cache_dir=cache_dir, token=token)
+                else:
+                    raise
+
+            if model_type == 'lfm2_moe':
+                print("  Note: Loading raw checkpoint tensors for lfm2_moe conversion...")
+                raw_state_dict = _load_raw_hf_state_dict(model_id)
+
+                class _RawModelWrapper:
+                    def __init__(self, state_dict, config):
+                        self._state_dict = state_dict
+                        self.config = config
+
+                    def state_dict(self):
+                        return self._state_dict
+
+                model = _RawModelWrapper(raw_state_dict, config_json)
+            else:
+                try:
+                    model = AutoModelForCausalLM.from_pretrained(model_id, cache_dir=cache_dir, trust_remote_code=True, token=token)
+                except ValueError:
+                    model = AutoModel.from_pretrained(model_id, cache_dir=cache_dir, trust_remote_code=True, token=token)
 
         config = convert_hf_model_weights(model, weights_dir, precision, args)
 
@@ -981,6 +1071,8 @@ def cmd_transcribe(args):
     cmd_args = [str(asr_binary), str(weights_dir)]
     if audio_file:
         cmd_args.append(audio_file)
+    if hasattr(args, 'language') and args.language:
+        cmd_args.extend(['--language', args.language])
 
     os.execv(str(asr_binary), cmd_args)
 
@@ -1035,7 +1127,7 @@ def cmd_eval(args):
 
     dlargs = DownloadArgs()
     dlargs.model_id = model_id
-    dlargs.precision = getattr(args, 'precision', 'INT8')
+    dlargs.precision = getattr(args, 'precision', 'INT4')
     dlargs.cache_dir = getattr(args, 'cache_dir', None)
     dlargs.token = getattr(args, 'token', None)
     dlargs.reconvert = getattr(args, 'reconvert', False)
@@ -1165,6 +1257,9 @@ def cmd_test(args):
             dl_args.cache_dir = None
             if args.precision:
                 dl_args.precision = args.precision
+            else:
+                is_asr = 'whisper' in model_id.lower() or 'moonshine' in model_id.lower() or 'silero-vad' in model_id.lower()
+                dl_args.precision = 'INT8' if is_asr else 'INT4'
             if args.token:
                 dl_args.token = args.token
             if cmd_download(dl_args) != 0:
@@ -1194,7 +1289,6 @@ def cmd_test(args):
         cmd.append("--ios")
     if args.only:
         cmd.extend(["--only", args.only])
-
     env = os.environ.copy()
     if getattr(args, 'enable_telemetry', False):
         env.pop("CACTUS_NO_CLOUD_TELE", None)
@@ -1452,7 +1546,7 @@ def create_parser():
                                        auto downloads and spins up
 
     Optional flags:
-    --precision INT4|INT8|FP16         default: INT8
+    --precision INT4|INT8|FP16         default: INT4
     --token <token>                    HF token (for gated models)
     --reconvert                        force model weights reconversion from source
 
@@ -1479,7 +1573,7 @@ def create_parser():
                                        see supported weights on ReadMe
 
     Optional flags:
-    --precision INT4|INT8|FP16         quantization (default: INT8)
+    --precision INT4|INT8|FP16         quantization (default: INT4)
     --token <token>                    HuggingFace API token
     --reconvert                        force model weights reconversion from source
 
@@ -1489,7 +1583,7 @@ def create_parser():
                                        supports LoRA adapter merging
 
     Optional flags:
-    --precision INT4|INT8|FP16   quantization (default: INT8)
+    --precision INT4|INT8|FP16   quantization (default: INT4)
     --lora <path>                      LoRA adapter path to merge
     --token <token>                    HuggingFace API token
 
@@ -1516,7 +1610,7 @@ def create_parser():
     --precision INT4|INT8|FP16         regenerates weights with precision
     --reconvert                        force model weights reconversion from source
     --no-rebuild                       skip building library and tests
-    --only <test_name>                 run specific test (engine, graph, index, kernel, kv_cache, performance, etc)
+    --only <test_name>                 run specific test (llm, vlm, stt, embed, rag, graph, index, kernel, kv_cache, performance, etc)
     --ios                              run on connected iPhone
     --android                          run on connected Android
 
@@ -1557,8 +1651,8 @@ def create_parser():
     download_parser = subparsers.add_parser('download', help='Download and convert model weights')
     download_parser.add_argument('model_id', nargs='?', default=DEFAULT_MODEL_ID,
                                  help=f'HuggingFace model ID (default: {DEFAULT_MODEL_ID})')
-    download_parser.add_argument('--precision', choices=['INT4', 'INT8', 'FP16'], default='INT8',
-                                 help='Quantization precision (default: INT8)')
+    download_parser.add_argument('--precision', choices=['INT4', 'INT8', 'FP16'], default='INT4',
+                                 help='Quantization precision (default: INT4)')
     download_parser.add_argument('--cache-dir', help='Cache directory for HuggingFace models')
     download_parser.add_argument('--token', help='HuggingFace API token')
     download_parser.add_argument('--reconvert', action='store_true',
@@ -1577,8 +1671,8 @@ def create_parser():
     run_parser = subparsers.add_parser('run', help='Build, download (if needed), and run chat')
     run_parser.add_argument('model_id', nargs='?', default=DEFAULT_MODEL_ID,
                             help=f'HuggingFace model ID (default: {DEFAULT_MODEL_ID})')
-    run_parser.add_argument('--precision', choices=['INT4', 'INT8', 'FP16'], default='INT8',
-                            help='Quantization precision (default: INT8)')
+    run_parser.add_argument('--precision', choices=['INT4', 'INT8', 'FP16'], default='INT4',
+                            help='Quantization precision (default: INT4)')
     run_parser.add_argument('--cache-dir', help='Cache directory for HuggingFace models')
     run_parser.add_argument('--token', help='HuggingFace API token')
     run_parser.add_argument('--no-cloud-tele', action='store_true',
@@ -1591,6 +1685,8 @@ def create_parser():
                                    help=f'HuggingFace model ID (default: {DEFAULT_ASR_MODEL_ID})')
     transcribe_parser.add_argument('--file', dest='audio_file', default=None,
                                    help='Audio file to transcribe (WAV format). Omit for live microphone.')
+    transcribe_parser.add_argument('--language', default='en',
+                                   help='Language code for transcription (default: en). Examples: es, fr, de, zh, ja')
     transcribe_parser.add_argument('--precision', choices=['INT4', 'INT8', 'FP16'], default='INT8',
                                    help='Quantization precision (default: INT8)')
     transcribe_parser.add_argument('--cache-dir', help='Cache directory for HuggingFace models')
@@ -1611,8 +1707,8 @@ def create_parser():
     eval_parser = subparsers.add_parser('eval', help='Run evaluation scripts outside the cactus submodule')
     eval_parser.add_argument('model_id', nargs='?', default=DEFAULT_MODEL_ID,
                              help=f'HuggingFace model ID (default: {DEFAULT_MODEL_ID})')
-    eval_parser.add_argument('--precision', choices=['INT4', 'INT8', 'FP16'], default='INT8',
-                             help='Quantization precision (default: INT8)')
+    eval_parser.add_argument('--precision', choices=['INT4', 'INT8', 'FP16'], default='INT4',
+                             help='Quantization precision (default: INT4)')
     eval_parser.add_argument('--cache-dir', help='Cache directory for HuggingFace models')
     eval_parser.add_argument('--token', help='HuggingFace API token')
     eval_parser.add_argument('--tools', action='store_true', help='Run tools evals (default)')
@@ -1643,7 +1739,7 @@ def create_parser():
                              help='Run tests on Android')
     test_parser.add_argument('--ios', action='store_true',
                              help='Run tests on iOS')
-    test_parser.add_argument('--only', help='Only run the specified test (engine, graph, index, kernel, kv_cache, performance, etc)')
+    test_parser.add_argument('--only', help='Only run the specified test (llm, vlm, stt, embed, rag, graph, index, kernel, kv_cache, performance, etc)')
     test_parser.add_argument('--enable-telemetry', action='store_true',
                              help='Enable cloud telemetry (disabled by default in tests)')
     test_parser.add_argument('--reconvert', action='store_true',
@@ -1661,8 +1757,8 @@ def create_parser():
     convert_parser.add_argument('model_name', help='HuggingFace model name')
     convert_parser.add_argument('output_dir', nargs='?', default=None,
                                 help='Output directory (default: weights/<model_name>)')
-    convert_parser.add_argument('--precision', choices=['INT4', 'INT8', 'FP16'], default='INT8',
-                                help='Quantization precision (default: INT8)')
+    convert_parser.add_argument('--precision', choices=['INT4', 'INT8', 'FP16'], default='INT4',
+                                help='Quantization precision (default: INT4)')
     convert_parser.add_argument('--cache-dir', help='Cache directory for HuggingFace models')
     convert_parser.add_argument('--token', help='HuggingFace API token')
     convert_parser.add_argument('--lora', help='Path to LoRA adapter (local path or HuggingFace ID) to merge before conversion')

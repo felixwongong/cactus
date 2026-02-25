@@ -1,5 +1,7 @@
 #include "graph.h"
+#include "../kernel/kernel_utils.h"
 #include <algorithm>
+#include <cassert>
 #include <chrono>
 #include <cmath>
 #include <cstring>
@@ -42,7 +44,7 @@ extern void compute_groupnorm_node(GraphNode& node, const std::vector<std::uniqu
 extern void compute_rope_gptj_node(GraphNode& node, const std::vector<std::unique_ptr<GraphNode>>& nodes, const std::unordered_map<size_t, size_t>& node_index_map);
 extern void shrink_thread_local_buffers();
 extern void compute_lstm_cell_node(GraphNode& node, const std::vector<std::unique_ptr<GraphNode>>& nodes, const std::unordered_map<size_t, size_t>& node_index_map);
-extern void compute_stft_magnitude_node(GraphNode& node, const std::vector<std::unique_ptr<GraphNode>>& nodes, const std::unordered_map<size_t, size_t>& node_index_map);
+extern void compute_stft_node(GraphNode& node, const std::vector<std::unique_ptr<GraphNode>>& nodes, const std::unordered_map<size_t, size_t>& node_index_map);
 
 extern void compute_transpose_node(GraphNode& node, const std::vector<std::unique_ptr<GraphNode>>& nodes, const std::unordered_map<size_t, size_t>& node_index_map);
 extern void compute_gather_node(GraphNode& node, const std::vector<std::unique_ptr<GraphNode>>& nodes, const std::unordered_map<size_t, size_t>& node_index_map);
@@ -55,6 +57,7 @@ extern void compute_bilinear_interpolation_node(GraphNode& node, const std::vect
 extern void compute_sample_node(GraphNode& node, const std::vector<std::unique_ptr<GraphNode>>& nodes, const std::unordered_map<size_t, size_t>& node_index_map);
 extern void compute_topk_node(GraphNode& node, const std::vector<std::unique_ptr<GraphNode>>& nodes, const std::unordered_map<size_t, size_t>& node_index_map);
 extern void compute_scatter_topk_node(GraphNode& node, const std::vector<std::unique_ptr<GraphNode>>& nodes, const std::unordered_map<size_t, size_t>& node_index_map);
+extern void compute_moe_layer_node(GraphNode& node, const std::vector<std::unique_ptr<GraphNode>>& nodes, const std::unordered_map<size_t, size_t>& node_index_map);
 extern void compute_persistent_node(GraphNode& node, const std::vector<std::unique_ptr<GraphNode>>& nodes, const std::unordered_map<size_t, size_t>& node_index_map);
 extern void compute_quantize_activations_node(GraphNode& node, const std::vector<std::unique_ptr<GraphNode>>& nodes, const std::unordered_map<size_t, size_t>& node_index_map);
 
@@ -66,16 +69,17 @@ static const char* op_type_names[] = {
     "SUM", "MEAN", "VARIANCE", "MIN", "MAX",
     "RMS_NORM", "ROPE", "ROPE_GPTJ", "SOFTMAX", "ATTENTION", "ATTENTION_INT8_HYBRID", "REL_POS_BIAS", "CONV1D_CAUSAL", "CONV1D_K3", "CONV1D_K7S3", "CONV1D", "CONV1D_SAME_DEPTHWISE_K9", "CONV1D_POINTWISE", "CONV2D_K3S2P1", "CONV2D_DEPTHWISE_K3S2P1", "CONV2D_POINTWISE_1X1", "GLU", "BATCHNORM",
     "SCALAR_ADD", "SCALAR_SUBTRACT", "SCALAR_MULTIPLY", "SCALAR_DIVIDE",
-    "SCALAR_EXP", "SCALAR_SQRT", "SCALAR_COS", "SCALAR_SIN",
+    "SCALAR_EXP", "SCALAR_SQRT", "SCALAR_COS", "SCALAR_SIN", "SCALAR_LOG",
     "RELU", "SILU", "GELU", "GELU_ERF", "SIGMOID", "TANH",
     "SAMPLE", "CONCAT",
     "SCATTER_TOPK",
     "TOPK", "LAYERNORM", "GROUPNORM",
+    "MOE_LAYER",
     "INDEX",
     "PERSISTENT",
     "QUANTIZE_ACTIVATIONS",
     "LSTM_CELL",
-    "STFT_MAGNITUDE"
+    "STFT"
 };
 
 static const char* get_op_name(OpType op) {
@@ -103,6 +107,7 @@ void compute_node_optimized(GraphNode& node, const std::vector<std::unique_ptr<G
         case OpType::SCALAR_SQRT:
         case OpType::SCALAR_COS:
         case OpType::SCALAR_SIN:
+        case OpType::SCALAR_LOG:
             compute_unary_op_node(node, nodes, node_index_map);
             break;
 
@@ -259,6 +264,10 @@ void compute_node_optimized(GraphNode& node, const std::vector<std::unique_ptr<G
             compute_scatter_topk_node(node, nodes, node_index_map);
             break;
 
+        case OpType::MOE_LAYER:
+            compute_moe_layer_node(node, nodes, node_index_map);
+            break;
+
         case OpType::QUANTIZE_ACTIVATIONS:
             compute_quantize_activations_node(node, nodes, node_index_map);
             break;
@@ -267,8 +276,8 @@ void compute_node_optimized(GraphNode& node, const std::vector<std::unique_ptr<G
             compute_lstm_cell_node(node, nodes, node_index_map);
             break;
 
-        case OpType::STFT_MAGNITUDE:
-            compute_stft_magnitude_node(node, nodes, node_index_map);
+        case OpType::STFT:
+            compute_stft_node(node, nodes, node_index_map);
             break;
 
         default:
@@ -368,11 +377,11 @@ void CactusGraph::execute(const std::string& profile_file) {
 
     if (enable_profiling) {
         *out << "=== Graph Execution Profile ===" << std::endl;
-        *out << std::left << std::setw(15) << "Operation"
+        *out << std::left << std::setw(24) << "Operation"
              << std::setw(12) << "Time (ms)"
              << std::setw(20) << "Output Shape"
              << "Backend" << std::endl;
-        *out << std::string(60, '-') << std::endl;
+        *out << std::string(72, '-') << std::endl;
     }
 
     for (size_t node_idx = 0; node_idx < nodes_.size(); ++node_idx) {
@@ -469,6 +478,19 @@ void CactusGraph::execute(const std::string& profile_file) {
                             if (i > 0) weights_str += ",";
                             weights_str += std::to_string(static_cast<int>(int8_data[i]));
                         }
+                    } else if (weight_node->output_buffer.precision == Precision::INT4) {
+                        const uint8_t* packed = weight_node->output_buffer.data_as<uint8_t>();
+                        int8x16_t high, low;
+                        unpack_int4_as_int8x16x2(packed, high, low);
+                        int8_t low_lanes[16], high_lanes[16];
+                        vst1q_s8(low_lanes, low);
+                        vst1q_s8(high_lanes, high);
+
+                        for (size_t i = 0; i < num_values; ++i) {
+                            if (i > 0) weights_str += ",";
+                            int8_t val = (i < 16) ? low_lanes[i] : high_lanes[i - 16];
+                            weights_str += std::to_string(static_cast<int>(val));
+                        }
                     }
 
                     if (weight_node->output_buffer.total_size > 5) {
@@ -478,7 +500,7 @@ void CactusGraph::execute(const std::string& profile_file) {
                 }
             }
 
-            *out << std::left << std::setw(15) << get_op_name(node->op_type)
+            *out << std::left << std::setw(24) << get_op_name(node->op_type)
                  << std::setw(12) << std::fixed << std::setprecision(3) << ms
                  << std::setw(20) << shape_str
                  << values_str << weights_str << std::endl;
@@ -651,6 +673,23 @@ void CactusGraph::execute(const std::string& profile_file) {
                         for (size_t i = 0; i < elements_to_process; ++i) {
                             accumulate(static_cast<float>(typed[i]), i);
                         }
+                    } else if (buffer.precision == Precision::INT4) {
+                        assert(elements_to_process % 32 == 0 && "INT4 precision capture requires element count to be multiple of 32");
+                        const uint8_t* packed_ptr = reinterpret_cast<const uint8_t*>(data_ptr);
+                        for (size_t i = 0; i < elements_to_process; i+=32) {
+                            int8x16_t high, low;
+                            unpack_int4_as_int8x16x2(packed_ptr + i / 2, high, low);
+                            int8_t high_lanes[16], low_lanes[16];
+                            vst1q_s8(high_lanes, high);
+                            vst1q_s8(low_lanes, low);
+
+                            for (size_t j = 0; j < 16; ++j) {
+                                accumulate(static_cast<float>(low_lanes[j]), i + j);
+                            }
+                            for (size_t j = 0; j < 16; ++j) {
+                                accumulate(static_cast<float>(high_lanes[j]), i + 16 + j);
+                            }
+                        }
                     } else {
                         has_data = false;
                     }
@@ -665,7 +704,7 @@ void CactusGraph::execute(const std::string& profile_file) {
                     if (bin_file.is_open()) {
                         size_t bytes_to_write = buffer.byte_size;
                         if (truncated) {
-                             bytes_to_write = buffer.total_size * PrecisionTraits::size_of(buffer.precision);
+                             bytes_to_write = PrecisionTraits::packed_size_of(buffer.precision, elements_to_process);
                         }
                         bin_file.write(reinterpret_cast<const char*>(data_ptr), bytes_to_write);
                     }
@@ -733,7 +772,7 @@ void CactusGraph::execute(const std::string& profile_file) {
         auto total_duration = std::chrono::duration_cast<std::chrono::microseconds>(total_end - total_start);
         double total_ms = total_duration.count() / 1000.0;
 
-        *out << std::string(60, '-') << std::endl;
+        *out << std::string(72, '-') << std::endl;
         *out << "Total execution time: " << std::fixed << std::setprecision(3) << total_ms << " ms" << std::endl;
         *out << "================================" << std::endl;
 

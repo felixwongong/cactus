@@ -157,20 +157,23 @@ bool test_scalar_math_functions() {
     size_t sqrt_result = fixture.graph().scalar_sqrt(input_a);
     size_t cos_result = fixture.graph().scalar_cos(input_a);
     size_t sin_result = fixture.graph().scalar_sin(input_a);
+    size_t log_result = fixture.graph().scalar_log(input_a);
 
-    std::vector<__fp16> input_data = {0.0f, 1.0f, 4.0f};
+    std::vector<__fp16> input_data = {0.5f, 1.0f, 4.0f};
     fixture.set_input_data(input_a, input_data);
     fixture.execute();
 
-    std::vector<__fp16> exp_expected = {1.0f, 2.71828f, 54.5982f};
-    std::vector<__fp16> sqrt_expected = {0.0f, 1.0f, 2.0f};
-    std::vector<__fp16> cos_expected = {1.0f, 0.54030f, -0.65364f};
-    std::vector<__fp16> sin_expected = {0.0f, 0.84147f, -0.75680f};
+    std::vector<__fp16> exp_expected = {1.64872f, 2.71828f, 54.5982f};
+    std::vector<__fp16> sqrt_expected = {0.70711f, 1.0f, 2.0f};
+    std::vector<__fp16> cos_expected = {0.87758f, 0.54030f, -0.65364f};
+    std::vector<__fp16> sin_expected = {0.47943f, 0.84147f, -0.75680f};
+    std::vector<__fp16> log_expected = {-0.69315f, 0.0f, 1.38629f};
 
     return fixture.verify_output(exp_result, exp_expected, 0.01f) &&
            fixture.verify_output(sqrt_result, sqrt_expected, 0.01f) &&
            fixture.verify_output(cos_result, cos_expected, 0.01f) &&
-           fixture.verify_output(sin_result, sin_expected, 0.01f);
+           fixture.verify_output(sin_result, sin_expected, 0.01f) &&
+           fixture.verify_output(log_result, log_expected, 0.01f);
 }
 
 bool test_rms_norm() {
@@ -528,7 +531,7 @@ bool test_precision_conversion() {
     size_t fp32_converted_id = fixture.graph().precision_cast(fp16_id, Precision::FP32);
     fixture.execute();
 
-    float* fp32_data = static_cast<float*>(fixture.graph().get_output(fp32_converted_id));
+    auto* fp32_data = static_cast<float*>(fixture.graph().get_output(fp32_converted_id));
 
     for (size_t i = 0; i < 4; ++i) {
         assert(std::abs(fp32_data[i] - static_cast<float>(data[i])) < 1e-3f);
@@ -966,6 +969,51 @@ bool test_embedding_from_file() {
     return passed;
 }
 
+bool test_stft() {
+    const size_t N = 2, C_in = 1, L = 8, K = 4, stride = 2, num_fft_bins = 2;
+    const size_t C_out = 2 * num_fft_bins;
+    const size_t out_len = (L - K) / stride + 1;
+
+    std::vector<__fp16> weight_data = {
+        (__fp16) 1, (__fp16) 1, (__fp16) 1, (__fp16) 1,
+        (__fp16) 1, (__fp16) 0, (__fp16)-1, (__fp16) 0,
+        (__fp16) 0, (__fp16) 0, (__fp16) 0, (__fp16) 0,
+        (__fp16) 0, (__fp16)-1, (__fp16) 0, (__fp16) 1,
+    };
+    std::vector<__fp16> input_data = {
+        (__fp16)1, (__fp16)2, (__fp16)3, (__fp16)4, (__fp16)5, (__fp16)6, (__fp16)7, (__fp16)8,
+        (__fp16)0, (__fp16)1, (__fp16)0, (__fp16)-1, (__fp16)0, (__fp16)1, (__fp16)0, (__fp16)-1,
+    };
+
+    TestUtils::FP16TestFixture fx;
+    size_t inp = fx.create_input({N, C_in, L});
+    size_t wt  = fx.create_input({C_out, C_in, K});
+    size_t out = fx.graph().stft(inp, wt, stride, num_fft_bins);
+
+    if (fx.graph().get_output_buffer(out).shape != std::vector<size_t>{N, C_out, out_len}) return false;
+
+    fx.set_input_data(inp, input_data);
+    fx.set_input_data(wt, weight_data);
+    fx.execute();
+
+    const __fp16* cplx = fx.get_output(out);
+    const size_t out_bs = C_out * out_len;
+    const float tol = 0.1f;
+
+    for (size_t t = 0; t < out_len; ++t) {
+        if (std::abs((float)cplx[1 * out_len + t] - (-2.0f)) > tol) return false;
+        if (std::abs((float)cplx[(1 + num_fft_bins) * out_len + t] - 2.0f) > tol) return false;
+    }
+
+    const float batch1_bin1_imag[3] = {-2.0f, 2.0f, -2.0f};
+    for (size_t t = 0; t < out_len; ++t) {
+        if (std::abs((float)cplx[out_bs + 1 * out_len + t] - 0.0f) > tol) return false;
+        if (std::abs((float)cplx[out_bs + (1 + num_fft_bins) * out_len + t] - batch1_bin1_imag[t]) > tol) return false;
+    }
+
+    return true;
+}
+
 int main() {
     TestUtils::TestRunner runner("Graph Operations Tests");
 
@@ -1009,7 +1057,7 @@ int main() {
     runner.run_test("Memory-Mapped Gather", test_mmap_gather());
     runner.run_test("Embedding Operation", test_embedding_operation());
     runner.run_test("Embedding from File", test_embedding_from_file());
-
+    runner.run_test("STFT Complex", test_stft());
     runner.print_summary();
     return runner.all_passed() ? 0 : 1;
 }
