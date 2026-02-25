@@ -873,6 +873,10 @@ bool test_int8_embedding_operation() {
     return verify_quantized_embedding(Precision::INT8, 4, 32, {0, 2, 3, 1});
 }
 
+bool test_int4_embedding_operation() {
+    return verify_quantized_embedding(Precision::INT4, 4, 32, {0, 2, 3, 1});
+}
+
 bool test_embedding_from_file() {
     CactusGraph graph;
 
@@ -916,10 +920,6 @@ bool test_embedding_from_file() {
     std::remove(temp_file.c_str());
 
     return passed;
-}
-
-bool test_int4_embedding_operation() {
-    return verify_quantized_embedding(Precision::INT4, 4, 32, {0, 2, 3, 1});
 }
 
 bool test_stft() {
@@ -1007,8 +1007,8 @@ int main() {
     runner.run_test("Gather FP16", test_gather_fp16());
     runner.run_test("Memory-Mapped Gather", test_mmap_gather());
     runner.run_test("Embedding Operation", test_int8_embedding_operation());
-    runner.run_test("Embedding from File", test_embedding_from_file());
     runner.run_test("INT4 Embedding Operation", test_int4_embedding_operation());
+    runner.run_test("Embedding from File", test_embedding_from_file());
     runner.run_test("STFT Complex", test_stft());
     runner.print_summary();
     return runner.all_passed() ? 0 : 1;
