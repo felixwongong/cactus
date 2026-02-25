@@ -100,7 +100,7 @@ struct Config {
     uint32_t num_decoder_layers = 0;
     float partial_rotary_factor = 0.0f;
 
-    enum class ModelType {QWEN = 0, GEMMA = 1, NOMIC = 3, LFM2 = 5, SIGLIP2 = 6, WHISPER = 7, MOONSHINE = 8, SILERO_VAD = 9};
+    enum class ModelType {QWEN = 0, GEMMA = 1, NOMIC = 3, LFM2 = 5, SIGLIP2 = 6, WHISPER = 7, MOONSHINE = 8, SILERO_VAD = 9, PARAKEET = 10};
     ModelType model_type = ModelType::QWEN;
 
     enum class ModelVariant {DEFAULT = 0, VLM = 1, EXTRACT = 2, RAG = 3};
@@ -123,6 +123,7 @@ struct Config {
 
     std::vector<std::string> layer_types;
     size_t conv_L_cache = 0;
+    size_t num_mel_bins = 80;
 
     bool from_json(const std::string& json_path);
     std::string to_json() const;
@@ -689,6 +690,7 @@ public:
         float reference = 1.0f;
         float min_value = 1e-10f;
         bool remove_dc_offset = false;
+        bool hann_periodic = true;
     };
 
     AudioProcessor();
