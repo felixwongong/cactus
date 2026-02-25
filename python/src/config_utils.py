@@ -62,8 +62,6 @@ def detect_model_type(cfg, config, output_dir=None):
         return 'lfm2'
     elif 'qwen' in model_type_str:
         return 'qwen'
-    elif normalized_model_type in {'cloud_handoff', 'moonshine_cloud_handoff'}:
-        return 'cloud_handoff'
     elif 'moonshine' in model_type_str:
         return 'moonshine'
     elif 'llama' in model_type_str:
@@ -75,6 +73,8 @@ def detect_model_type(cfg, config, output_dir=None):
         return 'bert'
     elif 'whisper' in model_type_str:
         return 'whisper'
+    elif normalized_model_type == 'cloud_handoff':
+        return 'cloud_handoff'
     else:
         if model_type_str:
             print(f"  Warning: Unknown model type '{model_type_str}', defaulting to 'qwen'")

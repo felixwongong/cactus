@@ -98,7 +98,6 @@ int cactus_transcribe(
         auto* handle = static_cast<CactusModelHandle*>(model);
         std::lock_guard<std::mutex> lock(handle->model_mutex);
         handle->should_stop = false;
-        handle->model->reset_cache();
 
         float temperature, top_p, confidence_threshold;
         size_t top_k, max_tokens, tool_rag_top_k;
@@ -108,7 +107,7 @@ int cactus_transcribe(
         float cloud_handoff_threshold = handle->model->get_config().default_cloud_handoff_threshold;
         const std::string opts = options_json ? options_json : "";
         parse_options_json(
-            options_json ? options_json : "", temperature,
+            opts, temperature,
             top_p, top_k, max_tokens, stop_sequences,
             force_tools, tool_rag_top_k, confidence_threshold,
             include_stop_sequences, use_vad, telemetry_enabled
@@ -145,19 +144,6 @@ int cactus_transcribe(
         (void)telemetry_enabled;
 
         bool is_moonshine = handle->model->get_config().model_type == cactus::engine::Config::ModelType::MOONSHINE;
-        WhisperCloudHandoffModel* cloud_handoff_model = handle->cloud_handoff_model.get();
-        bool use_cloud_handoff_model = (!is_moonshine &&
-                                        use_cloud_handoff_classifier &&
-                                        cloud_handoff_model != nullptr);
-        if (!use_cloud_handoff_model) {
-            if (!use_cloud_handoff_classifier) {
-                CACTUS_LOG_INFO("cloud_handoff", "Cloud handoff classifier disabled by use_cloud_handoff_classifier=false");
-            } else if (is_moonshine) {
-                CACTUS_LOG_WARN("cloud_handoff", "Cloud handoff classifier currently supports Whisper path only");
-            } else {
-                CACTUS_LOG_WARN("cloud_handoff", "Cloud handoff sidecar not loaded; classifier gate disabled");
-            }
-        }
 
         std::vector<float> audio_buffer;
         if (audio_file_path == nullptr) {
@@ -209,11 +195,12 @@ int cactus_transcribe(
         }
 
         std::vector<float> waveform_features = audio_buffer;
+
         if (!is_moonshine) {
-            const AudioProcessor::SpectrogramConfig whisper_spectrogram_cfg = get_whisper_spectrogram_config();
+            auto cfg = get_whisper_spectrogram_config();
             AudioProcessor ap;
-            ap.init_mel_filters(whisper_spectrogram_cfg.n_fft / 2 + 1, 80, 0.0f, 8000.0f, WHISPER_SAMPLE_RATE);
-            std::vector<float> mel = ap.compute_spectrogram(audio_buffer, whisper_spectrogram_cfg);
+            ap.init_mel_filters(cfg.n_fft / 2 + 1, 80, 0.0f, 8000.0f, WHISPER_SAMPLE_RATE);
+            std::vector<float> mel = ap.compute_spectrogram(audio_buffer, cfg);
             audio_buffer = normalize_mel(mel, 80);
         }
 
@@ -228,35 +215,28 @@ int cactus_transcribe(
 
         float cloud_handoff_classifier_prob = 0.0f;
         bool cloud_handoff_classifier_fire = false;
-        bool cloud_handoff_classifier_ran = false;
-        std::vector<float> encoder_mean_features;
-        if (use_cloud_handoff_model) {
-            try {
-                encoder_mean_features = handle->model->get_audio_embeddings(audio_buffer);
-            } catch (const std::exception& e) {
-                std::string cloud_handoff_error = "failed to compute encoder mean features: " + std::string(e.what());
-                CACTUS_LOG_WARN("cloud_handoff", "Failed to run cloud_handoff classifier: " << cloud_handoff_error);
-                use_cloud_handoff_model = false;
-            }
-        }
 
-        if (use_cloud_handoff_model) {
-            std::string cloud_handoff_error;
-            if (!cloud_handoff_model->predict_handoff_from_audio(
-                    waveform_features,
-                    encoder_mean_features,
-                    &cloud_handoff_classifier_fire,
-                    &cloud_handoff_classifier_prob,
-                    &cloud_handoff_error)) {
-                CACTUS_LOG_WARN("cloud_handoff", "Failed to run cloud_handoff classifier: " << cloud_handoff_error);
-                use_cloud_handoff_model = false;
-            } else {
-                cloud_handoff_classifier_ran = true;
-                CACTUS_LOG_DEBUG(
-                    "cloud_handoff",
-                    "classifier_prob=" << cloud_handoff_classifier_prob
-                        << ", threshold=" << cloud_handoff_model->threshold()
-                        << ", fire=" << (cloud_handoff_classifier_fire ? "true" : "false"));
+        if (use_cloud_handoff_classifier) {
+            auto* cloud_handoff_model = static_cast<WhisperCloudHandoffModel*>(handle->cloud_handoff_model.get());
+            try {
+                std::vector<float> encoder_mean_features = handle->model->get_audio_embeddings(audio_buffer);
+                std::string cloud_handoff_error;
+                if (!cloud_handoff_model->predict_handoff_from_audio(
+                        waveform_features,
+                        encoder_mean_features,
+                        &cloud_handoff_classifier_fire,
+                        &cloud_handoff_classifier_prob,
+                        &cloud_handoff_error)) {
+                    CACTUS_LOG_WARN("cloud_handoff", "Failed to run cloud_handoff classifier: " << cloud_handoff_error);
+                } else {
+                    CACTUS_LOG_DEBUG(
+                        "cloud_handoff",
+                        "classifier_prob=" << cloud_handoff_classifier_prob
+                            << ", threshold=" << cloud_handoff_model->threshold()
+                            << ", fire=" << (cloud_handoff_classifier_fire ? "true" : "false"));
+                }
+            } catch (const std::exception& e) {
+                CACTUS_LOG_WARN("cloud_handoff", "Failed to run cloud_handoff classifier: " << e.what());
             }
         }
 
@@ -377,13 +357,10 @@ int cactus_transcribe(
             cleaned_text.erase(0, 1);
         }
 
-        bool cloud_handoff = false;
-        if (use_cloud_handoff_classifier) {
-            cloud_handoff = cloud_handoff_classifier_fire;
-            if (!cleaned_text.empty() && cleaned_text.length() > 5) {
-                if (cloud_handoff_threshold > 0.0f && max_token_entropy_norm > cloud_handoff_threshold) {
-                    cloud_handoff = true;
-                }
+        bool cloud_handoff = cloud_handoff_classifier_fire;
+        if (!cleaned_text.empty() && cleaned_text.length() > 5) {
+            if (cloud_handoff_threshold > 0.0f && max_token_entropy_norm > cloud_handoff_threshold) {
+                cloud_handoff = true;
             }
         }
 
@@ -398,7 +375,6 @@ int cactus_transcribe(
             completion_tokens,
             confidence,
             cloud_handoff,
-            cloud_handoff_classifier_ran,
             cloud_handoff_classifier_prob);
 
         if (json.size() >= buffer_size) {

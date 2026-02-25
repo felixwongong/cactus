@@ -745,6 +745,7 @@ public:
         float fmin = 80.0f,
         float fmax = 300.0f,
         float energy_gate = 0.01f) const;
+
     static std::vector<float> compute_irfft(
         const std::vector<float>& complex_input,
         size_t n,

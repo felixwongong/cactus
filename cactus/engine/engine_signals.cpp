@@ -1369,6 +1369,8 @@ float AudioProcessor::overlap_yin_conf_p95(
         conf.data());
 
     return percentile_linear(std::move(conf), 0.95f);
+}
+
 std::vector<float> AudioProcessor::compute_irfft(
     const std::vector<float>& complex_input,
     size_t n,

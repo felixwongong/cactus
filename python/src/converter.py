@@ -399,20 +399,18 @@ def convert_hf_model_weights(model, output_dir, precision='INT8', args=None):
             except Exception as e:
                 print(f"Warning: Failed to bundle VAD weights: {e}")
 
-    if detected_model_type == 'whisper':
-        cloud_precision = "FP16" if precision in ("INT8", "INT4") else precision
-        print("Bundling Whisper cloud-handoff weights...")
-        if bundle_whisper_cloud_handoff_weights(
-            output_dir=output_dir,
-            precision=cloud_precision,
-            args=args,
-        ):
-            print("Whisper cloud-handoff weights bundled successfully")
+    if detected_model_type in ['whisper']:
+        print("Bundling cloud-handoff weights...")
+        try:
+            bundle_whisper_cloud_handoff_weights(output_dir, precision, args)
+            print("Cloud-handoff weights bundled successfully")
+        except Exception as e:
+            print(f"Warning: Failed to bundle cloud-handoff weights: {e}")
 
     return model_config
 
 
-def convert_silero_vad_weights(model, output_dir, precision="FP16", args=None):
+def convert_silero_vad_weights(model, output_dir, precision, args=None):
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -489,7 +487,7 @@ def convert_silero_vad_weights(model, output_dir, precision="FP16", args=None):
     return config
 
 
-def convert_cloud_handoff_weights(state_dict, output_dir, precision="FP16", args=None, meta=None):
+def convert_cloud_handoff_weights(state_dict, output_dir, precision, args=None, meta=None):
     """Convert Cloud Handoff classifier weights to Cactus binary format."""
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -504,7 +502,7 @@ def convert_cloud_handoff_weights(state_dict, output_dir, precision="FP16", args
             save_tensor_with_header(
                 state_dict[name],
                 output_dir / save_name,
-                precision=precision,
+                precision="FP16",
                 transpose=False,
                 args=args,
                 model_type="cloud_handoff",
@@ -515,7 +513,7 @@ def convert_cloud_handoff_weights(state_dict, output_dir, precision="FP16", args
             save_tensor_with_header(
                 state_dict[name],
                 output_dir / save_name,
-                precision=precision,
+                precision="FP16",
                 transpose=False,
                 args=args,
                 model_type="cloud_handoff",
@@ -525,8 +523,8 @@ def convert_cloud_handoff_weights(state_dict, output_dir, precision="FP16", args
     fc2 = state_dict["classifier.fc2.weight"]
 
     config = {
-        "model_type": "cloud-handoff",
-        "model_variant": "cloud-handoff",
+        "model_type": "cloud_handoff",
+        "model_variant": "cloud_handoff",
         "num_layers": 0,
         "tie_word_embeddings": False,
         "cloud_handoff_enabled": True,
