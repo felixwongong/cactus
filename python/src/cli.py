@@ -158,15 +158,6 @@ def download_from_hf(model_id, weights_dir, precision):
 def cmd_download(args):
     """Download model weights. By default downloads pre-converted weights from Cactus-Compute."""
     model_id = args.model_id
-
-    if "cloud-handoff" in model_id.lower() or "cloud_handoff" in model_id.lower():
-        print_color(
-            RED,
-            "Cloud Handoff repos are sidecar classifiers. Convert a Whisper model; "
-            "cloud_handoff is bundled automatically.",
-        )
-        return 1
-
     weights_dir = get_weights_dir(model_id)
     reconvert = getattr(args, 'reconvert', False)
     precision = getattr(args, 'precision', 'INT4')
