@@ -38,7 +38,7 @@ def convert_hf_model_weights(model, output_dir, precision='INT8', args=None):
     cfg = text_cfg if text_cfg is not None else config
 
     model_type_str = cfg_get(cfg, 'model_type', cfg_get(config, 'model_type', '')).lower()
-    tie_word_embeddings = cfg_get(config, 'tie_word_embeddings', None)
+    tie_word_embeddings = cfg_get(cfg, 'tie_word_embeddings', cfg_get(config, 'tie_word_embeddings', None))
     if tie_word_embeddings is None:
         # HF snapshots for lfm2_moe may omit this field; runtime expects tied embeddings by default.
         tie_word_embeddings = (model_type_str == 'lfm2_moe')
@@ -145,7 +145,18 @@ def convert_hf_model_weights(model, output_dir, precision='INT8', args=None):
                 save_tensor_with_header(state_dict[name], output_dir / file_name, precision, stats_tracker=quantization_stats, args=args, model_type=detected_model_type)
                 saved_tensor_full_names.add(name)
 
-    if not tie_word_embeddings or is_vlm:
+    if tie_word_embeddings:
+        src = output_dir / "token_embeddings.weights"
+        dst = output_dir / "output_weight.weights"
+        if src.exists():
+            if dst.exists():
+                dst.unlink()
+            os.link(src, dst)
+        if embedding_found:
+            for name in OUTPUT_NAMES:
+                if name in state_dict:
+                    saved_tensor_full_names.add(name)
+    else:
         for name in OUTPUT_NAMES:
             if name in state_dict:
                 tensor = state_dict[name]
