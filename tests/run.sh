@@ -226,5 +226,5 @@ if [ "$EXHAUSTIVE_MODE" = true ]; then
     echo ""
     echo "Step 5: Running exhaustive tests..."
     echo "------------------------------------"
-    exec "$SCRIPT_DIR/golden/generate_golden.sh"
+    exec "$SCRIPT_DIR/golden/generate_exhaustive_golden.sh"
 fi
