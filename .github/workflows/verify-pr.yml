@@ -147,6 +147,7 @@ jobs:
       - name: Run unit tests
         env:
           CACTUS_INDEX_PATH: ${{ runner.temp }}/cactus_index
+          CACTUS_NO_CLOUD_TELE: "1"
         run: |
           mkdir -p "$CACTUS_INDEX_PATH"
           FAILED=0
@@ -166,6 +167,8 @@ jobs:
         with:
           clean: false
       - name: Run model loading tests
+        env:
+          CACTUS_NO_CLOUD_TELE: "1"
         run: ./tests/build/test_model_loading
 
   model-tests:
@@ -220,6 +223,8 @@ jobs:
         with:
           clean: false
       - name: Run ground truth test
+        env:
+          CACTUS_NO_CLOUD_TELE: "1"
         run: |
           export ${{ matrix.env_var }}="${{ github.workspace }}/weights/${{ matrix.model_dir }}"
           export CACTUS_TEST_ASSETS="${{ github.workspace }}/tests/assets"

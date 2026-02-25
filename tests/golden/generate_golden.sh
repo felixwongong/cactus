@@ -48,6 +48,7 @@ for entry in "${MODELS[@]}"; do
     MODEL_DIR=$(echo "$model" | sed 's|.*/||' | tr '[:upper:]' '[:lower:]')
     MODEL_PATH="$PROJECT_ROOT/weights/$MODEL_DIR"
 
+    export CACTUS_NO_CLOUD_TELE=1
     export CACTUS_GOLDEN_GENERATE=1
     export CACTUS_TEST_GOLDEN_FILE="$GOLDEN_DIR/golden.json"
     export CACTUS_TEST_GOLDEN_FAMILY="$family"
