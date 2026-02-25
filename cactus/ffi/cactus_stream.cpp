@@ -547,11 +547,7 @@ int cactus_stream_transcribe_process(
         const int result = cactus_transcribe(
             handle->model_handle,
             nullptr,
-<<<<<<< HEAD
             (is_moonshine || is_parakeet) ? "" : "<|startoftranscript|><|en|><|transcribe|><|notimestamps|>",
-=======
-            prompt.c_str(),
->>>>>>> main
             handle->transcribe_response_buffer,
             sizeof(handle->transcribe_response_buffer),
             nullptr,
