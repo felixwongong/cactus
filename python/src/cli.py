@@ -13,7 +13,7 @@ from pathlib import Path
 SCRIPT_DIR = Path(__file__).parent.resolve()
 PROJECT_ROOT = SCRIPT_DIR.parent.parent
 DEFAULT_MODEL_ID = "LiquidAI/LFM2.5-1.2B-Instruct"
-DEFAULT_TEST_TRANSCRIBE_MODEL_ID = "nvidia/parakeet-ctc-1.1b"
+DEFAULT_TEST_TRANSCRIBE_MODEL_ID = "openai/whisper-small"
 
 RED = '\033[0;31m'
 GREEN = '\033[0;32m'
