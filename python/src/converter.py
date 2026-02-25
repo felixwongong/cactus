@@ -1,7 +1,5 @@
 import os
-import json
 import re
-import shutil
 from pathlib import Path
 
 try:
@@ -9,15 +7,11 @@ try:
 except ImportError:
     torch = None
 
-from huggingface_hub import snapshot_download
-from safetensors.torch import load_file
-
 from .tensor_io import save_tensor_with_header, create_quantization_stats, print_quantization_summary, format_config_value
 from .config_utils import cfg_get, detect_model_type, extract_base_config, extract_vision_config, extract_lfm2_config, is_vlm_model, extract_moonshine_config
 from .weight_patterns import (
     EMBED_NAMES, OUTPUT_NAMES, OUTPUT_NORM_NAMES, LAYER_PREFIXES,
     VISION_ITEMS, PROJECTOR_WEIGHTS, WHISPER_GLOBAL_WEIGHTS, MOONSHINE_GLOBAL_WEIGHTS,
-    CLOUD_HANDOFF_GLOBAL_WEIGHTS, CLOUD_HANDOFF_STATS_WEIGHTS,
     get_layer_weight_patterns, get_vision_layer_weights
 )
 
@@ -404,16 +398,6 @@ def convert_hf_model_weights(model, output_dir, precision='INT8', args=None):
             except Exception as e:
                 print(f"Warning: Failed to bundle VAD weights: {e}")
 
-    if detected_model_type == 'whisper':
-        cloud_precision = "FP16" if precision in ("INT8", "INT4") else precision
-        print("Bundling Whisper cloud_handoff weights...")
-        if bundle_whisper_cloud_handoff_weights(
-            output_dir=output_dir,
-            precision=cloud_precision,
-            args=args,
-        ):
-            print("Whisper cloud_handoff weights bundled successfully")
-
     return model_config
 
 
@@ -493,159 +477,3 @@ def convert_silero_vad_weights(model, output_dir, precision="FP16", args=None):
 
     return config
 
-
-def convert_cloud_handoff_weights(state_dict, output_dir, precision="FP16", args=None, meta=None):
-    """Convert Cloud Handoff classifier weights to Cactus binary format."""
-    output_dir = Path(output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    quantization_stats = create_quantization_stats()
-
-    required = {"classifier.fc1.weight", "classifier.fc2.weight"}
-    missing = [name for name in required if name not in state_dict]
-    if missing:
-        raise ValueError(f"Missing required Cloud Handoff weights: {', '.join(sorted(missing))}")
-
-    for name, save_name in CLOUD_HANDOFF_GLOBAL_WEIGHTS:
-        if name in state_dict:
-            save_tensor_with_header(
-                state_dict[name],
-                output_dir / save_name,
-                precision=precision,
-                transpose=False,
-                stats_tracker=quantization_stats,
-                args=args,
-                model_type="cloud_handoff",
-            )
-
-    for name, save_name in CLOUD_HANDOFF_STATS_WEIGHTS:
-        if name in state_dict:
-            save_tensor_with_header(
-                state_dict[name],
-                output_dir / save_name,
-                precision="FP32",
-                transpose=False,
-                stats_tracker=quantization_stats,
-                args=args,
-                model_type="cloud_handoff",
-            )
-
-    fc1 = state_dict["classifier.fc1.weight"]
-    fc2 = state_dict["classifier.fc2.weight"]
-
-    config = {
-        "model_type": "cloud_handoff",
-        "model_variant": "cloud_handoff",
-        "num_layers": 0,
-        "tie_word_embeddings": False,
-        "cloud_handoff_enabled": True,
-        "cloud_handoff_has_feature_stats": (
-            "feature_mean" in state_dict and "feature_std" in state_dict
-        ),
-        "precision": "FP16" if precision in ("INT8", "INT4") else precision,
-    }
-
-    if hasattr(fc1, "shape") and len(fc1.shape) == 2:
-        config["cloud_handoff_input_dim"] = int(fc1.shape[1])
-        config["cloud_handoff_hidden_dim"] = int(fc1.shape[0])
-        config["hidden_dim"] = int(fc1.shape[1])
-
-    if hasattr(fc2, "shape") and len(fc2.shape) == 2:
-        config["cloud_handoff_output_dim"] = int(fc2.shape[0])
-
-    if isinstance(meta, dict):
-        for key in ("threshold", "dropout", "activation", "input_dim", "hidden_dim"):
-            if key in meta:
-                config[f"cloud_handoff_{key}"] = meta[key]
-
-    config_path = output_dir / "config.txt"
-    with open(config_path, "w") as f:
-        for key, value in config.items():
-            f.write(f"{key}={format_config_value(value)}\n")
-
-    print_quantization_summary(quantization_stats, args)
-    return config
-
-
-def bundle_whisper_cloud_handoff_weights(output_dir, precision="FP16", args=None):
-    """Download and bundle Whisper cloud_handoff sidecar weights."""
-    if snapshot_download is None or load_file is None:
-        print("Warning: huggingface_hub/safetensors missing, skipping cloud_handoff bundling")
-        return False
-
-    repo_id = "Cactus-Compute/whisper-cloud-handoff"
-
-    snapshot_kwargs = {
-        "repo_id": repo_id,
-        "repo_type": "model",
-        "allow_patterns": [
-            "classifier_head.safetensors",
-            "classifier_meta.json",
-            "classifier_features.json",
-            "feature_stats.safetensors",
-        ],
-    }
-    if args is not None:
-        token = getattr(args, "token", None)
-        cache_dir = getattr(args, "cache_dir", None)
-        revision = getattr(args, "revision", None)
-        if token:
-            snapshot_kwargs["token"] = token
-        if cache_dir:
-            snapshot_kwargs["cache_dir"] = cache_dir
-        if revision:
-            snapshot_kwargs["revision"] = revision
-
-    try:
-        local_dir = Path(snapshot_download(**snapshot_kwargs))
-    except Exception as e:
-        print(f"Warning: Failed to download cloud_handoff repo {repo_id}: {e}")
-        return False
-
-    head_path = local_dir / "classifier_head.safetensors"
-    if not head_path.exists():
-        print(f"Warning: Missing classifier_head.safetensors in {repo_id}, skipping")
-        return False
-
-    state_dict = {}
-    try:
-        state_dict.update(load_file(str(head_path)))
-    except Exception as e:
-        print(f"Warning: Failed to load cloud_handoff head from {repo_id}: {e}")
-        return False
-
-    stats_path = local_dir / "feature_stats.safetensors"
-    if stats_path.exists():
-        try:
-            state_dict.update(load_file(str(stats_path)))
-        except Exception as e:
-            print(f"Warning: Failed to load cloud_handoff feature stats from {repo_id}: {e}")
-            return False
-
-    meta = {}
-    meta_path = local_dir / "classifier_meta.json"
-    if meta_path.exists():
-        try:
-            meta = json.loads(meta_path.read_text())
-        except Exception:
-            print("Warning: Could not parse classifier_meta.json for cloud_handoff; continuing")
-
-    cloud_handoff_output_dir = Path(output_dir) / "cloud_handoff"
-    try:
-        convert_cloud_handoff_weights(
-            state_dict=state_dict,
-            output_dir=cloud_handoff_output_dir,
-            precision=precision,
-            args=args,
-            meta=meta,
-        )
-    except Exception as e:
-        print(f"Warning: Failed to convert cloud_handoff weights from {repo_id}: {e}")
-        return False
-
-    for filename in ("classifier_meta.json", "classifier_features.json"):
-        src = local_dir / filename
-        if src.exists():
-            shutil.copy2(src, cloud_handoff_output_dir / filename)
-
-    return True
