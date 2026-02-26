@@ -105,6 +105,7 @@ struct Config {
     uint32_t subsampling_conv_stride = 0;
     uint32_t subsampling_conv_channels = 0;
     uint32_t subsampling_factor = 0;
+    uint32_t num_mel_bins = 80;
     std::string encoder_hidden_act = "silu";
 
     enum class ModelType {QWEN = 0, GEMMA = 1, NOMIC = 3, LFM2 = 5, SIGLIP2 = 6, WHISPER = 7, MOONSHINE = 8, SILERO_VAD = 9, PARAKEET = 10};
