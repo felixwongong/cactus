@@ -128,7 +128,7 @@ bool Model::init_internal(CactusGraph* gb, const std::string& model_folder, size
         attention_scale_ = 1.0f / std::sqrt(static_cast<float>(config_.attention_head_dim));
     }
 
-    Precision cache_precision = (config_.model_type == Config::ModelType::WHISPER || config_.model_type == Config::ModelType::MOONSHINE)
+    Precision cache_precision = (config_.model_type == Config::ModelType::WHISPER || config_.model_type == Config::ModelType::MOONSHINE || config_.model_type == Config::ModelType::PARAKEET)
                                ? Precision::FP16
                                : Precision::INT8;
     kv_cache_.init(config_.num_layers, context_size, config_.attention_kv_heads, config_.attention_head_dim, cache_precision);
@@ -514,8 +514,13 @@ bool Config::from_json(const std::string& config_path) {
         else if (key == "num_encoder_layers") num_encoder_layers = static_cast<uint32_t>(std::stoul(value));
         else if (key == "num_decoder_layers") num_decoder_layers = static_cast<uint32_t>(std::stoul(value));
         else if (key == "partial_rotary_factor") partial_rotary_factor = std::stof(value);
-        else if (key == "num_mel_bins") num_mel_bins = static_cast<size_t>(std::stoul(value));
         else if (key == "pad_token_id") pad_token_id = static_cast<uint32_t>(std::stoul(value));
+        else if (key == "conv_kernel_size") conv_kernel_size = static_cast<uint32_t>(std::stoul(value));
+        else if (key == "subsampling_conv_kernel_size") subsampling_conv_kernel_size = static_cast<uint32_t>(std::stoul(value));
+        else if (key == "subsampling_conv_stride") subsampling_conv_stride = static_cast<uint32_t>(std::stoul(value));
+        else if (key == "subsampling_conv_channels") subsampling_conv_channels = static_cast<uint32_t>(std::stoul(value));
+        else if (key == "subsampling_factor") subsampling_factor = static_cast<uint32_t>(std::stoul(value));
+        else if (key == "num_mel_bins") num_mel_bins = static_cast<uint32_t>(std::stoul(value));
         else if (key == "encoder_hidden_act") encoder_hidden_act = value;
     }
 
@@ -545,6 +550,12 @@ bool Config::from_json(const std::string& config_path) {
         default_top_p = 0.0f;
         default_top_k = 0;
         default_max_tps = 6.5f;
+        default_cloud_handoff_threshold = 0.35f;
+    } else if (model_type == ModelType::PARAKEET) {
+        default_temperature = 0.0f;
+        default_top_p = 0.0f;
+        default_top_k = 0;
+        default_max_tps = 8.0f;
         default_cloud_handoff_threshold = 0.35f;
     }
 
