@@ -4,7 +4,6 @@
 #include "bench_common.h"
 #include "../test_utils.h"
 
-#include <functional>
 #include <string>
 #include <vector>
 
@@ -16,18 +15,14 @@ struct BackendVariant {
     const char* name;
     const char* framework;
     QuantCategory category;
+    size_t max_M = 0;
 
     void* (*prepare_weights)(const float* fp32, size_t N, size_t K);
     void* (*prepare_activations)(const float* fp32, size_t M, size_t K, void* weights);
-    BenchResult (*bench_fn)(size_t M, void* weights, void* activations,
-                            const int8_t* act_int8, const float* act_scales,
-                            const BenchOptions& opt);
+    void (*run_kernel)(size_t M, void* weights, void* activations,
+                       const int8_t* act_int8, const float* act_scales,
+                       float* output, float* reference);
     void (*cleanup)(void* weights, void* activations);
-
-    size_t max_M = 0;
-
-    void (*run_once)(size_t M, void* weights, void* activations,
-                     const int8_t* act_int8, const float* act_scales);
 };
 
 void register_backend(BackendVariant v);

@@ -1,6 +1,6 @@
-#include "test_utils.h"
-#include "bench/bench_common.h"
-#include "bench/bench_driver.h"
+#include "../test_utils.h"
+#include "bench_common.h"
+#include "bench_driver.h"
 
 #include <iostream>
 
@@ -13,7 +13,7 @@ int main(int argc, char** argv) {
         std::cerr << "Error: " << err << "\n"
                   << "Usage: " << argv[0]
                   << " [--iterations N] [--warmup N] [--matrices N]"
-                  << " [--threads N] [--backends fw1,fw2]\n";
+                  << " [--backends fw1,fw2]\n";
         return 1;
     }
 

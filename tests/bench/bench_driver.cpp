@@ -3,7 +3,6 @@
 #include <iomanip>
 #include <iostream>
 #include <sstream>
-#include <thread>
 
 namespace bench {
 
@@ -37,15 +36,12 @@ static bool framework_matches_filter(const char* framework, const std::string& f
 
 bool run_benchmark(TestUtils::TestRunner& runner, const BenchOptions& opt_in) {
     BenchOptions opt = opt_in;
-    if (opt.num_threads <= 0)
-        opt.num_threads = static_cast<int>(std::thread::hardware_concurrency());
-
     const size_t NM = static_cast<size_t>(opt.num_matrices);
     const auto& all_backends = get_backends();
 
     std::vector<const BackendVariant*> active;
     for (const auto& b : all_backends) {
-        if (!b.run_once) continue;
+        if (!b.run_kernel) continue;
         if (framework_matches_filter(b.framework, opt.backends_filter))
             active.push_back(&b);
     }
@@ -60,7 +56,6 @@ bool run_benchmark(TestUtils::TestRunner& runner, const BenchOptions& opt_in) {
         cfg << "warmup=" << opt.warmup
             << ", iterations=" << opt.iterations
             << ", matrices=" << NM
-            << ", threads=" << opt.num_threads
             << ", backends=";
         for (size_t i = 0; i < active.size(); ++i) {
             if (i > 0) cfg << ",";
@@ -127,14 +122,9 @@ bool run_benchmark(TestUtils::TestRunner& runner, const BenchOptions& opt_in) {
                 std::vector<float> captured(out_count, 0.0f);
                 std::vector<float> backend_ref(out_count, 0.0f);
 
-                BenchOptions acc_opt = opt;
-                acc_opt.warmup = 1;
-                acc_opt.iterations = 1;
-                acc_opt.capture_output = captured.data();
-                acc_opt.capture_reference = backend_ref.data();
-
-                backend->bench_fn(M, entries[0].weights, entries[0].activations,
-                                  act.int8.data(), act.scales.data(), acc_opt);
+                backend->run_kernel(M, entries[0].weights, entries[0].activations,
+                                    act.int8.data(), act.scales.data(),
+                                    captured.data(), backend_ref.data());
 
                 bool has_output = false;
                 for (size_t i = 0; i < out_count && !has_output; i++)
@@ -159,12 +149,11 @@ bool run_benchmark(TestUtils::TestRunner& runner, const BenchOptions& opt_in) {
                 }
             }
 
-            CactusThreading::set_gemm_threads(opt.num_threads);
-
             for (int w = 0; w < opt.warmup; ++w) {
                 size_t idx = static_cast<size_t>(w) % NM;
-                backend->run_once(M, entries[idx].weights, entries[idx].activations,
-                                  act.int8.data(), act.scales.data());
+                backend->run_kernel(M, entries[idx].weights, entries[idx].activations,
+                                    act.int8.data(), act.scales.data(),
+                                    nullptr, nullptr);
             }
 
             // Timed: cycle through distinct weight matrices so each call forces an L2
@@ -173,12 +162,11 @@ bool run_benchmark(TestUtils::TestRunner& runner, const BenchOptions& opt_in) {
             for (int iter = 0; iter < opt.iterations; ++iter) {
                 size_t idx = static_cast<size_t>(iter) % NM;
                 double t0 = now_ms();
-                backend->run_once(M, entries[idx].weights, entries[idx].activations,
-                                  act.int8.data(), act.scales.data());
+                backend->run_kernel(M, entries[idx].weights, entries[idx].activations,
+                                    act.int8.data(), act.scales.data(),
+                                    nullptr, nullptr);
                 total_ms += now_ms() - t0;
             }
-
-            CactusThreading::reset_gemm_threads();
 
             double avg_us = (total_ms * 1000.0) / opt.iterations;
             double gops = compute_gops(M, kK, kN, opt.iterations, total_ms);

@@ -5,8 +5,9 @@
 
 namespace bench {
 
-void quantize_int8_per_group(const std::vector<float>& src, size_t N, size_t K,
-                              std::vector<int8_t>& dst, std::vector<float>& scales) {
+static void quantize_per_group(const std::vector<float>& src, size_t N, size_t K,
+                                std::vector<int8_t>& dst, std::vector<float>& scales,
+                                int qmax, int qmin) {
     const size_t num_groups = K / kGroupSize;
     dst.resize(N * K);
     scales.resize(N * num_groups);
@@ -16,35 +17,24 @@ void quantize_int8_per_group(const std::vector<float>& src, size_t N, size_t K,
             const size_t base = n * K + g * kGroupSize;
             for (size_t k = 0; k < kGroupSize; ++k)
                 max_abs = std::max(max_abs, std::abs(src[base + k]));
-            float scale = std::max(max_abs / 127.0f, 1e-10f);
+            float scale = std::max(max_abs / static_cast<float>(qmax), 1e-10f);
             scales[n * num_groups + g] = scale;
             for (size_t k = 0; k < kGroupSize; ++k) {
                 int q = static_cast<int>(std::round(src[base + k] / scale));
-                dst[base + k] = static_cast<int8_t>(std::max(-128, std::min(127, q)));
+                dst[base + k] = static_cast<int8_t>(std::max(qmin, std::min(qmax, q)));
             }
         }
     }
 }
 
+void quantize_int8_per_group(const std::vector<float>& src, size_t N, size_t K,
+                              std::vector<int8_t>& dst, std::vector<float>& scales) {
+    quantize_per_group(src, N, K, dst, scales, 127, -128);
+}
+
 void quantize_int4_per_group(const std::vector<float>& src, size_t N, size_t K,
                               std::vector<int8_t>& dst, std::vector<float>& scales) {
-    const size_t num_groups = K / kGroupSize;
-    dst.resize(N * K);
-    scales.resize(N * num_groups);
-    for (size_t n = 0; n < N; ++n) {
-        for (size_t g = 0; g < num_groups; ++g) {
-            float max_abs = 0.0f;
-            const size_t base = n * K + g * kGroupSize;
-            for (size_t k = 0; k < kGroupSize; ++k)
-                max_abs = std::max(max_abs, std::abs(src[base + k]));
-            float scale = std::max(max_abs / 7.0f, 1e-10f);
-            scales[n * num_groups + g] = scale;
-            for (size_t k = 0; k < kGroupSize; ++k) {
-                int q = static_cast<int>(std::round(src[base + k] / scale));
-                dst[base + k] = static_cast<int8_t>(std::max(-8, std::min(7, q)));
-            }
-        }
-    }
+    quantize_per_group(src, N, K, dst, scales, 7, -8);
 }
 
 void quantize_int4_per_channel(const std::vector<float>& src, size_t N, size_t K,
@@ -105,10 +95,12 @@ CactusActivations prepare_cactus_activations(size_t M, size_t K, std::mt19937& g
     CactusActivations a;
 
     a.fp32.resize(M * K);
-    for (auto& v : a.fp32) v = dist(gen);
+    for (auto& v : a.fp32)
+        v = dist(gen);
 
     a.fp16.resize(M * K);
-    for (size_t i = 0; i < M * K; ++i) a.fp16[i] = static_cast<__fp16>(a.fp32[i]);
+    for (size_t i = 0; i < M * K; ++i)
+        a.fp16[i] = static_cast<__fp16>(a.fp32[i]);
 
     a.int8.resize(M * K);
     a.scales.resize(M);
@@ -162,9 +154,6 @@ bool parse_bench_args(int argc, char** argv, BenchOptions& opt, std::string& err
         } else if (a == "--matrices") {
             if (++i >= argc) { err = "Missing --matrices value"; return false; }
             opt.num_matrices = std::max(1, std::stoi(argv[i]));
-        } else if (a == "--threads") {
-            if (++i >= argc) { err = "Missing --threads value"; return false; }
-            opt.num_threads = std::max(1, std::stoi(argv[i]));
         } else if (a == "--backends") {
             if (++i >= argc) { err = "Missing --backends value"; return false; }
             opt.backends_filter = argv[i];

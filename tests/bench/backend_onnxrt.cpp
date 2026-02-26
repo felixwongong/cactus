@@ -6,7 +6,6 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
-#include <thread>
 
 namespace {
 
@@ -65,145 +64,13 @@ static Ort::MemoryInfo& get_cpu_mem() {
     return mem;
 }
 
-// ─── INT8 backend (MatMulInteger) ───────────────────────────────────────────
+// ─── Unified MatMulNBits model builder ──────────────────────────────────────
 
-static const std::vector<uint8_t>& get_int8_model() {
-    static std::vector<uint8_t> bytes = [] {
-        PBuf node;
-        node.fld_str(1, "A"); node.fld_str(1, "B");
-        node.fld_str(2, "Y");
-        node.fld_str(4, "MatMulInteger");
-
-        auto a = make_value_info("A", 3, make_dim_param("M"), make_dim_param("K"));
-        auto b = make_value_info("B", 3, make_dim_param("K"), make_dim_param("N"));
-        auto y = make_value_info("Y", 6, make_dim_param("M"), make_dim_param("N"));
-
-        PBuf graph;
-        graph.fld_ld(1, node); graph.fld_str(2, "bench_int8");
-        graph.fld_ld(11, a); graph.fld_ld(11, b); graph.fld_ld(12, y);
-
-        PBuf opset; opset.fld_str(1, ""); opset.fld_vi(2, 13);
-
-        PBuf model; model.fld_vi(1, 7); model.fld_ld(8, opset); model.fld_ld(7, graph);
-        return model.d;
-    }();
-    return bytes;
-}
-
-struct OrtInt8Weights {
-    size_t K, N;
-    std::vector<int8_t> B_KN;
-    float w_scale;
-    std::unique_ptr<Ort::Session> session;
-    int session_threads = 0;
-    std::vector<float> output_buf;
-
-    void ensure_session(int threads) {
-        int target = threads > 0 ? threads : static_cast<int>(std::thread::hardware_concurrency());
-        if (session && session_threads == target) return;
-        const auto& bytes = get_int8_model();
-        Ort::SessionOptions opts;
-        opts.SetIntraOpNumThreads(target);
-        opts.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
-        session = std::make_unique<Ort::Session>(get_env(), bytes.data(), bytes.size(), opts);
-        session_threads = target;
-    }
-};
-
-void* i8_prepare(const float* fp32, size_t N, size_t K) {
-    auto* w = new OrtInt8Weights();
-    w->K = K; w->N = N;
-
-    float max_abs = 0.0f;
-    for (size_t i = 0; i < N * K; i++)
-        max_abs = std::max(max_abs, std::abs(fp32[i]));
-    w->w_scale = (max_abs > 0.0f) ? max_abs / 127.0f : 1.0f;
-    float inv = 127.0f / std::max(max_abs, 1e-10f);
-
-    std::vector<int8_t> row(N * K);
-    for (size_t i = 0; i < N * K; i++)
-        row[i] = static_cast<int8_t>(std::max(-127.0f, std::min(127.0f, std::round(fp32[i] * inv))));
-
-    w->B_KN.resize(K * N);
-    for (size_t n = 0; n < N; n++)
-        for (size_t k = 0; k < K; k++)
-            w->B_KN[k * N + n] = row[n * K + k];
-    return w;
-}
-
-bench::BenchResult i8_run(size_t M, void* weights, void*,
-                          const int8_t* act_int8, const float* act_scales,
-                          const bench::BenchOptions& opt) {
-    auto* w = static_cast<OrtInt8Weights*>(weights);
-    w->ensure_session(opt.num_threads);
-
-    auto& mem = get_cpu_mem();
-    int64_t a_shape[] = {(int64_t)M, (int64_t)w->K};
-    int64_t b_shape[] = {(int64_t)w->K, (int64_t)w->N};
-
-    Ort::Value inputs[2] = {
-        Ort::Value::CreateTensor<int8_t>(mem, const_cast<int8_t*>(act_int8), M * w->K, a_shape, 2),
-        Ort::Value::CreateTensor<int8_t>(mem, w->B_KN.data(), w->K * w->N, b_shape, 2)
-    };
-    const char* in_names[] = {"A", "B"};
-    const char* out_names[] = {"Y"};
-
-    for (int i = 0; i < opt.warmup; ++i)
-        w->session->Run(Ort::RunOptions{nullptr}, in_names, inputs, 2, out_names, 1);
-
-    if (opt.capture_output) {
-        auto out = w->session->Run(Ort::RunOptions{nullptr}, in_names, inputs, 2, out_names, 1);
-        const int32_t* y = out[0].GetTensorData<int32_t>();
-        for (size_t m = 0; m < M; m++) {
-            float scale = act_scales[m] * w->w_scale;
-            for (size_t n = 0; n < w->N; n++)
-                opt.capture_output[m * w->N + n] = static_cast<float>(y[m * w->N + n]) * scale;
-        }
-    }
-
-    double total_ms = 0.0;
-    for (int i = 0; i < opt.iterations; ++i) {
-        double t0 = bench::now_ms();
-        w->session->Run(Ort::RunOptions{nullptr}, in_names, inputs, 2, out_names, 1);
-        total_ms += bench::now_ms() - t0;
-    }
-    return {(total_ms * 1000.0) / opt.iterations,
-            bench::compute_gops(M, w->K, w->N, opt.iterations, total_ms)};
-}
-
-void i8_once(size_t M, void* weights, void*,
-             const int8_t* act_int8, const float* act_scales) {
-    auto* w = static_cast<OrtInt8Weights*>(weights);
-    if (!w->session) return;
-
-    auto& mem = get_cpu_mem();
-    int64_t a_shape[] = {(int64_t)M, (int64_t)w->K};
-    int64_t b_shape[] = {(int64_t)w->K, (int64_t)w->N};
-
-    Ort::Value inputs[2] = {
-        Ort::Value::CreateTensor<int8_t>(mem, const_cast<int8_t*>(act_int8), M * w->K, a_shape, 2),
-        Ort::Value::CreateTensor<int8_t>(mem, w->B_KN.data(), w->K * w->N, b_shape, 2)
-    };
-    const char* in_names[] = {"A", "B"};
-    const char* out_names[] = {"Y"};
-
-    auto out = w->session->Run(Ort::RunOptions{nullptr}, in_names, inputs, 2, out_names, 1);
-    const int32_t* y = out[0].GetTensorData<int32_t>();
-    w->output_buf.resize(M * w->N);
-    for (size_t m = 0; m < M; m++) {
-        float scale = act_scales[m] * w->w_scale;
-        for (size_t n = 0; n < w->N; n++)
-            w->output_buf[m * w->N + n] = static_cast<float>(y[m * w->N + n]) * scale;
-    }
-}
-
-void i8_cleanup(void* weights, void*) { delete static_cast<OrtInt8Weights*>(weights); }
-
-// ─── INT4 backend (MatMulNBits, com.microsoft contrib op) ───────────────────
-
-static std::vector<uint8_t> build_int4_model(size_t K, size_t N) {
+static std::vector<uint8_t> build_model(size_t K, size_t N, int bits) {
     const size_t n_blocks = K / bench::kGroupSize;
-    const size_t blob_size = bench::kGroupSize / 2;
+    const size_t b_last_dim = (bits == 4) ? bench::kGroupSize / 2 : bench::kGroupSize;
+    const size_t zp_last_dim = (bits == 4) ? (n_blocks + 1) / 2 : n_blocks;
+    const char* graph_name = (bits == 4) ? "bench_int4" : "bench_int8";
 
     PBuf node;
     node.fld_str(1, "A");
@@ -215,22 +82,22 @@ static std::vector<uint8_t> build_int4_model(size_t K, size_t N) {
     node.fld_str(7, "com.microsoft");
     node.fld_ld(5, make_attr_int("K", static_cast<int64_t>(K)));
     node.fld_ld(5, make_attr_int("N", static_cast<int64_t>(N)));
-    node.fld_ld(5, make_attr_int("bits", 4));
+    node.fld_ld(5, make_attr_int("bits", bits));
     node.fld_ld(5, make_attr_int("block_size", static_cast<int64_t>(bench::kGroupSize)));
-    node.fld_ld(5, make_attr_int("accuracy_level", 4)); // int8 accumulation — fastest path
+    node.fld_ld(5, make_attr_int("accuracy_level", 4));
 
     // FLOAT=1, UINT8=2
     auto a_vi  = make_value_info("A", 1, make_dim_param("M"), make_dim_value(K));
     auto b_vi  = make_value_info("B", 2, make_dim_value(N), make_dim_value(n_blocks),
-                                 make_dim_value(blob_size));
+                                 make_dim_value(b_last_dim));
     auto s_vi  = make_value_info("scales", 1, make_dim_value(N), make_dim_value(n_blocks));
     auto zp_vi = make_value_info("zero_points", 2,
-                                 make_dim_value(N), make_dim_value((n_blocks + 1) / 2));
+                                 make_dim_value(N), make_dim_value(zp_last_dim));
     auto y_vi  = make_value_info("Y", 1, make_dim_param("M"), make_dim_value(N));
 
     PBuf graph;
     graph.fld_ld(1, node);
-    graph.fld_str(2, "bench_int4");
+    graph.fld_str(2, graph_name);
     graph.fld_ld(11, a_vi);
     graph.fld_ld(11, b_vi);
     graph.fld_ld(11, s_vi);
@@ -248,35 +115,104 @@ static std::vector<uint8_t> build_int4_model(size_t K, size_t N) {
     return model.d;
 }
 
-struct OrtInt4Weights {
+// ─── Unified weights / activations ──────────────────────────────────────────
+
+static constexpr int kGemvThreads = 2;
+static constexpr int kGemmThreads = 3;
+
+struct OrtWeights {
     size_t K, N;
+    int bits;
     std::vector<uint8_t> B_packed;
     std::vector<float> scales;
     std::vector<uint8_t> zero_points;
     std::unique_ptr<Ort::Session> session;
-    int session_threads = 0;
-    std::vector<float> output_buf;
+    Ort::RunOptions run_opts;
+    std::vector<Ort::Value> inputs;
 
-    void ensure_session(int threads) {
-        int target = threads > 0 ? threads : static_cast<int>(std::thread::hardware_concurrency());
-        if (session && session_threads == target) return;
-        auto bytes = build_int4_model(K, N);
+    void bind(float* act_data, size_t M) {
+        int threads = (M == 1) ? kGemvThreads : kGemmThreads;
+        auto bytes = build_model(K, N, bits);
         Ort::SessionOptions opts;
-        opts.SetIntraOpNumThreads(target);
+        opts.SetIntraOpNumThreads(threads);
         opts.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
         session = std::make_unique<Ort::Session>(get_env(), bytes.data(), bytes.size(), opts);
-        session_threads = target;
+
+        auto& mem = get_cpu_mem();
+        const size_t n_blocks = K / bench::kGroupSize;
+        const size_t b_last_dim = (bits == 4) ? bench::kGroupSize / 2 : bench::kGroupSize;
+        const size_t b_total = (bits == 4) ? N * K / 2 : N * K;
+        const size_t zp_cols = (bits == 4) ? (n_blocks + 1) / 2 : n_blocks;
+
+        int64_t a_shape[]  = {(int64_t)M, (int64_t)K};
+        int64_t b_shape[]  = {(int64_t)N, (int64_t)n_blocks, (int64_t)b_last_dim};
+        int64_t s_shape[]  = {(int64_t)N, (int64_t)n_blocks};
+        int64_t zp_shape[] = {(int64_t)N, (int64_t)zp_cols};
+
+        inputs.clear();
+        inputs.reserve(4);
+        inputs.push_back(Ort::Value::CreateTensor<float>(mem, act_data, M * K, a_shape, 2));
+        inputs.push_back(Ort::Value::CreateTensor<uint8_t>(mem, B_packed.data(), b_total, b_shape, 3));
+        inputs.push_back(Ort::Value::CreateTensor<float>(mem, scales.data(), N * n_blocks, s_shape, 2));
+        inputs.push_back(Ort::Value::CreateTensor<uint8_t>(mem, zero_points.data(), N * zp_cols, zp_shape, 2));
     }
 };
 
-struct OrtInt4Activations {
+struct OrtActivations {
     std::vector<float> fp32;
 };
 
-void* i4_prepare(const float* fp32, size_t N, size_t K) {
-    auto* w = new OrtInt4Weights();
-    w->K = K; w->N = N;
+// ─── Shared prepare_act / run_kernel / cleanup ──────────────────────────────
 
+void* prepare_act(const float* fp32, size_t M, size_t K, void* raw_weights) {
+    auto* w = static_cast<OrtWeights*>(raw_weights);
+    auto* a = new OrtActivations();
+    a->fp32.assign(fp32, fp32 + M * K);
+    w->bind(a->fp32.data(), M);
+    return a;
+}
+
+void run_kernel(size_t M, void* weights, void*,
+                const int8_t*, const float*,
+                float* output, float*) {
+    auto* w = static_cast<OrtWeights*>(weights);
+    if (!w->session || w->inputs.empty()) return;
+
+    static const char* in_names[] = {"A", "B", "scales", "zero_points"};
+    static const char* out_names[] = {"Y"};
+
+    auto out = w->session->Run(w->run_opts, in_names, w->inputs.data(), 4, out_names, 1);
+    if (output) {
+        const float* y = out[0].GetTensorData<float>();
+        std::memcpy(output, y, M * w->N * sizeof(float));
+    }
+}
+
+void cleanup(void* weights, void* activations) {
+    delete static_cast<OrtWeights*>(weights);
+    if (activations) delete static_cast<OrtActivations*>(activations);
+}
+
+// ─── Quantization helpers ────────────────────────────────────────────────────
+
+static void pack_int8(OrtWeights* w, const float* fp32) {
+    size_t N = w->N, K = w->K;
+    std::vector<float> src(fp32, fp32 + N * K);
+    std::vector<int8_t> int8_vals;
+    std::vector<float> raw_scales;
+    bench::quantize_int8_per_group(src, N, K, int8_vals, raw_scales);
+
+    w->B_packed.resize(N * K);
+    for (size_t i = 0; i < N * K; i++)
+        w->B_packed[i] = static_cast<uint8_t>(static_cast<int>(int8_vals[i]) + 128);
+
+    w->scales = raw_scales;
+    const size_t n_blocks = K / bench::kGroupSize;
+    w->zero_points.resize(N * n_blocks, 128);
+}
+
+static void pack_int4(OrtWeights* w, const float* fp32) {
+    size_t N = w->N, K = w->K;
     std::vector<float> src(fp32, fp32 + N * K);
     std::vector<int8_t> int4_vals;
     std::vector<float> raw_scales;
@@ -292,112 +228,32 @@ void* i4_prepare(const float* fp32, size_t N, size_t K) {
     }
 
     w->scales = raw_scales;
-
     const size_t n_blocks = K / bench::kGroupSize;
     const size_t zp_cols = (n_blocks + 1) / 2;
     w->zero_points.resize(N * zp_cols, 0x88);
+}
 
+// ─── Prepare ────────────────────────────────────────────────────────────────
+
+void* i8_prepare(const float* fp32, size_t N, size_t K) {
+    auto* w = new OrtWeights();
+    w->K = K; w->N = N; w->bits = 8;
+    pack_int8(w, fp32);
     return w;
 }
 
-void* i4_prepare_act(const float* fp32, size_t M, size_t K, void*) {
-    auto* a = new OrtInt4Activations();
-    a->fp32.assign(fp32, fp32 + M * K);
-    return a;
-}
-
-bench::BenchResult i4_run(size_t M, void* weights, void* activations,
-                          const int8_t*, const float*,
-                          const bench::BenchOptions& opt) {
-    auto* w = static_cast<OrtInt4Weights*>(weights);
-    auto* a = static_cast<OrtInt4Activations*>(activations);
-    w->ensure_session(opt.num_threads);
-
-    auto& mem = get_cpu_mem();
-    const size_t n_blocks = w->K / bench::kGroupSize;
-    const size_t blob_size = bench::kGroupSize / 2;
-    const size_t zp_cols = (n_blocks + 1) / 2;
-
-    int64_t a_shape[]  = {(int64_t)M, (int64_t)w->K};
-    int64_t b_shape[]  = {(int64_t)w->N, (int64_t)n_blocks, (int64_t)blob_size};
-    int64_t s_shape[]  = {(int64_t)w->N, (int64_t)n_blocks};
-    int64_t zp_shape[] = {(int64_t)w->N, (int64_t)zp_cols};
-
-    Ort::Value inputs[4] = {
-        Ort::Value::CreateTensor<float>(mem, a->fp32.data(), M * w->K, a_shape, 2),
-        Ort::Value::CreateTensor<uint8_t>(mem, w->B_packed.data(), w->N * w->K / 2, b_shape, 3),
-        Ort::Value::CreateTensor<float>(mem, w->scales.data(), w->N * n_blocks, s_shape, 2),
-        Ort::Value::CreateTensor<uint8_t>(mem, w->zero_points.data(), w->N * zp_cols, zp_shape, 2)
-    };
-    const char* in_names[] = {"A", "B", "scales", "zero_points"};
-    const char* out_names[] = {"Y"};
-
-    for (int i = 0; i < opt.warmup; ++i)
-        w->session->Run(Ort::RunOptions{nullptr}, in_names, inputs, 4, out_names, 1);
-
-    if (opt.capture_output) {
-        auto out = w->session->Run(Ort::RunOptions{nullptr}, in_names, inputs, 4, out_names, 1);
-        const float* y = out[0].GetTensorData<float>();
-        std::memcpy(opt.capture_output, y, M * w->N * sizeof(float));
-    }
-
-    double total_ms = 0.0;
-    for (int i = 0; i < opt.iterations; ++i) {
-        double t0 = bench::now_ms();
-        w->session->Run(Ort::RunOptions{nullptr}, in_names, inputs, 4, out_names, 1);
-        total_ms += bench::now_ms() - t0;
-    }
-    return {(total_ms * 1000.0) / opt.iterations,
-            bench::compute_gops(M, w->K, w->N, opt.iterations, total_ms)};
-}
-
-void i4_once(size_t M, void* weights, void* activations,
-             const int8_t*, const float*) {
-    auto* w = static_cast<OrtInt4Weights*>(weights);
-    auto* a = static_cast<OrtInt4Activations*>(activations);
-    if (!w->session) return;
-
-    auto& mem = get_cpu_mem();
-    const size_t n_blocks = w->K / bench::kGroupSize;
-    const size_t blob_size = bench::kGroupSize / 2;
-    const size_t zp_cols = (n_blocks + 1) / 2;
-
-    int64_t a_shape[]  = {(int64_t)M, (int64_t)w->K};
-    int64_t b_shape[]  = {(int64_t)w->N, (int64_t)n_blocks, (int64_t)blob_size};
-    int64_t s_shape[]  = {(int64_t)w->N, (int64_t)n_blocks};
-    int64_t zp_shape[] = {(int64_t)w->N, (int64_t)zp_cols};
-
-    Ort::Value inputs[4] = {
-        Ort::Value::CreateTensor<float>(mem, a->fp32.data(), M * w->K, a_shape, 2),
-        Ort::Value::CreateTensor<uint8_t>(mem, w->B_packed.data(), w->N * w->K / 2, b_shape, 3),
-        Ort::Value::CreateTensor<float>(mem, w->scales.data(), w->N * n_blocks, s_shape, 2),
-        Ort::Value::CreateTensor<uint8_t>(mem, w->zero_points.data(), w->N * zp_cols, zp_shape, 2)
-    };
-    const char* in_names[] = {"A", "B", "scales", "zero_points"};
-    const char* out_names[] = {"Y"};
-
-    auto out = w->session->Run(Ort::RunOptions{nullptr}, in_names, inputs, 4, out_names, 1);
-    const float* y = out[0].GetTensorData<float>();
-    w->output_buf.resize(M * w->N);
-    std::memcpy(w->output_buf.data(), y, M * w->N * sizeof(float));
-}
-
-void i4_cleanup(void* weights, void* activations) {
-    delete static_cast<OrtInt4Weights*>(weights);
-    if (activations) delete static_cast<OrtInt4Activations*>(activations);
+void* i4_prepare(const float* fp32, size_t N, size_t K) {
+    auto* w = new OrtWeights();
+    w->K = K; w->N = N; w->bits = 4;
+    pack_int4(w, fp32);
+    return w;
 }
 
 // ─── Registration ───────────────────────────────────────────────────────────
 
 static int reg = [] {
-    bench::register_backend({
-        "onnxrt_int8", "onnxrt", bench::QuantCategory::INT8,
-        i8_prepare, nullptr, i8_run, i8_cleanup, 0, i8_once
-    });
-    bench::register_backend({
-        "onnxrt_int4", "onnxrt", bench::QuantCategory::INT4,
-        i4_prepare, i4_prepare_act, i4_run, i4_cleanup, 0, i4_once
-    });
+    bench::register_backend({"onnxrt_int8", "onnxrt", bench::QuantCategory::INT8, 0, i8_prepare, prepare_act, run_kernel, cleanup});
+    bench::register_backend({"onnxrt_int4", "onnxrt", bench::QuantCategory::INT4, 0, i4_prepare, prepare_act, run_kernel, cleanup});
     return 0;
 }();
 

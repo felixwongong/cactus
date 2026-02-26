@@ -176,8 +176,7 @@ endif()
 add_library(bench_lib OBJECT
     bench/bench_common.cpp
     bench/bench_driver.cpp
-    bench/backend_cactus_int8.cpp
-    bench/backend_cactus_int4.cpp
+    bench/backend_cactus.cpp
     bench/backend_executorch.cpp
     bench/backend_mlx.cpp
     bench/backend_mlc.cpp
@@ -191,15 +190,14 @@ target_link_libraries(bench_lib PUBLIC ${CACTUS_LIB})
 
 if(WITH_LITERT)
     target_sources(bench_lib PRIVATE
-        bench/backend_litert_int8.cpp
-        bench/backend_litert_int4.cpp
+        bench/backend_litert.cpp
     )
     target_link_libraries(bench_lib PUBLIC litert_kernels)
     target_compile_definitions(bench_lib PRIVATE FC_4BIT_NEON)
 endif()
 
 if(WITH_GGML)
-    target_sources(bench_lib PRIVATE bench/backend_ggml.cpp bench/backend_ggml_int8.cpp)
+    target_sources(bench_lib PRIVATE bench/backend_ggml.cpp)
     target_link_libraries(bench_lib PUBLIC ggml)
 endif()
 
@@ -238,21 +236,21 @@ if(WITH_ONNXRT)
     message(STATUS "ONNX Runtime enabled from ${ONNXRT_DIR}")
 endif()
 
-# Unified matmul benchmark executable
-if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test_matmul_bench.cpp")
-    add_executable(test_matmul_bench test_matmul_bench.cpp test_utils.cpp)
-    target_link_libraries(test_matmul_bench PRIVATE bench_lib)
-    target_include_directories(test_matmul_bench PRIVATE ${CACTUS_ROOT})
+# Matmul benchmark executable
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/bench/matmul_bench.cpp")
+    add_executable(matmul_bench bench/matmul_bench.cpp test_utils.cpp)
+    target_link_libraries(matmul_bench PRIVATE bench_lib)
+    target_include_directories(matmul_bench PRIVATE ${CACTUS_ROOT})
     if(WITH_MLC)
-        target_link_libraries(test_matmul_bench PRIVATE ${TVM_RUNTIME_LIB} ${TVM_FFI_LIB})
+        target_link_libraries(matmul_bench PRIVATE ${TVM_RUNTIME_LIB} ${TVM_FFI_LIB})
     endif()
     if(MMAN_LIB)
-        target_link_libraries(test_matmul_bench PRIVATE ${MMAN_LIB})
+        target_link_libraries(matmul_bench PRIVATE ${MMAN_LIB})
     endif()
     if(APPLE)
-        target_link_libraries(test_matmul_bench PRIVATE ${CACTUS_CURL_LIBRARY_MACOS})
-        target_include_directories(test_matmul_bench PRIVATE ${CACTUS_CURL_INCLUDE_DIR})
-        target_link_libraries(test_matmul_bench PRIVATE
+        target_link_libraries(matmul_bench PRIVATE ${CACTUS_CURL_LIBRARY_MACOS})
+        target_include_directories(matmul_bench PRIVATE ${CACTUS_CURL_INCLUDE_DIR})
+        target_link_libraries(matmul_bench PRIVATE
             ${COREML_FRAMEWORK}
             ${FOUNDATION_FRAMEWORK}
             ${SECURITY_FRAMEWORK}
@@ -260,16 +258,12 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test_matmul_bench.cpp")
             ${CFNETWORK_FRAMEWORK}
         )
     endif()
-    message(STATUS "Added benchmark: test_matmul_bench")
+    message(STATUS "Added benchmark: matmul_bench")
 endif()
 
 # ─── Standard tests (one executable per test_*.cpp) ──────────────────
 file(GLOB TEST_SOURCES "test_*.cpp")
 list(REMOVE_ITEM TEST_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/test_utils.cpp")
-# Exclude old litert benchmarks (replaced by unified test_matmul_bench)
-list(FILTER TEST_SOURCES EXCLUDE REGEX ".*test_litert.*matmul_bench\\.cpp$")
-# Exclude test_matmul_bench (built separately above with bench_lib)
-list(REMOVE_ITEM TEST_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/test_matmul_bench.cpp")
 
 foreach(TEST_FILE ${TEST_SOURCES})
 

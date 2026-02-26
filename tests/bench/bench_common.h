@@ -19,20 +19,12 @@ constexpr size_t kBlockSize = 4;
 constexpr size_t kK = 1024;
 constexpr size_t kN = 1024;
 
-struct BenchResult {
-    double avg_us = 0.0;
-    double gops = 0.0;
-};
-
 struct BenchOptions {
     int warmup = 100;
     int iterations = 1024;
-    int num_threads = 0;
     int num_matrices = 64;
     std::vector<size_t> batch_sizes = {1, 1024};
     std::string backends_filter;
-    float* capture_output = nullptr;
-    float* capture_reference = nullptr;
 };
 
 inline double now_ms() {

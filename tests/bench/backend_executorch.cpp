@@ -57,9 +57,13 @@ static void fill_qparams(struct xnn_quantization_params* qp, size_t M,
         qp[m] = qp[M - 1];
 }
 
-// ──── INT8: qd8-f32-qc8w (dynamic quant activations, per-channel INT8 weights) ────
+// ──── Unified weights struct for INT8/INT4 ────
 
-struct XnnInt8Weights {
+using reshape_fn_t = xnn_status(*)(xnn_operator_t, size_t, size_t*, pthreadpool_t);
+using setup_fn_t = xnn_status(*)(xnn_operator_t, const int8_t*, float*, void*,
+                                  const struct xnn_quantization_params*);
+
+struct XnnWeights {
     size_t K, N;
     xnn_operator_t op = nullptr;
     size_t current_M = 0;
@@ -67,7 +71,48 @@ struct XnnInt8Weights {
     void* workspace = nullptr;
     std::vector<struct xnn_quantization_params> qp_buf;
     std::vector<float> output_buf;
+    reshape_fn_t reshape_fn;
+    setup_fn_t setup_fn;
 };
+
+static void reshape(XnnWeights* w, size_t M) {
+    size_t ws = 0;
+    w->reshape_fn(w->op, M, &ws, s_threadpool);
+    if (ws > w->workspace_size) {
+        free(w->workspace);
+        w->workspace = aligned_alloc_workspace(ws);
+        w->workspace_size = ws;
+    }
+    if (w->qp_buf.size() < M + XNN_EXTRA_QUANTIZATION_PARAMS)
+        w->qp_buf.resize(M + XNN_EXTRA_QUANTIZATION_PARAMS);
+    w->current_M = M;
+}
+
+void run_kernel(size_t M, void* weights, void*,
+                const int8_t* act, const float* act_scales,
+                float* output, float*) {
+    auto* w = static_cast<XnnWeights*>(weights);
+    if (!w || !w->op) return;
+
+    w->output_buf.resize(M * w->N);
+    if (w->current_M != M) reshape(w, M);
+    fill_qparams(w->qp_buf.data(), M, act_scales);
+    w->setup_fn(w->op, act, w->output_buf.data(), w->workspace, w->qp_buf.data());
+    xnn_run_operator(w->op, s_threadpool);
+    if (output)
+        std::memcpy(output, w->output_buf.data(), M * w->N * sizeof(float));
+}
+
+void cleanup(void* weights, void*) {
+    auto* w = static_cast<XnnWeights*>(weights);
+    if (w) {
+        if (w->op) xnn_delete_operator(w->op);
+        free(w->workspace);
+        delete w;
+    }
+}
+
+// ──── INT8: qd8-f32-qc8w (dynamic quant activations, per-channel INT8 weights) ────
 
 void* int8_prepare(const float* fp32, size_t N, size_t K) {
     if (!ensure_init()) return nullptr;
@@ -86,9 +131,11 @@ void* int8_prepare(const float* fp32, size_t N, size_t K) {
         }
     }
 
-    auto* w = new XnnInt8Weights();
+    auto* w = new XnnWeights();
     w->K = K;
     w->N = N;
+    w->reshape_fn = xnn_reshape_fully_connected_nc_qd8_f32_qc8w;
+    w->setup_fn = xnn_setup_fully_connected_nc_qd8_f32_qc8w;
     xnn_status st = xnn_create_fully_connected_nc_qd8_f32_qc8w(
         K, N, K, N,
         scales.data(), qw.data(), nullptr,
@@ -103,85 +150,7 @@ void* int8_prepare(const float* fp32, size_t N, size_t K) {
     return w;
 }
 
-static void int8_reshape(XnnInt8Weights* w, size_t M) {
-    size_t ws = 0;
-    xnn_reshape_fully_connected_nc_qd8_f32_qc8w(w->op, M, &ws, s_threadpool);
-    if (ws > w->workspace_size) {
-        free(w->workspace);
-        w->workspace = aligned_alloc_workspace(ws);
-        w->workspace_size = ws;
-    }
-    if (w->qp_buf.size() < M + XNN_EXTRA_QUANTIZATION_PARAMS)
-        w->qp_buf.resize(M + XNN_EXTRA_QUANTIZATION_PARAMS);
-    w->current_M = M;
-}
-
-bench::BenchResult int8_run(size_t M, void* weights, void*,
-                             const int8_t* act, const float* act_scales,
-                             const bench::BenchOptions& opt) {
-    auto* w = static_cast<XnnInt8Weights*>(weights);
-    if (!w || !w->op) return {};
-
-    ensure_threadpool(opt.num_threads);
-
-    std::vector<float> output(M * w->N);
-    int8_reshape(w, M);
-    fill_qparams(w->qp_buf.data(), M, act_scales);
-
-    xnn_setup_fully_connected_nc_qd8_f32_qc8w(
-        w->op, act, output.data(), w->workspace, w->qp_buf.data());
-
-    for (int i = 0; i < opt.warmup; ++i)
-        xnn_run_operator(w->op, s_threadpool);
-
-    if (opt.capture_output)
-        std::memcpy(opt.capture_output, output.data(), M * w->N * sizeof(float));
-
-    double total_ms = 0.0;
-    for (int i = 0; i < opt.iterations; ++i) {
-        double t0 = bench::now_ms();
-        xnn_run_operator(w->op, s_threadpool);
-        total_ms += bench::now_ms() - t0;
-    }
-
-    return {(total_ms * 1000.0) / opt.iterations,
-            bench::compute_gops(M, w->K, w->N, opt.iterations, total_ms)};
-}
-
-void int8_once(size_t M, void* weights, void*,
-               const int8_t* act, const float* act_scales) {
-    auto* w = static_cast<XnnInt8Weights*>(weights);
-    if (!w || !w->op) return;
-
-    w->output_buf.resize(M * w->N);
-    if (w->current_M != M) int8_reshape(w, M);
-    fill_qparams(w->qp_buf.data(), M, act_scales);
-
-    xnn_setup_fully_connected_nc_qd8_f32_qc8w(
-        w->op, act, w->output_buf.data(), w->workspace, w->qp_buf.data());
-    xnn_run_operator(w->op, s_threadpool);
-}
-
-void int8_cleanup(void* weights, void*) {
-    auto* w = static_cast<XnnInt8Weights*>(weights);
-    if (w) {
-        if (w->op) xnn_delete_operator(w->op);
-        free(w->workspace);
-        delete w;
-    }
-}
-
 // ──── INT4: qd8-f32-qb4w (dynamic quant activations, block-wise INT4 weights) ────
-
-struct XnnInt4Weights {
-    size_t K, N;
-    xnn_operator_t op = nullptr;
-    size_t current_M = 0;
-    size_t workspace_size = 0;
-    void* workspace = nullptr;
-    std::vector<struct xnn_quantization_params> qp_buf;
-    std::vector<float> output_buf;
-};
 
 void* int4_prepare(const float* fp32, size_t N, size_t K) {
     if (!ensure_init()) return nullptr;
@@ -216,9 +185,11 @@ void* int4_prepare(const float* fp32, size_t N, size_t K) {
         }
     }
 
-    auto* w = new XnnInt4Weights();
+    auto* w = new XnnWeights();
     w->K = K;
     w->N = N;
+    w->reshape_fn = xnn_reshape_fully_connected_nc_qd8_f32_qb4w;
+    w->setup_fn = xnn_setup_fully_connected_nc_qd8_f32_qb4w;
     xnn_status st = xnn_create_fully_connected_nc_qd8_f32_qb4w(
         K, N, K, N,
         block_size, 8,
@@ -234,84 +205,17 @@ void* int4_prepare(const float* fp32, size_t N, size_t K) {
     return w;
 }
 
-static void int4_reshape(XnnInt4Weights* w, size_t M) {
-    size_t ws = 0;
-    xnn_reshape_fully_connected_nc_qd8_f32_qb4w(w->op, M, &ws, s_threadpool);
-    if (ws > w->workspace_size) {
-        free(w->workspace);
-        w->workspace = aligned_alloc_workspace(ws);
-        w->workspace_size = ws;
-    }
-    if (w->qp_buf.size() < M + XNN_EXTRA_QUANTIZATION_PARAMS)
-        w->qp_buf.resize(M + XNN_EXTRA_QUANTIZATION_PARAMS);
-    w->current_M = M;
-}
-
-bench::BenchResult int4_run(size_t M, void* weights, void*,
-                             const int8_t* act, const float* act_scales,
-                             const bench::BenchOptions& opt) {
-    auto* w = static_cast<XnnInt4Weights*>(weights);
-    if (!w || !w->op) return {};
-
-    ensure_threadpool(opt.num_threads);
-
-    std::vector<float> output(M * w->N);
-    int4_reshape(w, M);
-    fill_qparams(w->qp_buf.data(), M, act_scales);
-
-    xnn_setup_fully_connected_nc_qd8_f32_qb4w(
-        w->op, act, output.data(), w->workspace, w->qp_buf.data());
-
-    for (int i = 0; i < opt.warmup; ++i)
-        xnn_run_operator(w->op, s_threadpool);
-
-    if (opt.capture_output)
-        std::memcpy(opt.capture_output, output.data(), M * w->N * sizeof(float));
-
-    double total_ms = 0.0;
-    for (int i = 0; i < opt.iterations; ++i) {
-        double t0 = bench::now_ms();
-        xnn_run_operator(w->op, s_threadpool);
-        total_ms += bench::now_ms() - t0;
-    }
-
-    return {(total_ms * 1000.0) / opt.iterations,
-            bench::compute_gops(M, w->K, w->N, opt.iterations, total_ms)};
-}
-
-void int4_once(size_t M, void* weights, void*,
-               const int8_t* act, const float* act_scales) {
-    auto* w = static_cast<XnnInt4Weights*>(weights);
-    if (!w || !w->op) return;
-
-    w->output_buf.resize(M * w->N);
-    if (w->current_M != M) int4_reshape(w, M);
-    fill_qparams(w->qp_buf.data(), M, act_scales);
-
-    xnn_setup_fully_connected_nc_qd8_f32_qb4w(
-        w->op, act, w->output_buf.data(), w->workspace, w->qp_buf.data());
-    xnn_run_operator(w->op, s_threadpool);
-}
-
-void int4_cleanup(void* weights, void*) {
-    auto* w = static_cast<XnnInt4Weights*>(weights);
-    if (w) {
-        if (w->op) xnn_delete_operator(w->op);
-        free(w->workspace);
-        delete w;
-    }
-}
 
 // ──── Registration ────
 
 static int reg = [] {
     bench::register_backend({
-        "executorch_int8", "executorch", bench::QuantCategory::INT8,
-        int8_prepare, nullptr, int8_run, int8_cleanup, 0, int8_once
+        "executorch_int8", "executorch", bench::QuantCategory::INT8, 0,
+        int8_prepare, nullptr, run_kernel, cleanup
     });
     bench::register_backend({
-        "executorch_int4", "executorch", bench::QuantCategory::INT4,
-        int4_prepare, nullptr, int4_run, int4_cleanup, 0, int4_once
+        "executorch_int4", "executorch", bench::QuantCategory::INT4, 0,
+        int4_prepare, nullptr, run_kernel, cleanup
     });
     return 0;
 }();
