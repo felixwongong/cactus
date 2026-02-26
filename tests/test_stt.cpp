@@ -556,6 +556,66 @@ static bool test_transcription() {
         [](int rc, const Metrics& m) { return rc > 0 && m.completion_tokens >= 8; });
 }
 
+static bool test_language_detection() {
+    std::cout << "\n╔══════════════════════════════════════════╗\n"
+              << "║         LANGUAGE DETECTION               ║\n"
+              << "╚══════════════════════════════════════════╝\n";
+
+    if (!g_transcribe_model_path) {
+        std::cout << "⊘ SKIP │ CACTUS_TEST_TRANSCRIBE_MODEL not set\n";
+        return true;
+    }
+    if (!g_assets_path) {
+        std::cout << "⊘ SKIP │ CACTUS_TEST_ASSETS not set\n";
+        return true;
+    }
+
+    cactus_model_t model = cactus_init(g_transcribe_model_path, nullptr, false);
+    if (!model) {
+        std::cerr << "[✗] Failed to initialize transcribe model\n";
+        return false;
+    }
+
+    std::string audio_path = std::string(g_assets_path) + "/test.wav";
+    char response[1 << 14] = {0};
+
+    int rc = cactus_detect_language(
+        model,
+        audio_path.c_str(),
+        response,
+        sizeof(response),
+        R"({"telemetry_enabled": false})",
+        nullptr,
+        0
+    );
+
+    std::string response_str(response);
+    if (rc <= 0) {
+        if (response_str.find("requires a Whisper model") != std::string::npos) {
+            std::cout << "⊘ SKIP │ Language detection is currently Whisper-only\n";
+            cactus_destroy(model);
+            return true;
+        }
+        std::cerr << "[✗] Language detection failed: " << response_str << "\n";
+        cactus_destroy(model);
+        return false;
+    }
+
+    const bool success = response_str.find("\"success\":true") != std::string::npos;
+    const std::string language = json_string(response_str, "language");
+    const std::string language_token = json_string(response_str, "language_token");
+    const double confidence = json_number(response_str, "confidence", -1.0);
+
+    std::cout << "\n[Results]\n"
+              << "  \"success\": " << (success ? "true" : "false") << ",\n"
+              << "  \"language\": \"" << language << "\",\n"
+              << "  \"language_token\": \"" << language_token << "\",\n"
+              << "  \"confidence\": " << std::fixed << std::setprecision(4) << confidence << "\n";
+
+    cactus_destroy(model);
+    return success && language == "en" && confidence >= 0.0 && confidence <= 1.0;
+}
+
 static bool test_stream_transcription() {
     std::cout << "\n╔══════════════════════════════════════════╗\n"
               << "║        STREAM TRANSCRIPTION TEST         ║\n"
@@ -899,6 +959,7 @@ int main() {
     runner.run_test("irfft_correctness", test_irfft_correctness());
     runner.run_test("vad_process", test_vad_process());
     runner.run_test("transcription", test_transcription());
+    runner.run_test("language_detection", test_language_detection());
     runner.run_test("pcm_transcription", test_pcm_transcription());
     runner.run_test("stream_transcription", test_stream_transcription());
     runner.print_summary();
