@@ -174,6 +174,9 @@ add_library(bench_lib OBJECT
     bench/backend_mlx.cpp
     bench/backend_mlc.cpp
     bench/backend_onnxrt.cpp
+    bench/attn_driver.cpp
+    bench/attn_backend_cactus.cpp
+    bench/attn_backend_mlx.cpp
 )
 target_include_directories(bench_lib PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
@@ -190,7 +193,7 @@ if(WITH_LITERT)
 endif()
 
 if(WITH_GGML)
-    target_sources(bench_lib PRIVATE bench/backend_ggml.cpp)
+    target_sources(bench_lib PRIVATE bench/backend_ggml.cpp bench/attn_backend_ggml.cpp)
     target_link_libraries(bench_lib PUBLIC ggml)
 endif()
 
@@ -251,6 +254,30 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/bench/matmul_bench.cpp")
         )
     endif()
     message(STATUS "Added benchmark: matmul_bench")
+endif()
+
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/bench/attn_bench.cpp")
+    add_executable(attn_bench bench/attn_bench.cpp test_utils.cpp)
+    target_link_libraries(attn_bench PRIVATE bench_lib)
+    target_include_directories(attn_bench PRIVATE ${CACTUS_ROOT})
+    if(WITH_MLC)
+        target_link_libraries(attn_bench PRIVATE ${TVM_RUNTIME_LIB} ${TVM_FFI_LIB})
+    endif()
+    if(MMAN_LIB)
+        target_link_libraries(attn_bench PRIVATE ${MMAN_LIB})
+    endif()
+    if(APPLE)
+        target_link_libraries(attn_bench PRIVATE ${CACTUS_CURL_LIBRARY_MACOS})
+        target_include_directories(attn_bench PRIVATE ${CACTUS_CURL_INCLUDE_DIR})
+        target_link_libraries(attn_bench PRIVATE
+            ${COREML_FRAMEWORK}
+            ${FOUNDATION_FRAMEWORK}
+            ${SECURITY_FRAMEWORK}
+            ${SYSTEMCONFIGURATION_FRAMEWORK}
+            ${CFNETWORK_FRAMEWORK}
+        )
+    endif()
+    message(STATUS "Added benchmark: attn_bench")
 endif()
 
 file(GLOB TEST_SOURCES "test_*.cpp")

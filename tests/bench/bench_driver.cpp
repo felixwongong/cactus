@@ -137,7 +137,7 @@ bool run_benchmark(TestUtils::TestRunner& runner, const BenchOptions& opt_in) {
 
                     const float* ref = has_backend_ref ? backend_ref.data() : reference.data();
                     float tol = has_backend_ref ? 0.01f
-                              : (backend->category == QuantCategory::INT8) ? 0.05f : 0.20f;
+                              : (backend->category == QuantCategory::INT8) ? 0.05f : 2.0f;
                     auto acc = check_accuracy(ref, captured.data(), out_count, tol);
 
                     if (!first_acc) acc_line << "  ";

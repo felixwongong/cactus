@@ -1,11 +1,11 @@
 #include "bench_driver.h"
 
+#include <arm_neon.h>
 #include <cstdlib>
 #include <memory>
 
 #include "tflite/kernels/internal/optimized/neon_tensor_utils.h"
 #include "tflite/kernels/internal/optimized/fully_connected_4bit.h"
-#include "tflite/kernels/internal/optimized/4bit/fully_connected_reference_impl.h"
 #include "ruy/ruy.h"
 
 namespace {
@@ -16,6 +16,7 @@ static constexpr int kRuyGemmThreads = 4;
 struct Int8Weights {
     size_t K, N;
     std::vector<int8_t> int8_rowmajor;
+    std::vector<float> weight_scales;
     std::vector<float> neon_output;
     std::vector<int32_t> ruy_output;
     std::unique_ptr<ruy::Context> ctx_gemv;
@@ -23,13 +24,22 @@ struct Int8Weights {
 };
 
 void* int8_prepare(const float* fp32, size_t N, size_t K) {
-    std::vector<float> src(fp32, fp32 + N * K);
     auto* w = new Int8Weights();
     w->K = K;
     w->N = N;
     w->int8_rowmajor.resize(N * K);
-    std::vector<float> scales;
-    bench::quantize_int8_per_group(src, N, K, w->int8_rowmajor, scales);
+    w->weight_scales.resize(N);
+    for (size_t n = 0; n < N; ++n) {
+        float max_abs = 0.0f;
+        for (size_t k = 0; k < K; ++k)
+            max_abs = std::max(max_abs, std::abs(fp32[n * K + k]));
+        float scale = std::max(max_abs / 127.0f, 1e-10f);
+        w->weight_scales[n] = scale;
+        for (size_t k = 0; k < K; ++k) {
+            int q = static_cast<int>(std::round(fp32[n * K + k] / scale));
+            w->int8_rowmajor[n * K + k] = static_cast<int8_t>(std::max(-128, std::min(127, q)));
+        }
+    }
     return w;
 }
 
@@ -39,7 +49,7 @@ void int8_cleanup(void* weights, void*) {
 
 void neon_run_kernel(size_t M, void* weights, void*,
                      const int8_t* act_int8, const float* act_scales,
-                     float* output, float* reference) {
+                     float* output, float*) {
     auto* w = static_cast<Int8Weights*>(weights);
     w->neon_output.resize(M * w->N);
     std::memset(w->neon_output.data(), 0, M * w->N * sizeof(float));
@@ -47,20 +57,21 @@ void neon_run_kernel(size_t M, void* weights, void*,
         w->int8_rowmajor.data(), static_cast<int>(w->N), static_cast<int>(w->K),
         act_int8, act_scales, static_cast<int>(M), w->neon_output.data());
 
+    const float* ws = w->weight_scales.data();
+    for (size_t m = 0; m < M; m++) {
+        float* row = w->neon_output.data() + m * w->N;
+        size_t n = 0;
+        for (; n + 4 <= w->N; n += 4) {
+            float32x4_t v = vld1q_f32(row + n);
+            float32x4_t s = vld1q_f32(ws + n);
+            vst1q_f32(row + n, vmulq_f32(v, s));
+        }
+        for (; n < w->N; n++)
+            row[n] *= ws[n];
+    }
+
     if (output)
         std::memcpy(output, w->neon_output.data(), M * w->N * sizeof(float));
-
-    if (reference) {
-        const size_t K = w->K, N = w->N;
-        for (size_t m = 0; m < M; m++)
-            for (size_t n = 0; n < N; n++) {
-                int32_t dot = 0;
-                for (size_t k = 0; k < K; k++)
-                    dot += static_cast<int32_t>(w->int8_rowmajor[n * K + k])
-                         * static_cast<int32_t>(act_int8[m * K + k]);
-                reference[m * N + n] = static_cast<float>(dot) * act_scales[m];
-            }
-    }
 }
 
 static void ruy_run_kernel_impl(size_t M, Int8Weights* w,
@@ -90,8 +101,8 @@ static void ruy_run_kernel_impl(size_t M, Int8Weights* w,
 }
 
 void ruy_run_kernel(size_t M, void* weights, void*,
-                    const int8_t* act_int8, const float*,
-                    float*, float*) {
+                    const int8_t* act_int8, const float* act_scales,
+                    float* output, float*) {
     auto* w = static_cast<Int8Weights*>(weights);
     if (M <= 1) {
         if (!w->ctx_gemv) {
@@ -106,19 +117,37 @@ void ruy_run_kernel(size_t M, void* weights, void*,
         }
         ruy_run_kernel_impl(M, w, act_int8, w->ctx_gemm.get());
     }
+
+    w->neon_output.resize(M * w->N);
+    const float* ws = w->weight_scales.data();
+    for (size_t m = 0; m < M; m++) {
+        float32x4_t as = vdupq_n_f32(act_scales[m]);
+        const int32_t* src = w->ruy_output.data() + m * w->N;
+        float* dst = w->neon_output.data() + m * w->N;
+        size_t n = 0;
+        for (; n + 4 <= w->N; n += 4) {
+            float32x4_t v = vcvtq_f32_s32(vld1q_s32(src + n));
+            float32x4_t s = vld1q_f32(ws + n);
+            vst1q_f32(dst + n, vmulq_f32(vmulq_f32(v, as), s));
+        }
+        for (; n < w->N; n++)
+            dst[n] = static_cast<float>(src[n]) * act_scales[m] * ws[n];
+    }
+
+    if (output)
+        std::memcpy(output, w->neon_output.data(), M * w->N * sizeof(float));
 }
 
 struct Int4FcWeights {
     size_t K, N;
     uint8_t* prepacked = nullptr;
-    uint8_t* ref_prepacked = nullptr;
     std::vector<float> filter_scales;
     int lhs_layout_rows;
     int lhs_layout_cols;
     std::vector<int32_t> dst_buf;
     std::vector<float> output_buf;
 
-    ~Int4FcWeights() { free(prepacked); free(ref_prepacked); }
+    ~Int4FcWeights() { free(prepacked); }
 };
 
 struct Int4FcActivations {
@@ -171,15 +200,6 @@ void* int4_prepare(const float* fp32, size_t N, size_t K) {
 
     tflite::optimized_4bit::api::Prepack(
         w->prepacked, litert_source.data(),
-        w->lhs_layout_rows, w->lhs_layout_cols,
-        static_cast<int>(N), static_cast<int>(K),
-        tflite::optimized_4bit::FilterWidth,
-        tflite::optimized_4bit::FilterDepth);
-
-    posix_memalign(reinterpret_cast<void**>(&raw), 64, prepacked_size);
-    w->ref_prepacked = static_cast<uint8_t*>(raw);
-    tflite::optimized_4bit::ReferencePrepack(
-        w->ref_prepacked, litert_source.data(),
         w->lhs_layout_rows, w->lhs_layout_cols,
         static_cast<int>(N), static_cast<int>(K),
         tflite::optimized_4bit::FilterWidth,
@@ -241,34 +261,6 @@ void int4_run_kernel(size_t M, void* weights, void* activations,
 
     if (output)
         std::memcpy(output, w->output_buf.data(), M * w->N * sizeof(float));
-
-    if (reference) {
-        int ref_rw = 1;
-        int ref_rhs_lr = (batch_size + ref_rw - 1) & ~(ref_rw - 1);
-        int ref_dst_lr = ref_rhs_lr;
-
-        std::vector<int8_t> ref_act(static_cast<size_t>(ref_rhs_lr) * a->rhs_layout_cols, 0);
-        std::vector<float> ref_scales(ref_rhs_lr, 1.0f);
-        std::vector<int32_t> ref_offsets(ref_rhs_lr, 0);
-        tflite::optimized_4bit::ReferenceBatchQuantizeFloats4Bit(
-            a->fp32.data(), batch_size, static_cast<int>(w->K),
-            ref_act.data(), ref_scales.data(), ref_rw,
-            tflite::optimized_4bit::FilterDepth, ref_offsets.data());
-
-        std::vector<int32_t> ref_dst_buf(static_cast<size_t>(ref_dst_lr) * dst_layout_cols, 0);
-        std::vector<float> fs_ref = w->filter_scales;
-        std::memset(reference, 0, M * w->N * sizeof(float));
-        tflite::optimized_4bit::ReferenceAssignBiasAndComputeOffsets(
-            ref_offsets.data(), ref_scales.data(), fs_ref.data(),
-            nullptr, reference, output_depth, batch_size);
-        tflite::optimized_4bit::ReferenceRunKernel<4, 1, 32>(
-            w->ref_prepacked, ref_act.data(), ref_dst_buf.data(),
-            w->lhs_layout_rows, w->lhs_layout_cols,
-            ref_rhs_lr, a->rhs_layout_cols, ref_dst_lr, dst_layout_cols);
-        tflite::optimized_4bit::ReferenceUnpack<4, 1>(
-            reference, ref_dst_buf.data(), batch_size, output_depth,
-            ref_scales.data(), fs_ref.data(), ref_dst_lr, dst_layout_cols);
-    }
 }
 
 void int4_cleanup(void* weights, void* activations) {

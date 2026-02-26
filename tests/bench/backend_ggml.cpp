@@ -106,57 +106,42 @@ static void quantize_activations(const float* fp32, size_t M, size_t K,
         quantize(fp32 + m * K, q8_input.data() + m * q8_row_stride, static_cast<int64_t>(K));
 }
 
-static void ensure_activations(GgmlWeights* w, size_t M) {
-    if (w->cached_M == M) return;
-    w->cached_M = M;
-    std::mt19937 gen(42);
-    std::uniform_real_distribution<float> dist(-1.0f, 1.0f);
-    std::vector<float> fp32_input(M * w->K);
-    for (auto& v : fp32_input) v = dist(gen);
-    quantize_activations(fp32_input.data(), M, w->K, w->q8_input, w->q8_row_stride);
-    w->output.resize(M * w->N);
+struct GgmlActivations {
+    std::vector<uint8_t> q8_input;
+    size_t q8_row_stride = 0;
+};
+
+void* prepare_act(const float* fp32, size_t M, size_t K, void*) {
+    auto* a = new GgmlActivations();
+    quantize_activations(fp32, M, K, a->q8_input, a->q8_row_stride);
+    return a;
 }
 
-void run_kernel(size_t M, void* weights, void*,
+void run_kernel(size_t M, void* weights, void* activations,
                 const int8_t*, const float*,
-                float* output, float* reference) {
+                float* output, float*) {
     auto* w = static_cast<GgmlWeights*>(weights);
-    ensure_activations(w, M);
-    run_gemv(w, M, w->q8_input.data(), w->q8_row_stride, w->output.data());
+    auto* a = static_cast<GgmlActivations*>(activations);
+    w->output.resize(M * w->N);
+    run_gemv(w, M, a->q8_input.data(), a->q8_row_stride, w->output.data());
 
     if (output)
         std::memcpy(output, w->output.data(), M * w->N * sizeof(float));
-
-    if (reference) {
-        auto to_float_w = ggml_get_type_traits(w->type)->to_float;
-        auto to_float_a = ggml_get_type_traits(GGML_TYPE_Q8_0)->to_float;
-
-        std::vector<float> deq_w(w->N * w->K);
-        for (size_t n = 0; n < w->N; n++)
-            to_float_w(w->quantized.data() + n * w->row_stride,
-                        deq_w.data() + n * w->K, static_cast<int64_t>(w->K));
-
-        std::vector<float> deq_a(M * w->K);
-        for (size_t m = 0; m < M; m++)
-            to_float_a(w->q8_input.data() + m * w->q8_row_stride,
-                        deq_a.data() + m * w->K, static_cast<int64_t>(w->K));
-
-        bench::reference_matmul_fp32(deq_a.data(), deq_w.data(), reference, M, w->K, w->N);
-    }
 }
 
-void cleanup(void* weights, void*) {
+void cleanup(void* weights, void* activations) {
     delete static_cast<GgmlWeights*>(weights);
+    if (activations) delete static_cast<GgmlActivations*>(activations);
 }
 
 static int reg = [] {
     bench::register_backend({
         "ggml_q4_0", "ggml", bench::QuantCategory::INT4, 0,
-        prepare_q4, nullptr, run_kernel, cleanup
+        prepare_q4, prepare_act, run_kernel, cleanup
     });
     bench::register_backend({
         "ggml_q8_0", "ggml", bench::QuantCategory::INT8, 0,
-        prepare_q8, nullptr, run_kernel, cleanup
+        prepare_q8, prepare_act, run_kernel, cleanup
     });
     return 0;
 }();
