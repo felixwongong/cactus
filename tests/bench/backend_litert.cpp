@@ -32,17 +32,7 @@ void* int8_prepare(const float* fp32, size_t N, size_t K) {
     w->N = N;
     w->int8_rowmajor.resize(N * K);
     w->weight_scales.resize(N);
-    for (size_t n = 0; n < N; ++n) {
-        float max_abs = 0.0f;
-        for (size_t k = 0; k < K; ++k)
-            max_abs = std::max(max_abs, std::abs(fp32[n * K + k]));
-        float scale = std::max(max_abs / 127.0f, 1e-10f);
-        w->weight_scales[n] = scale;
-        for (size_t k = 0; k < K; ++k) {
-            int q = static_cast<int>(std::round(fp32[n * K + k] / scale));
-            w->int8_rowmajor[n * K + k] = static_cast<int8_t>(std::max(-128, std::min(127, q)));
-        }
-    }
+    bench::quantize_rows_int8(fp32, w->int8_rowmajor.data(), w->weight_scales.data(), N, K);
     return w;
 }
 
@@ -283,45 +273,6 @@ void int4_cleanup(void* weights, void* activations) {
 
 namespace attn {
 
-// ── INT8 helpers ────────────────────────────────────────────────────────────────
-
-static void quantize_rows_int8(const float* fp32, int8_t* dst, float* scales,
-                                size_t rows, size_t cols) {
-    for (size_t r = 0; r < rows; ++r) {
-        const float* row = fp32 + r * cols;
-        int8_t* out = dst + r * cols;
-
-        float32x4_t vmax = vdupq_n_f32(0.0f);
-        size_t c = 0;
-        for (; c + 4 <= cols; c += 4)
-            vmax = vmaxq_f32(vmax, vabsq_f32(vld1q_f32(row + c)));
-        float max_abs = vmaxvq_f32(vmax);
-        for (; c < cols; ++c)
-            max_abs = std::max(max_abs, std::abs(row[c]));
-
-        float scale = std::max(max_abs / 127.0f, 1e-10f);
-        scales[r] = scale;
-        float inv_scale = 1.0f / scale;
-        float32x4_t vinv = vdupq_n_f32(inv_scale);
-
-        c = 0;
-        for (; c + 8 <= cols; c += 8) {
-            float32x4_t f0 = vmulq_f32(vld1q_f32(row + c), vinv);
-            float32x4_t f1 = vmulq_f32(vld1q_f32(row + c + 4), vinv);
-            int32x4_t i0 = vcvtnq_s32_f32(f0);
-            int32x4_t i1 = vcvtnq_s32_f32(f1);
-            int16x4_t s0 = vqmovn_s32(i0);
-            int16x4_t s1 = vqmovn_s32(i1);
-            int8x8_t b = vqmovn_s16(vcombine_s16(s0, s1));
-            vst1_s8(out + c, b);
-        }
-        for (; c < cols; ++c) {
-            int q = static_cast<int>(std::round(row[c] * inv_scale));
-            out[c] = static_cast<int8_t>(std::max(-128, std::min(127, q)));
-        }
-    }
-}
-
 static void ruy_matmul_int32(const int8_t* A, size_t M, size_t K,
                               const int8_t* B_rowmajor, size_t N,
                               int32_t* dst, ruy::Context* ctx,
@@ -457,15 +408,13 @@ static void* int8_attn_prepare(const bench::AttnDims& dims, size_t seq_len, size
 
         head.k_int8.resize(kvl * hd);
         head.k_scales.resize(kvl);
-        quantize_rows_int8(k_head, head.k_int8.data(), head.k_scales.data(), kvl, hd);
+        bench::quantize_rows_int8(k_head, head.k_int8.data(), head.k_scales.data(), kvl, hd);
 
         std::vector<float> vt(hd * kvl);
-        for (size_t sk = 0; sk < kvl; ++sk)
-            for (size_t d = 0; d < hd; ++d)
-                vt[d * kvl + sk] = v_head[sk * hd + d];
+        bench::transpose_2d(v_head, vt.data(), kvl, hd);
         head.vt_int8.resize(hd * kvl);
         head.vt_scales.resize(hd);
-        quantize_rows_int8(vt.data(), head.vt_int8.data(), head.vt_scales.data(), hd, kvl);
+        bench::quantize_rows_int8(vt.data(), head.vt_int8.data(), head.vt_scales.data(), hd, kvl);
     }
 
     s->q_int8_buf.resize(sl * hd);
@@ -493,7 +442,7 @@ static void int8_attn_run_ruy(void* state, float* output) {
         const float* q_head = s->fp32_q.data() + qh * sl * hd;
         auto& kv = s->kv_heads[kvh];
 
-        quantize_rows_int8(q_head, s->q_int8_buf.data(), s->q_scales_buf.data(), sl, hd);
+        bench::quantize_rows_int8(q_head, s->q_int8_buf.data(), s->q_scales_buf.data(), sl, hd);
 
         ruy_matmul_int32(s->q_int8_buf.data(), sl, hd,
                          kv.k_int8.data(), kvl,
@@ -503,7 +452,7 @@ static void int8_attn_run_ruy(void* state, float* output) {
 
         softmax_causal(s->scores_buf.data(), sl, kvl);
 
-        quantize_rows_int8(s->scores_buf.data(), s->scores_int8_buf.data(),
+        bench::quantize_rows_int8(s->scores_buf.data(), s->scores_int8_buf.data(),
                            s->scores_scales_buf.data(), sl, kvl);
 
         ruy_matmul_int32(s->scores_int8_buf.data(), sl, kvl,
@@ -527,7 +476,7 @@ static void int8_attn_run_neon(void* state, float* output) {
         const float* q_head = s->fp32_q.data() + qh * hd;
         auto& kv = s->kv_heads[kvh];
 
-        quantize_rows_int8(q_head, s->q_int8_buf.data(), s->q_scales_buf.data(), 1, hd);
+        bench::quantize_rows_int8(q_head, s->q_int8_buf.data(), s->q_scales_buf.data(), 1, hd);
         s->q_scales_buf[0] *= s->scale;
 
         neon_mbvma_dequant(kv.k_int8.data(), kvl, hd, kv.k_scales.data(),
@@ -536,7 +485,7 @@ static void int8_attn_run_neon(void* state, float* output) {
 
         softmax_causal(s->scores_buf.data(), 1, kvl);
 
-        quantize_rows_int8(s->scores_buf.data(), s->scores_int8_buf.data(),
+        bench::quantize_rows_int8(s->scores_buf.data(), s->scores_int8_buf.data(),
                            s->scores_scales_buf.data(), 1, kvl);
 
         neon_mbvma_dequant(kv.vt_int8.data(), hd, kvl, kv.vt_scales.data(),
@@ -681,12 +630,10 @@ static void* int4_attn_prepare(const bench::AttnDims& dims, size_t seq_len, size
                             head->k_lhs_layout_rows, head->k_lhs_layout_cols);
 
         std::vector<float> vt(hd * kvl);
-        for (size_t sk = 0; sk < kvl; ++sk)
-            for (size_t d = 0; d < hd; ++d)
-                vt[d * kvl + sk] = v_head[sk * hd + d];
+        bench::transpose_2d(v_head, vt.data(), kvl, hd);
         head->vt_int8.resize(hd * kvl);
         head->vt_scales.resize(hd);
-        quantize_rows_int8(vt.data(), head->vt_int8.data(), head->vt_scales.data(), hd, kvl);
+        bench::quantize_rows_int8(vt.data(), head->vt_int8.data(), head->vt_scales.data(), hd, kvl);
 
         s->kv_heads[h] = std::move(head);
     }
@@ -733,7 +680,7 @@ static void int4_attn_run(void* state, float* output) {
 
         softmax_causal(s->scores_buf.data(), sl, kvl);
 
-        quantize_rows_int8(s->scores_buf.data(), s->scores_int8_buf.data(),
+        bench::quantize_rows_int8(s->scores_buf.data(), s->scores_int8_buf.data(),
                            s->scores_scales_buf.data(), sl, kvl);
         ruy_matmul_int32(s->scores_int8_buf.data(), sl, kvl,
                          kv.vt_int8.data(), hd,

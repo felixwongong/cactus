@@ -105,6 +105,13 @@ void reference_attention_fp32(const float* Q, const float* K, const float* V,
 void fp32_to_fp16(const float* src, __fp16* dst, size_t count);
 void fp16_to_fp32(const __fp16* src, float* dst, size_t count);
 
+void quantize_rows_int8(const float* src, int8_t* dst, float* scales,
+                         size_t rows, size_t cols);
+
+void transpose_2d(const float* src, float* dst, size_t rows, size_t cols);
+
+void pack_int4_unsigned(const int8_t* signed_vals, uint8_t* packed, size_t count);
+
 void set_thread_override(int n);
 int get_thread_override();
 int get_effective_threads(int backend_default);

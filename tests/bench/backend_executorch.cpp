@@ -118,17 +118,7 @@ void* int8_prepare(const float* fp32, size_t N, size_t K) {
 
     std::vector<int8_t> qw(N * K);
     std::vector<float> scales(N);
-    for (size_t n = 0; n < N; ++n) {
-        float mx = 0.0f;
-        for (size_t k = 0; k < K; ++k)
-            mx = std::max(mx, std::abs(fp32[n * K + k]));
-        float s = std::max(mx / 127.0f, 1e-10f);
-        scales[n] = s;
-        for (size_t k = 0; k < K; ++k) {
-            int q = static_cast<int>(std::round(fp32[n * K + k] / s));
-            qw[n * K + k] = static_cast<int8_t>(std::clamp(q, -128, 127));
-        }
-    }
+    bench::quantize_rows_int8(fp32, qw.data(), scales.data(), N, K);
 
     auto* w = new XnnWeights();
     w->K = K;

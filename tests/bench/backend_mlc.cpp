@@ -76,12 +76,7 @@ static QuantizedTensor quantize_and_pack(const float* fp32, size_t N, size_t K, 
     if (bits == 4) {
         bench::quantize_int4_per_group(src, N, K, quantized, raw_scales);
         qt.packed.resize(N * K / 2);
-        for (size_t n = 0; n < N; n++)
-            for (size_t k = 0; k < K; k += 2) {
-                uint8_t lo = static_cast<uint8_t>(quantized[n * K + k] + 8);
-                uint8_t hi = static_cast<uint8_t>(quantized[n * K + k + 1] + 8);
-                qt.packed[n * (K / 2) + k / 2] = lo | (hi << 4);
-            }
+        bench::pack_int4_unsigned(quantized.data(), qt.packed.data(), N * K);
         qt.b_shape[0] = static_cast<int64_t>(N);
         qt.b_shape[1] = static_cast<int64_t>(K / 2);
     } else {
@@ -259,9 +254,7 @@ void* prepare(const bench::AttnDims& dims, size_t seq_len, size_t cache_len,
 
         const float* v_head = fp32_v + h * kvl * hd;
         std::vector<float> vt(hd * kvl);
-        for (size_t r = 0; r < kvl; r++)
-            for (size_t c = 0; c < hd; c++)
-                vt[c * kvl + r] = v_head[r * hd + c];
+        bench::transpose_2d(v_head, vt.data(), kvl, hd);
         state->heads[h].vt = quantize_and_pack(vt.data(), hd, kvl, bits);
     }
 

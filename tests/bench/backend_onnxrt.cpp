@@ -208,13 +208,7 @@ static void pack_int4(OrtWeights* w, const float* fp32) {
     bench::quantize_int4_per_group(src, N, K, int4_vals, raw_scales);
 
     w->B_packed.resize(N * K / 2);
-    for (size_t n = 0; n < N; n++) {
-        for (size_t k = 0; k < K; k += 2) {
-            uint8_t lo = static_cast<uint8_t>(int4_vals[n * K + k] + 8);
-            uint8_t hi = static_cast<uint8_t>(int4_vals[n * K + k + 1] + 8);
-            w->B_packed[n * (K / 2) + k / 2] = (hi << 4) | lo;
-        }
-    }
+    bench::pack_int4_unsigned(int4_vals.data(), w->B_packed.data(), N * K);
 
     w->scales = raw_scales;
     const size_t n_blocks = K / bench::kGroupSize;

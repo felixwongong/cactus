@@ -278,9 +278,7 @@ void* prepare_matmul(const bench::AttnDims& dims, size_t seq_len, size_t cache_l
     ggml_set_name(v_t, "V"); ggml_set_input(v_t);
     std::vector<float> v_transposed(r.kvh * r.kvl * r.hd);
     for (size_t h = 0; h < r.kvh; ++h)
-        for (size_t s = 0; s < r.kvl; ++s)
-            for (size_t d = 0; d < r.hd; ++d)
-                v_transposed[h * r.hd * r.kvl + d * r.kvl + s] = fp32_v[h * r.kvl * r.hd + s * r.hd + d];
+        bench::transpose_2d(fp32_v + h * r.kvl * r.hd, v_transposed.data() + h * r.hd * r.kvl, r.kvl, r.hd);
     quantize_tensor(v_transposed.data(), v_t->data, kv_type, r.kv_rows * r.hd);
 
     auto* kq = ggml_mul_mat(r.ctx, r.k_t, r.q_t);

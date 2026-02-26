@@ -267,4 +267,55 @@ void fp16_to_fp32(const __fp16* src, float* dst, size_t count) {
         dst[i] = static_cast<float>(src[i]);
 }
 
+void quantize_rows_int8(const float* src, int8_t* dst, float* scales,
+                         size_t rows, size_t cols) {
+    for (size_t r = 0; r < rows; ++r) {
+        const float* row = src + r * cols;
+        int8_t* out = dst + r * cols;
+
+        float32x4_t vmax = vdupq_n_f32(0.0f);
+        size_t c = 0;
+        for (; c + 4 <= cols; c += 4)
+            vmax = vmaxq_f32(vmax, vabsq_f32(vld1q_f32(row + c)));
+        float max_abs = vmaxvq_f32(vmax);
+        for (; c < cols; ++c)
+            max_abs = std::max(max_abs, std::abs(row[c]));
+
+        float scale = std::max(max_abs / 127.0f, 1e-10f);
+        scales[r] = scale;
+        float inv_scale = 1.0f / scale;
+        float32x4_t vinv = vdupq_n_f32(inv_scale);
+
+        c = 0;
+        for (; c + 8 <= cols; c += 8) {
+            float32x4_t f0 = vmulq_f32(vld1q_f32(row + c), vinv);
+            float32x4_t f1 = vmulq_f32(vld1q_f32(row + c + 4), vinv);
+            int32x4_t i0 = vcvtnq_s32_f32(f0);
+            int32x4_t i1 = vcvtnq_s32_f32(f1);
+            int16x4_t s0 = vqmovn_s32(i0);
+            int16x4_t s1 = vqmovn_s32(i1);
+            int8x8_t b = vqmovn_s16(vcombine_s16(s0, s1));
+            vst1_s8(out + c, b);
+        }
+        for (; c < cols; ++c) {
+            int q = static_cast<int>(std::round(row[c] * inv_scale));
+            out[c] = static_cast<int8_t>(std::max(-128, std::min(127, q)));
+        }
+    }
+}
+
+void transpose_2d(const float* src, float* dst, size_t rows, size_t cols) {
+    for (size_t r = 0; r < rows; ++r)
+        for (size_t c = 0; c < cols; ++c)
+            dst[c * rows + r] = src[r * cols + c];
+}
+
+void pack_int4_unsigned(const int8_t* signed_vals, uint8_t* packed, size_t count) {
+    for (size_t i = 0; i < count; i += 2) {
+        uint8_t lo = static_cast<uint8_t>(signed_vals[i] + 8);
+        uint8_t hi = static_cast<uint8_t>(signed_vals[i + 1] + 8);
+        packed[i / 2] = lo | (hi << 4);
+    }
+}
+
 } // namespace bench
