@@ -173,7 +173,7 @@ void save_node(CactusGraph& graph, size_t node_id, const std::string& filename) 
 
     size_t byte_size = PrecisionTraits::packed_size_of(precision, total_elements);
 
-    bool has_scales = (precision == Precision::INT8 && buffer.is_grouped_int8() && buffer.scales_data);
+    bool has_scales = PrecisionTraits::is_integer(precision) && buffer.group_size > 0 && buffer.scales_data;
     size_t N = shape.size() >= 1 ? shape[0] : 1;
     size_t scales_bytes = has_scales ? (N * buffer.num_groups * sizeof(__fp16)) : 0;
 
