@@ -266,6 +266,9 @@ typedef CactusGetLastErrorDart = Pointer<Utf8> Function();
 typedef CactusSetTelemetryEnvironmentDart = void Function(
     Pointer<Utf8> framework, Pointer<Utf8> cacheLocation, Pointer<Utf8> version);
 
+typedef CactusTelemetryFlushNative = Void Function();
+typedef CactusTelemetryFlushDart = void Function();
+
 
 DynamicLibrary _loadLibrary() {
   if (Platform.isAndroid) {
@@ -340,6 +343,9 @@ final _cactusGetLastError = _lib
 final _cactusSetTelemetryEnvironment = _lib.lookupFunction<
     CactusSetTelemetryEnvironmentNative,
     CactusSetTelemetryEnvironmentDart>('cactus_set_telemetry_environment');
+final _cactusTelemetryFlush = _lib.lookupFunction<
+    CactusTelemetryFlushNative,
+    CactusTelemetryFlushDart>('cactus_telemetry_flush');
 
 // ----------------------------------------------------------------------------
 // Helper Extensions
@@ -1097,6 +1103,7 @@ class Cactus {
   void dispose() {
     if (!_disposed) {
       _cactusDestroy(_handle);
+      _cactusTelemetryFlush();
       _disposed = true;
     }
   }
@@ -1191,6 +1198,7 @@ class StreamTranscriber {
   void dispose() {
     if (!_disposed) {
       _cactusStreamTranscribeDestroy(_handle);
+      _cactusTelemetryFlush();
       _disposed = true;
     }
   }
@@ -1379,6 +1387,7 @@ class CactusIndex {
   void dispose() {
     if (!_disposed) {
       _cactusIndexDestroy(_handle);
+      _cactusTelemetryFlush();
       _disposed = true;
     }
   }
