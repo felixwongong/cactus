@@ -152,6 +152,8 @@ def convert_hf_model_weights(model, output_dir, precision='INT8', args=None):
             if dst.exists():
                 dst.unlink()
             os.link(src, dst)
+        else:
+            print(f"Warning: tie_word_embeddings is True but {src} not found")
         if embedding_found:
             for name in OUTPUT_NAMES:
                 if name in state_dict:
