@@ -188,7 +188,7 @@ def export_and_publish_model(args, api):
         if args.pipeline_tag:
             meta["pipeline_tag"] = args.pipeline_tag
         if args.tags:
-            meta["tags"] = args.tags.split(",")
+            meta["tags"] = [tag.strip() for tag in args.tags.split(",") if tag.strip()]
         if source_license:
             meta["license"] = source_license
         if args.description:
