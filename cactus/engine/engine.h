@@ -129,8 +129,6 @@ struct Config {
     float default_max_tps = -1.0f;
     float default_cloud_handoff_threshold = 0.0f;
 
-    uint32_t num_mel_bins = 80;
-
     std::vector<std::string> layer_types;
     size_t conv_L_cache = 0;
 

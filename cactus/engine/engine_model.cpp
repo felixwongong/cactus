@@ -669,7 +669,7 @@ size_t Model::get_prefill_chunk_size() const {
     if (has_npu_prefill()) {
         return static_cast<size_t>(npu_prefill_->get_chunk_size());
     }
-    return 256;
+    return 256;  // default chunk size
 }
 
 std::vector<__fp16> Model::get_token_embeddings(const std::vector<uint32_t>& tokens) {
