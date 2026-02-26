@@ -20,8 +20,8 @@
 // compiled kernels from `mlc_llm compile`).
 //
 // Setup:
-//   1. git clone https://github.com/mlc-ai/mlc-llm third_party/mlc
-//   2. cd third_party/mlc/3rdparty/tvm
+//   1. git clone https://github.com/mlc-ai/mlc-llm ../third_party/mlc
+//   2. cd ../third_party/mlc/3rdparty/tvm
 //      git submodule update --init 3rdparty/tvm-ffi
 //      cd 3rdparty/tvm-ffi && git submodule update --init && cd ../..
 //      mkdir build && cd build

@@ -287,7 +287,7 @@ bool run_stack(TestUtils::TestRunner& runner, const BenchOptions& opt_in) {
                 return act_sets.size() - 1;
             };
 
-            std::array<std::vector<float>, 7> layer0_fp32;
+            std::array<std::vector<float>, kProjectionSpecs.size()> layer0_fp32;
 
             std::uniform_real_distribution<float> dist(-1.0f, 1.0f);
             for (size_t l = 0; l < L; ++l) {
@@ -390,8 +390,8 @@ bool run_stack(TestUtils::TestRunner& runner, const BenchOptions& opt_in) {
             }
 
             // Timed iterations
-            std::array<double, 7> per_proj_ms{};
-            std::array<size_t, 7> per_proj_calls{};
+            std::array<double, kProjectionSpecs.size()> per_proj_ms{};
+            std::array<size_t, kProjectionSpecs.size()> per_proj_calls{};
             double step_total_ms = 0.0;
 
             for (int iter = 0; iter < opt.iterations; ++iter) {

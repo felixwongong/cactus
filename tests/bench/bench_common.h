@@ -23,14 +23,14 @@ struct ProjectionSpec {
     size_t N;
 };
 
-constexpr std::array<ProjectionSpec, 7> kProjectionSpecs = {{
-    {"attn_q",   640, 1024},
-    {"attn_k",   640,  256},
-    {"attn_v",   640,  256},
-    {"attn_o",  1024,  640},
-    {"ffn_gate", 640, 2048},
-    {"ffn_up",   640, 2048},
-    {"ffn_down",2048,  640},
+constexpr std::array<ProjectionSpec, 1> kProjectionSpecs = {{
+    {"matmul", 1024, 1024},
+    // {"attn_k",   640,  256},
+    // {"attn_v",   640,  256},
+    // {"attn_o",  1024,  640},
+    // {"ffn_gate", 640, 2048},
+    // {"ffn_up",   640, 2048},
+    // {"ffn_down",2048,  640},
 }};
 
 struct BenchResult {
@@ -43,7 +43,7 @@ struct BenchOptions {
     int iterations = 1000;
     int num_threads = 0; // 0 = all available
     int layers = 0;    // >0 enables stack mode (layer-cycling benchmark)
-    std::vector<size_t> batch_sizes = {1, 13, 34};
+    std::vector<size_t> batch_sizes = {1, 1024};
     std::string backends_filter;
     std::string mode;  // "comparison", "stack", or "both" (empty = auto)
     float* capture_output = nullptr;    // bench_fn copies fp32 kernel output here after warmup
