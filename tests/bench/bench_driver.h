@@ -24,12 +24,8 @@ struct BackendVariant {
                             const BenchOptions& opt);
     void (*cleanup)(void* weights, void* activations);
 
-    // Maximum supported M (batch size). 0 = unlimited.
     size_t max_M = 0;
 
-    // Run the kernel once (no warmup, no timing, no buffer allocation).
-    // Output stored in backend-managed buffer. May be null — stack mode skips
-    // backends that don't implement it.
     void (*run_once)(size_t M, void* weights, void* activations,
                      const int8_t* act_int8, const float* act_scales);
 };
@@ -37,8 +33,7 @@ struct BackendVariant {
 void register_backend(BackendVariant v);
 const std::vector<BackendVariant>& get_backends();
 
-bool run_comparison(TestUtils::TestRunner& runner, const BenchOptions& opt);
-bool run_stack(TestUtils::TestRunner& runner, const BenchOptions& opt);
+bool run_benchmark(TestUtils::TestRunner& runner, const BenchOptions& opt);
 
 } // namespace bench
 

@@ -99,10 +99,10 @@ make -j test_matmul_bench
 ./test_matmul_bench [options]
 
   --warmup N          Warmup iterations (default: 100)
-  --iterations N      Timed iterations (default: 1000)
+  --iterations N      Timed iterations (default: 1024)
+  --matrices N        Distinct weight matrices to cycle through (default: 64)
   --threads N         Worker threads (default: all cores)
-  --batch M1,M2,...   Batch sizes to test (default: 1,1024)
-  --backends FILTER   Comma-separated backend names to run
-  --mode MODE         "comparison", "stack", or "both"
-  --layers N          Enable stack/layer-cycling mode with N layers
+  --backends FILTER   Comma-separated framework names to run
 ```
+
+The benchmark runs 1x1024x1024 and 1024x1024x1024 matmuls. Each timed run cycles through `--matrices` distinct weight matrices to simulate realistic cache pressure (64 matrices x ~1MB each exceeds L2 cache).

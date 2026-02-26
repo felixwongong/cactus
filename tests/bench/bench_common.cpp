@@ -159,25 +159,15 @@ bool parse_bench_args(int argc, char** argv, BenchOptions& opt, std::string& err
         } else if (a == "--warmup") {
             if (++i >= argc) { err = "Missing --warmup value"; return false; }
             opt.warmup = std::max(0, std::stoi(argv[i]));
-        } else if (a == "--m") {
-            if (++i >= argc) { err = "Missing --m value"; return false; }
-            opt.batch_sizes = {static_cast<size_t>(std::max(1, std::stoi(argv[i])))};
+        } else if (a == "--matrices") {
+            if (++i >= argc) { err = "Missing --matrices value"; return false; }
+            opt.num_matrices = std::max(1, std::stoi(argv[i]));
         } else if (a == "--threads") {
             if (++i >= argc) { err = "Missing --threads value"; return false; }
             opt.num_threads = std::max(1, std::stoi(argv[i]));
         } else if (a == "--backends") {
             if (++i >= argc) { err = "Missing --backends value"; return false; }
             opt.backends_filter = argv[i];
-        } else if (a == "--layers") {
-            if (++i >= argc) { err = "Missing --layers value"; return false; }
-            opt.layers = std::max(1, std::stoi(argv[i]));
-        } else if (a == "--mode") {
-            if (++i >= argc) { err = "Missing --mode value"; return false; }
-            opt.mode = argv[i];
-            if (opt.mode != "comparison" && opt.mode != "stack" && opt.mode != "both") {
-                err = "Invalid --mode, expected comparison|stack|both";
-                return false;
-            }
         } else {
             err = "Unknown argument: " + a;
             return false;
