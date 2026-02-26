@@ -17,6 +17,7 @@
 #include <sys/utsname.h>
 #if defined(__APPLE__)
 #include <sys/sysctl.h>
+#include <CoreFoundation/CoreFoundation.h>
 #endif
 #include <curl/curl.h>
 #include <dirent.h>
@@ -72,6 +73,7 @@ static std::string device_brand;
 static std::string cactus_version;
 static std::string framework = "cpp";
 static std::string custom_cache_location;
+static std::string app_id;
 static std::string device_registered_file;
 static std::string project_registered_file;
 static bool device_registered = false;
@@ -113,6 +115,7 @@ struct CloudConfigurationStateSnapshot {
     std::string device_os;
     std::string device_os_version;
     std::string device_brand;
+    std::string app_id;
     std::string device_registered_file;
     std::string project_registered_file;
     bool enabled = false;
@@ -292,14 +295,6 @@ static std::string get_telemetry_dir_locked() {
     mkdir((std::string(home) + "/Library/Caches/cactus").c_str(), 0755);
     mkdir(dir.c_str(), 0755);
     return dir;
-}
-
-static std::string scoped_file_name(const std::string& prefix, const std::string& scope) {
-    std::hash<std::string> hasher;
-    size_t h = hasher(scope);
-    std::ostringstream oss;
-    oss << prefix << std::hex << h;
-    return oss.str();
 }
 
 static std::string cloud_api_key_cache_file_locked() {
@@ -652,6 +647,95 @@ static std::string new_uuid() {
     return oss.str();
 }
 
+static uint64_t fnv1a_64(const std::string& s) {
+    uint64_t h = 14695981039346656037ULL;
+    for (unsigned char c : s) { h ^= c; h *= 1099511628211ULL; }
+    return h;
+}
+
+static std::string uuid_from_string(const std::string& input) {
+    uint64_t a = fnv1a_64(input);
+    uint64_t b = fnv1a_64(input + "\xff");
+    a = (a & 0xffffffffffff0fffULL) | 0x0000000000004000ULL;
+    b = (b & 0x3fffffffffffffffULL) | 0x8000000000000000ULL;
+    std::ostringstream oss;
+    oss << std::hex << std::setfill('0');
+    oss << std::setw(8) << ((a >> 32) & 0xffffffffULL);
+    oss << "-" << std::setw(4) << ((a >> 16) & 0xffffULL);
+    oss << "-" << std::setw(4) << (a & 0xffffULL);
+    oss << "-" << std::setw(4) << ((b >> 48) & 0xffffULL);
+    oss << "-" << std::setw(12) << (b & 0xffffffffffffULL);
+    return oss.str();
+}
+
+static std::string read_git_remote_url() {
+    const char* cwd_env = std::getenv("PWD");
+    if (!cwd_env) return "";
+    std::string dir = cwd_env;
+    while (!dir.empty()) {
+        std::ifstream f(dir + "/.git/config");
+        if (f.is_open()) {
+            std::string line;
+            bool in_origin = false;
+            while (std::getline(f, line)) {
+                if (line.find("[remote \"origin\"]") != std::string::npos) {
+                    in_origin = true;
+                } else if (in_origin) {
+                    size_t pos = line.find("url = ");
+                    if (pos != std::string::npos) return line.substr(pos + 6);
+                    if (!line.empty() && line[0] == '[') break;
+                }
+            }
+            return "";
+        }
+        size_t pos = dir.rfind('/');
+        if (pos == 0 || pos == std::string::npos) break;
+        dir = dir.substr(0, pos);
+    }
+    return "";
+}
+
+#if defined(__APPLE__)
+static std::string detect_app_id() {
+    CFBundleRef bundle = CFBundleGetMainBundle();
+    if (!bundle) return "";
+    CFStringRef id = (CFStringRef)CFBundleGetValueForInfoDictionaryKey(bundle, CFSTR("CFBundleIdentifier"));
+    if (!id) return "";
+    char buf[256];
+    return CFStringGetCString(id, buf, sizeof(buf), kCFStringEncodingUTF8) ? buf : "";
+}
+#elif defined(__linux__) || defined(__ANDROID__)
+static std::string detect_app_id() {
+    std::ifstream f("/proc/self/cmdline");
+    if (!f.is_open()) return "";
+    std::string s;
+    std::getline(f, s, '\0');
+    size_t colon = s.find(':');
+    if (colon != std::string::npos) s = s.substr(0, colon);
+    return s;
+}
+#else
+static std::string detect_app_id() { return ""; }
+#endif
+
+static std::string extract_android_package_from_path(const std::string& path) {
+    for (const char* prefix : {"/data/user/", "/data/user_de/", "/data/data/"}) {
+        size_t pos = path.find(prefix);
+        if (pos == std::string::npos) continue;
+        size_t start = pos + strlen(prefix);
+        if (strcmp(prefix, "/data/data/") != 0) {
+            start = path.find('/', start);
+            if (start == std::string::npos) continue;
+            start++;
+        }
+        size_t end = path.find('/', start);
+        if (end == std::string::npos) end = path.size();
+        std::string pkg = path.substr(start, end - start);
+        if (!pkg.empty()) return pkg;
+    }
+    return "";
+}
+
 static std::string format_timestamp(const std::chrono::system_clock::time_point& tp) {
     using namespace std::chrono;
     auto secs = time_point_cast<std::chrono::seconds>(tp);
@@ -955,6 +1039,11 @@ static CloudSendResult send_batch_to_cloud(const std::vector<Event>& local, cons
             payload << "\"framework_version\":\"" << snapshot.cactus_version << "\",";
         }
         payload << "\"device_id\":\"" << snapshot.device_id << "\"";
+        if (!snapshot.app_id.empty()) {
+            payload << ",\"app_id\":\"" << escape_json_string(snapshot.app_id.c_str()) << "\"";
+        } else {
+            payload << ",\"app_id\":null";
+        }
         if (e.message[0] != '\0') {
             payload << ",\"message\":\"" << escape_json_string(e.message) << "\"";
         } else {
@@ -1031,6 +1120,11 @@ static void write_events_to_cache_in_dir(const std::vector<Event>& local, const 
             oss << ",\"error\":null";
         }
         oss << ",\"function_calls\":null";
+        if (!app_id.empty()) {
+            oss << ",\"app_id\":\"" << escape_json_string(app_id.c_str()) << "\"";
+        } else {
+            oss << ",\"app_id\":null";
+        }
         oss << "}";
         std::string file = dir + "/" + event_type_to_string(e.type) + ".log";
         std::ofstream out(file, std::ios::app);
@@ -1088,6 +1182,7 @@ static CloudConfigurationStateSnapshot capture_cloud_configuration_state_snapsho
     snapshot.device_os = device_os;
     snapshot.device_os_version = device_os_version;
     snapshot.device_brand = device_brand;
+    snapshot.app_id = app_id;
     snapshot.device_registered_file = device_registered_file;
     snapshot.project_registered_file = project_registered_file;
     snapshot.enabled = enabled;
@@ -1158,17 +1253,23 @@ void init(const char* project_id_param, const char* project_scope_param, const c
     const char* env_cloud = std::getenv("CACTUS_CLOUD_KEY");
 
     std::string dir = get_telemetry_dir_locked();
+
+    std::string device_file = dir + "/device_id";
+    std::string device_flag_file = dir + "/device_registered";
+    bool device_was_registered = load_registered_flag(device_flag_file);
+    std::string resolved_device_id = load_or_create_id(device_file);
+
     std::string resolved_project_id;
     if (project_id_param && *project_id_param) {
         resolved_project_id = project_id_param;
     } else if (env_project && *env_project) {
         resolved_project_id = env_project;
     } else {
-        std::string file = dir + "/" + scoped_file_name("project_", scope);
-        resolved_project_id = load_or_create_id(file);
+        std::string remote_url = read_git_remote_url();
+        resolved_project_id = remote_url.empty() ? resolved_device_id : uuid_from_string(remote_url);
     }
 
-    std::string project_flag_file = dir + "/" + scoped_file_name("project_reg_", scope);
+    std::string project_flag_file = dir + "/project_reg_" + resolved_project_id.substr(0, 8);
     bool project_was_registered = load_registered_flag(project_flag_file);
 
     std::string resolved_cloud_key;
@@ -1178,13 +1279,8 @@ void init(const char* project_id_param, const char* project_scope_param, const c
         resolved_cloud_key = env_cloud;
     }
 
-    std::string device_file = dir + "/device_id";
-    std::string device_flag_file = dir + "/device_registered";
-    bool device_was_registered = load_registered_flag(device_flag_file);
-    std::string resolved_device_id = load_or_create_id(device_file);
-
     collect_device_info();
-    read_cactus_version();
+    if (cactus_version.empty()) read_cactus_version();
 
     if (env_url && *env_url) supabase_url = env_url;
     if (env_key && *env_key) supabase_key = env_key;
@@ -1194,6 +1290,7 @@ void init(const char* project_id_param, const char* project_scope_param, const c
     cloud_key = resolved_cloud_key;
     device_registered_file = device_flag_file;
     device_id = resolved_device_id;
+    if (app_id.empty()) app_id = detect_app_id();
 
     project_registered = project_was_registered;
     device_registered = device_was_registered;
@@ -1229,13 +1326,25 @@ void setCloudDisabled(bool disabled) {
     cloud_disabled = disabled;
 }
 
-void setTelemetryEnvironment(const char* framework_str, const char* cache_location_str) {
+void setAppId(const char* id) {
+    std::lock_guard<std::mutex> guard(telemetry_mutex);
+    if (id && id[0] != '\0') app_id = id;
+}
+
+void setTelemetryEnvironment(const char* framework_str, const char* cache_location_str, const char* version_str) {
     std::lock_guard<std::mutex> guard(telemetry_mutex);
     if (framework_str && framework_str[0] != '\0') {
         framework = framework_str;
     }
     if (cache_location_str && cache_location_str[0] != '\0') {
         custom_cache_location = cache_location_str;
+        if (app_id.empty()) {
+            std::string pkg = extract_android_package_from_path(custom_cache_location);
+            if (!pkg.empty()) app_id = pkg;
+        }
+    }
+    if (version_str && version_str[0] != '\0') {
+        cactus_version = version_str;
     }
 }
 
@@ -1296,10 +1405,11 @@ void recordEmbedding(const char* model, bool success, const char* message) {
     TelemetryDispatcher::instance().enqueue(e);
 }
 
-void recordTranscription(const char* model, bool success, double ttft_ms, double tps, double response_time_ms, int tokens, const char* message) {
+void recordTranscription(const char* model, bool success, double ttft_ms, double tps, double response_time_ms, int tokens, double ram_usage_mb, const char* message) {
     std::lock_guard<std::mutex> guard(telemetry_mutex);
     if (in_stream_mode) return;
     Event e = make_event(TRANSCRIPTION, model, success, ttft_ms, tps, response_time_ms, tokens, message);
+    e.ram_usage_mb = ram_usage_mb;
     if (!can_record_event_locked()) return;
     TelemetryDispatcher::instance().enqueue(e);
 }
