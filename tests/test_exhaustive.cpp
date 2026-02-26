@@ -2,6 +2,8 @@
 #include <fstream>
 #include <sstream>
 #include <cstdlib>
+#include <cstring>
+#include <cctype>
 #include <algorithm>
 #include <cmath>
 
@@ -66,7 +68,7 @@ static float compute_wer(const std::string& hyp, const std::string& ref) {
         std::string tok;
         while (iss >> tok) {
             std::string c;
-            for (char ch : tok) if (std::isalnum(ch)) c += std::tolower(ch);
+            for (unsigned char ch : tok) if (std::isalnum(ch)) c += std::tolower(ch);
             if (!c.empty()) w.push_back(c);
         }
         return w;
@@ -196,6 +198,7 @@ static bool test_stt_golden(const std::string& golden, const std::string& family
     float threshold = (float)json_number(golden, "wer_threshold", 0.15);
 
     if (!g_transcribe_path) { std::cerr << "CACTUS_TEST_TRANSCRIBE_MODEL not set\n"; return false; }
+    if (!g_assets_path) { std::cerr << "CACTUS_TEST_ASSETS not set\n"; return false; }
     cactus_model_t model = cactus_init(g_transcribe_path, nullptr, false);
     if (!model) { std::cerr << "Failed to init model\n"; return false; }
 

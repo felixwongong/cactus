@@ -109,7 +109,7 @@ jobs:
             local model_id=$1 output_dir=$2 precision=$3
             if [ ! -f "weights/$output_dir/config.txt" ]; then
               echo "Converting $model_id -> weights/$output_dir"
-              python3 -m src.cli convert "$model_id" "weights/$output_dir" --precision "$precision" ${HF_TOKEN:+--token "$HF_TOKEN"} || true
+              python3 -m src.cli convert "$model_id" "weights/$output_dir" --precision "$precision" ${HF_TOKEN:+--token "$HF_TOKEN"} || echo "WARNING: conversion of $model_id failed (exit $?), checking fallback directory"
               local default_dir="weights/$(echo "$model_id" | sed 's|.*/||' | tr '[:upper:]' '[:lower:]')"
               if [ ! -f "weights/$output_dir/config.txt" ] && [ -f "$default_dir/config.txt" ]; then
                 mv "$default_dir" "weights/$output_dir"
