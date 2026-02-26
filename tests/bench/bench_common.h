@@ -19,11 +19,30 @@ constexpr size_t kBlockSize = 4;
 constexpr size_t kK = 1024;
 constexpr size_t kN = 1024;
 
-struct BenchOptions {
+struct MatmulBenchOptions {
     int warmup = 100;
     int iterations = 1024;
     int num_matrices = 64;
+    int num_threads = 0;
     std::vector<size_t> batch_sizes = {1, 1024};
+    std::string backends_filter;
+};
+
+enum class AttnMode { PREFILL, DECODE };
+
+struct AttnDims {
+    size_t head_dim = 128;
+    size_t num_q_heads = 32;
+    size_t num_kv_heads = 8;
+};
+
+struct AttnBenchOptions {
+    int warmup = 100;
+    int iterations = 512;
+    int num_threads = 0;
+    size_t prefill_seq_len = 1024;
+    size_t decode_cache_len = 511;
+    AttnDims dims;
     std::string backends_filter;
 };
 
@@ -73,7 +92,22 @@ struct AccuracyResult {
 AccuracyResult check_accuracy(const float* reference, const float* actual,
                                size_t count, float nrmse_tolerance);
 
-bool parse_bench_args(int argc, char** argv, BenchOptions& opt, std::string& err);
+bool parse_matmul_bench_args(int argc, char** argv, MatmulBenchOptions& opt, std::string& err);
+
+bool framework_matches_filter(const char* framework, const std::string& filter);
+
+void reference_attention_fp32(const float* Q, const float* K, const float* V,
+                               float* output,
+                               size_t num_q_heads, size_t num_kv_heads,
+                               size_t seq_len, size_t kv_seq_len,
+                               size_t head_dim, float scale);
+
+void fp32_to_fp16(const float* src, __fp16* dst, size_t count);
+void fp16_to_fp32(const __fp16* src, float* dst, size_t count);
+
+void set_thread_override(int n);
+int get_thread_override();
+int get_effective_threads(int backend_default);
 
 } // namespace bench
 

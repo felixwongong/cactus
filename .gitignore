@@ -20,6 +20,7 @@ apple/libcactus.a
 !libs/curl/**/*.a
 venv
 
+tests/build_attn/
 __pycache__
 *.egg-info
 profile.txt

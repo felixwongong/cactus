@@ -124,7 +124,7 @@ struct OrtWeights {
     std::vector<Ort::Value> inputs;
 
     void bind(float* act_data, size_t M) {
-        int threads = (M == 1) ? kGemvThreads : kGemmThreads;
+        int threads = bench::get_effective_threads((M == 1) ? kGemvThreads : kGemmThreads);
         auto bytes = build_model(K, N, bits);
         Ort::SessionOptions opts;
         opts.SetIntraOpNumThreads(threads);
@@ -237,8 +237,8 @@ void* i4_prepare(const float* fp32, size_t N, size_t K) {
 }
 
 static int reg = [] {
-    bench::register_backend({"onnxrt_int8", "onnxrt", bench::QuantCategory::INT8, 0, i8_prepare, prepare_act, run_kernel, cleanup});
-    bench::register_backend({"onnxrt_int4", "onnxrt", bench::QuantCategory::INT4, 0, i4_prepare, prepare_act, run_kernel, cleanup});
+    bench::register_matmul_backend({"onnxrt_int8", "onnxrt", bench::QuantCategory::INT8, 0, i8_prepare, prepare_act, run_kernel, cleanup});
+    bench::register_matmul_backend({"onnxrt_int4", "onnxrt", bench::QuantCategory::INT4, 0, i4_prepare, prepare_act, run_kernel, cleanup});
     return 0;
 }();
 

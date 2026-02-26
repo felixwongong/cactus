@@ -2,8 +2,18 @@
 
 #include <algorithm>
 #include <cmath>
+#include <thread>
+#include <arm_neon.h>
 
 namespace bench {
+
+static int s_thread_override = 0;
+
+void set_thread_override(int n) { s_thread_override = n; }
+int get_thread_override() { return s_thread_override; }
+int get_effective_threads(int backend_default) {
+    return s_thread_override > 0 ? s_thread_override : backend_default;
+}
 
 static void quantize_per_group(const std::vector<float>& src, size_t N, size_t K,
                                 std::vector<int8_t>& dst, std::vector<float>& scales,
@@ -142,7 +152,7 @@ AccuracyResult check_accuracy(const float* reference, const float* actual,
     return r;
 }
 
-bool parse_bench_args(int argc, char** argv, BenchOptions& opt, std::string& err) {
+bool parse_matmul_bench_args(int argc, char** argv, MatmulBenchOptions& opt, std::string& err) {
     for (int i = 1; i < argc; ++i) {
         std::string a(argv[i]);
         if (a == "--iterations") {
@@ -157,12 +167,104 @@ bool parse_bench_args(int argc, char** argv, BenchOptions& opt, std::string& err
         } else if (a == "--backends") {
             if (++i >= argc) { err = "Missing --backends value"; return false; }
             opt.backends_filter = argv[i];
+        } else if (a == "--threads") {
+            if (++i >= argc) { err = "Missing --threads value"; return false; }
+            std::string val(argv[i]);
+            if (val == "max")
+                opt.num_threads = static_cast<int>(std::thread::hardware_concurrency());
+            else
+                opt.num_threads = std::max(1, std::stoi(val));
         } else {
             err = "Unknown argument: " + a;
             return false;
         }
     }
     return true;
+}
+
+bool framework_matches_filter(const char* framework, const std::string& filter) {
+    if (filter.empty()) return true;
+    std::string f = filter;
+    std::string fw(framework);
+    size_t pos = 0;
+    while (pos < f.size()) {
+        size_t comma = f.find(',', pos);
+        if (comma == std::string::npos) comma = f.size();
+        std::string token = f.substr(pos, comma - pos);
+        if (token == fw) return true;
+        pos = comma + 1;
+    }
+    return false;
+}
+
+void reference_attention_fp32(const float* Q, const float* K, const float* V,
+                               float* output,
+                               size_t num_q_heads, size_t num_kv_heads,
+                               size_t seq_len, size_t kv_seq_len,
+                               size_t head_dim, float scale) {
+    size_t gqa_ratio = num_q_heads / num_kv_heads;
+
+    for (size_t qh = 0; qh < num_q_heads; ++qh) {
+        size_t kvh = qh / gqa_ratio;
+
+        for (size_t sq = 0; sq < seq_len; ++sq) {
+            std::vector<double> scores(kv_seq_len);
+            double max_score = -1e30;
+
+            for (size_t sk = 0; sk < kv_seq_len; ++sk) {
+                bool is_masked = sk > sq + (kv_seq_len - seq_len);
+                if (is_masked) {
+                    scores[sk] = -1e30;
+                    continue;
+                }
+                double dot = 0.0;
+                for (size_t d = 0; d < head_dim; ++d)
+                    dot += static_cast<double>(Q[qh * seq_len * head_dim + sq * head_dim + d]) *
+                           static_cast<double>(K[kvh * kv_seq_len * head_dim + sk * head_dim + d]);
+                scores[sk] = dot * scale;
+                if (scores[sk] > max_score) max_score = scores[sk];
+            }
+
+            double sum_exp = 0.0;
+            for (size_t sk = 0; sk < kv_seq_len; ++sk) {
+                scores[sk] = std::exp(scores[sk] - max_score);
+                sum_exp += scores[sk];
+            }
+            for (size_t sk = 0; sk < kv_seq_len; ++sk)
+                scores[sk] /= sum_exp;
+
+            for (size_t d = 0; d < head_dim; ++d) {
+                double val = 0.0;
+                for (size_t sk = 0; sk < kv_seq_len; ++sk)
+                    val += scores[sk] *
+                           static_cast<double>(V[kvh * kv_seq_len * head_dim + sk * head_dim + d]);
+                output[qh * seq_len * head_dim + sq * head_dim + d] = static_cast<float>(val);
+            }
+        }
+    }
+}
+
+void fp32_to_fp16(const float* src, __fp16* dst, size_t count) {
+    size_t i = 0;
+    for (; i + 8 <= count; i += 8) {
+        float32x4_t lo = vld1q_f32(src + i);
+        float32x4_t hi = vld1q_f32(src + i + 4);
+        vst1_f16(reinterpret_cast<float16_t*>(dst + i), vcvt_f16_f32(lo));
+        vst1_f16(reinterpret_cast<float16_t*>(dst + i + 4), vcvt_f16_f32(hi));
+    }
+    for (; i < count; ++i)
+        dst[i] = static_cast<__fp16>(src[i]);
+}
+
+void fp16_to_fp32(const __fp16* src, float* dst, size_t count) {
+    size_t i = 0;
+    for (; i + 8 <= count; i += 8) {
+        float16x8_t v = vld1q_f16(reinterpret_cast<const float16_t*>(src + i));
+        vst1q_f32(dst + i, vcvt_f32_f16(vget_low_f16(v)));
+        vst1q_f32(dst + i + 4, vcvt_f32_f16(vget_high_f16(v)));
+    }
+    for (; i < count; ++i)
+        dst[i] = static_cast<float>(src[i]);
 }
 
 } // namespace bench

@@ -1,45 +1,32 @@
 #include "bench_driver.h"
 
+#include <cmath>
 #include <iomanip>
 #include <iostream>
 #include <sstream>
+#include <thread>
 
 namespace bench {
 
-static std::vector<BackendVariant>& backend_registry() {
-    static std::vector<BackendVariant> backends;
+static std::vector<MatmulBackendVariant>& backend_registry() {
+    static std::vector<MatmulBackendVariant> backends;
     return backends;
 }
 
-void register_backend(BackendVariant v) {
+void register_matmul_backend(MatmulBackendVariant v) {
     backend_registry().push_back(v);
 }
 
-const std::vector<BackendVariant>& get_backends() {
+const std::vector<MatmulBackendVariant>& get_matmul_backends() {
     return backend_registry();
 }
 
-static bool framework_matches_filter(const char* framework, const std::string& filter) {
-    if (filter.empty()) return true;
-    std::string f = filter;
-    std::string fw(framework);
-    size_t pos = 0;
-    while (pos < f.size()) {
-        size_t comma = f.find(',', pos);
-        if (comma == std::string::npos) comma = f.size();
-        std::string token = f.substr(pos, comma - pos);
-        if (token == fw) return true;
-        pos = comma + 1;
-    }
-    return false;
-}
-
-bool run_benchmark(TestUtils::TestRunner& runner, const BenchOptions& opt_in) {
-    BenchOptions opt = opt_in;
+bool run_matmul_benchmark(TestUtils::TestRunner& runner, const MatmulBenchOptions& opt_in) {
+    MatmulBenchOptions opt = opt_in;
     const size_t NM = static_cast<size_t>(opt.num_matrices);
-    const auto& all_backends = get_backends();
+    const auto& all_backends = get_matmul_backends();
 
-    std::vector<const BackendVariant*> active;
+    std::vector<const MatmulBackendVariant*> active;
     for (const auto& b : all_backends) {
         if (!b.run_kernel) continue;
         if (framework_matches_filter(b.framework, opt.backends_filter))
@@ -51,12 +38,21 @@ bool run_benchmark(TestUtils::TestRunner& runner, const BenchOptions& opt_in) {
         return false;
     }
 
+    set_thread_override(opt.num_threads);
+
     {
         std::ostringstream cfg;
         cfg << "warmup=" << opt.warmup
             << ", iterations=" << opt.iterations
             << ", matrices=" << NM
-            << ", backends=";
+            << ", threads=";
+        if (opt.num_threads == 0)
+            cfg << "default";
+        else if (opt.num_threads == static_cast<int>(std::thread::hardware_concurrency()))
+            cfg << "max(" << opt.num_threads << ")";
+        else
+            cfg << opt.num_threads;
+        cfg << ", backends=";
         for (size_t i = 0; i < active.size(); ++i) {
             if (i > 0) cfg << ",";
             cfg << active[i]->name;
@@ -187,6 +183,275 @@ bool run_benchmark(TestUtils::TestRunner& runner, const BenchOptions& opt_in) {
         runner.log_performance("Accuracy M=" + std::to_string(M), acc_line.str());
     }
 
+    set_thread_override(0);
+    return true;
+}
+
+static std::vector<AttnBackendVariant>& attn_backend_registry() {
+    static std::vector<AttnBackendVariant> backends;
+    return backends;
+}
+
+void register_attn_backend(AttnBackendVariant v) {
+    attn_backend_registry().push_back(v);
+}
+
+const std::vector<AttnBackendVariant>& get_attn_backends() {
+    return attn_backend_registry();
+}
+
+static double compute_attention_gflops(size_t num_q_heads, size_t seq_len,
+                                        size_t kv_seq_len, size_t head_dim,
+                                        int iterations, double total_ms) {
+    if (total_ms <= 0.0) return 0.0;
+    double flops_per_call = static_cast<double>(num_q_heads) *
+        (4.0 * seq_len * kv_seq_len * head_dim + 5.0 * seq_len * kv_seq_len);
+    return (flops_per_call * iterations) / (total_ms * 1e6);
+}
+
+static float attn_tolerance(const char* name) {
+    std::string n(name);
+    if (n.find("q4") != std::string::npos) return 0.20f;
+    if (n.find("q8") != std::string::npos) return 0.10f;
+    if (n.find("int8") != std::string::npos || n.find("hybrid") != std::string::npos) return 0.10f;
+    return 0.05f;
+}
+
+bool run_attn_benchmark(TestUtils::TestRunner& runner, const AttnBenchOptions& opt) {
+    const auto& all_backends = get_attn_backends();
+
+    std::vector<const AttnBackendVariant*> prefill_backends;
+    std::vector<const AttnBackendVariant*> decode_backends;
+
+    for (const auto& b : all_backends) {
+        if (!b.run) continue;
+        if (!framework_matches_filter(b.framework, opt.backends_filter)) continue;
+        if (b.mode == AttnMode::PREFILL)
+            prefill_backends.push_back(&b);
+        else
+            decode_backends.push_back(&b);
+    }
+
+    if (prefill_backends.empty() && decode_backends.empty()) {
+        runner.log_performance("Error", "No attention backends matched filter");
+        return false;
+    }
+
+    set_thread_override(opt.num_threads);
+
+    {
+        std::ostringstream cfg;
+        cfg << "warmup=" << opt.warmup
+            << ", iterations=" << opt.iterations
+            << ", threads=";
+        if (opt.num_threads == 0)
+            cfg << "default";
+        else if (opt.num_threads == static_cast<int>(std::thread::hardware_concurrency()))
+            cfg << "max(" << opt.num_threads << ")";
+        else
+            cfg << opt.num_threads;
+        cfg << ", head_dim=" << opt.dims.head_dim
+            << ", q_heads=" << opt.dims.num_q_heads
+            << ", kv_heads=" << opt.dims.num_kv_heads
+            << ", prefill_len=" << opt.prefill_seq_len
+            << ", cache_len=" << opt.decode_cache_len;
+        runner.log_performance("Config", cfg.str());
+
+        std::ostringstream backends_str;
+        bool first = true;
+        for (auto* b : prefill_backends) {
+            if (!first) backends_str << ",";
+            first = false;
+            backends_str << b->name;
+        }
+        for (auto* b : decode_backends) {
+            if (!first) backends_str << ",";
+            first = false;
+            backends_str << b->name;
+        }
+        runner.log_performance("Backends", backends_str.str());
+    }
+
+    std::mt19937 gen(270270u);
+    std::uniform_real_distribution<float> dist(-0.5f, 0.5f);
+
+    const auto& dims = opt.dims;
+    float scale = 1.0f / std::sqrt(static_cast<float>(dims.head_dim));
+
+    if (!prefill_backends.empty()) {
+        runner.log_performance("",
+            "─────────────────────────────────────────────────────────────────────────────────────────────────────────");
+        runner.log_performance("PREFILL", "seq_len=" + std::to_string(opt.prefill_seq_len));
+
+        size_t seq_len = opt.prefill_seq_len;
+        size_t q_count = dims.num_q_heads * seq_len * dims.head_dim;
+        size_t kv_count = dims.num_kv_heads * seq_len * dims.head_dim;
+
+        std::vector<float> fp32_q(q_count), fp32_k(kv_count), fp32_v(kv_count);
+        for (auto& v : fp32_q) v = dist(gen);
+        for (auto& v : fp32_k) v = dist(gen);
+        for (auto& v : fp32_v) v = dist(gen);
+
+        std::vector<float> reference(q_count);
+        reference_attention_fp32(fp32_q.data(), fp32_k.data(), fp32_v.data(),
+                                  reference.data(), dims.num_q_heads, dims.num_kv_heads,
+                                  seq_len, seq_len, dims.head_dim, scale);
+
+        for (const auto* backend : prefill_backends) {
+            void* state = backend->prepare(dims, seq_len, 0,
+                                            fp32_q.data(), fp32_k.data(), fp32_v.data());
+            if (!state) {
+                runner.log_performance(backend->name, "FAILED (prepare returned null)");
+                continue;
+            }
+
+            {
+                std::vector<float> captured(q_count, 0.0f);
+                backend->run(state, captured.data());
+
+                auto acc = check_accuracy(reference.data(), captured.data(), q_count,
+                                           attn_tolerance(backend->name));
+
+                std::ostringstream acc_line;
+                acc_line << std::fixed
+                         << (acc.passed ? "PASS" : "FAIL")
+                         << " nrmse=" << std::setprecision(4) << acc.nrmse
+                         << " max=" << std::setprecision(2) << acc.max_abs_error;
+                runner.log_performance(std::string(backend->name) + " accuracy", acc_line.str());
+            }
+
+            for (int w = 0; w < opt.warmup; ++w)
+                backend->run(state, nullptr);
+
+            double total_ms = 0.0;
+            for (int iter = 0; iter < opt.iterations; ++iter) {
+                double t0 = now_ms();
+                backend->run(state, nullptr);
+                total_ms += now_ms() - t0;
+            }
+
+            double avg_us = (total_ms * 1000.0) / opt.iterations;
+            double gflops = compute_attention_gflops(dims.num_q_heads, seq_len, seq_len,
+                                                      dims.head_dim, opt.iterations, total_ms);
+
+            std::ostringstream perf_line;
+            perf_line << std::fixed << std::setprecision(1) << avg_us << "us"
+                      << " (" << std::setprecision(2) << gflops << " GFLOPS)";
+            runner.log_performance(backend->name, perf_line.str());
+
+            backend->cleanup(state);
+        }
+    }
+
+    if (!decode_backends.empty()) {
+        runner.log_performance("",
+            "─────────────────────────────────────────────────────────────────────────────────────────────────────────");
+        runner.log_performance("DECODE", "seq_len=1, cache_len=" + std::to_string(opt.decode_cache_len));
+
+        size_t cache_len = opt.decode_cache_len;
+        size_t kv_seq_len = cache_len + 1;
+        size_t q_count = dims.num_q_heads * 1 * dims.head_dim;
+        size_t kv_count = dims.num_kv_heads * kv_seq_len * dims.head_dim;
+
+        std::vector<float> fp32_q(q_count), fp32_k(kv_count), fp32_v(kv_count);
+        for (auto& v : fp32_q) v = dist(gen);
+        for (auto& v : fp32_k) v = dist(gen);
+        for (auto& v : fp32_v) v = dist(gen);
+
+        std::vector<float> reference(q_count);
+        reference_attention_fp32(fp32_q.data(), fp32_k.data(), fp32_v.data(),
+                                  reference.data(), dims.num_q_heads, dims.num_kv_heads,
+                                  1, kv_seq_len, dims.head_dim, scale);
+
+        for (const auto* backend : decode_backends) {
+            void* state = backend->prepare(dims, 1, cache_len,
+                                            fp32_q.data(), fp32_k.data(), fp32_v.data());
+            if (!state) {
+                runner.log_performance(backend->name, "FAILED (prepare returned null)");
+                continue;
+            }
+
+            {
+                std::vector<float> captured(q_count, 0.0f);
+                backend->run(state, captured.data());
+
+                auto acc = check_accuracy(reference.data(), captured.data(), q_count,
+                                           attn_tolerance(backend->name));
+
+                std::ostringstream acc_line;
+                acc_line << std::fixed
+                         << (acc.passed ? "PASS" : "FAIL")
+                         << " nrmse=" << std::setprecision(4) << acc.nrmse
+                         << " max=" << std::setprecision(2) << acc.max_abs_error;
+                runner.log_performance(std::string(backend->name) + " accuracy", acc_line.str());
+            }
+
+            for (int w = 0; w < opt.warmup; ++w)
+                backend->run(state, nullptr);
+
+            double total_ms = 0.0;
+            for (int iter = 0; iter < opt.iterations; ++iter) {
+                double t0 = now_ms();
+                backend->run(state, nullptr);
+                total_ms += now_ms() - t0;
+            }
+
+            double avg_us = (total_ms * 1000.0) / opt.iterations;
+            double gflops = compute_attention_gflops(dims.num_q_heads, 1, kv_seq_len,
+                                                      dims.head_dim, opt.iterations, total_ms);
+
+            std::ostringstream perf_line;
+            perf_line << std::fixed << std::setprecision(1) << avg_us << "us"
+                      << " (" << std::setprecision(2) << gflops << " GFLOPS)";
+            runner.log_performance(backend->name, perf_line.str());
+
+            backend->cleanup(state);
+        }
+    }
+
+    set_thread_override(0);
+    return true;
+}
+
+bool parse_attn_bench_args(int argc, char** argv, AttnBenchOptions& opt, std::string& err) {
+    for (int i = 1; i < argc; ++i) {
+        std::string a(argv[i]);
+        if (a == "--iterations") {
+            if (++i >= argc) { err = "Missing --iterations value"; return false; }
+            opt.iterations = std::max(1, std::stoi(argv[i]));
+        } else if (a == "--warmup") {
+            if (++i >= argc) { err = "Missing --warmup value"; return false; }
+            opt.warmup = std::max(0, std::stoi(argv[i]));
+        } else if (a == "--backends") {
+            if (++i >= argc) { err = "Missing --backends value"; return false; }
+            opt.backends_filter = argv[i];
+        } else if (a == "--prefill_len") {
+            if (++i >= argc) { err = "Missing --prefill_len value"; return false; }
+            opt.prefill_seq_len = static_cast<size_t>(std::max(1, std::stoi(argv[i])));
+        } else if (a == "--cache_len") {
+            if (++i >= argc) { err = "Missing --cache_len value"; return false; }
+            opt.decode_cache_len = static_cast<size_t>(std::max(1, std::stoi(argv[i])));
+        } else if (a == "--head_dim") {
+            if (++i >= argc) { err = "Missing --head_dim value"; return false; }
+            opt.dims.head_dim = static_cast<size_t>(std::max(1, std::stoi(argv[i])));
+        } else if (a == "--q_heads") {
+            if (++i >= argc) { err = "Missing --q_heads value"; return false; }
+            opt.dims.num_q_heads = static_cast<size_t>(std::max(1, std::stoi(argv[i])));
+        } else if (a == "--kv_heads") {
+            if (++i >= argc) { err = "Missing --kv_heads value"; return false; }
+            opt.dims.num_kv_heads = static_cast<size_t>(std::max(1, std::stoi(argv[i])));
+        } else if (a == "--threads") {
+            if (++i >= argc) { err = "Missing --threads value"; return false; }
+            std::string val(argv[i]);
+            if (val == "max")
+                opt.num_threads = static_cast<int>(std::thread::hardware_concurrency());
+            else
+                opt.num_threads = std::max(1, std::stoi(val));
+        } else {
+            err = "Unknown argument: " + a;
+            return false;
+        }
+    }
     return true;
 }
 

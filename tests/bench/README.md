@@ -1,7 +1,9 @@
-# Matmul Benchmark Suite
+# Benchmark Suite
 
-Compares Cactus INT8/INT4 matmul kernels against other inference frameworks on identical workloads (1x1024x1024 and 1024x1024x1024).
-This only compares CPU performance; NPU & GPU are not benchmarked because they are too power hungry for our use cases.
+Compares Cactus quantized matmul and attention kernels against other inference frameworks on identical workloads.
+
+**Matmul** — 1x1024x1024 (GEMV) and 1024x1024x1024 (GEMM), INT8 and INT4 precision.
+**Attention** — prefill (seq_len=1024) and decode (seq_len=1, cache_len=511), GQA with 32 query heads and 8 KV heads.
 
 ## Quick Start (Cactus-only, no third-party deps)
 
@@ -9,11 +11,18 @@ This only compares CPU performance; NPU & GPU are not benchmarked because they a
 cactus build
 cd tests && mkdir -p build && cd build
 cmake ..
-make -j matmul_bench
-./matmul_bench
+make -j matmul_bench attn_bench
+
+./matmul_bench                  # cactus_int8, cactus_int4
+./attn_bench                    # cactus_prefill (FP16), cactus_decode (hybrid INT8/FP16)
 ```
 
-This runs the `cactus_int8` and `cactus_int4` backends with no external dependencies.
+Or use the wrapper script:
+
+```bash
+./tests/run_benchmark.sh                    # matmul benchmark
+./tests/run_benchmark.sh --attention        # attention benchmark
+```
 
 ## Adding Third-Party Frameworks
 
@@ -26,7 +35,7 @@ git clone https://github.com/ggml-org/ggml.git ../third_party/ggml
 cmake .. -DWITH_GGML=ON
 ```
 
-Builds GGML from source. Enables `ggml_q4_0`, `ggml_q8_0`, `ggml_q4_0_graph`, and `ggml_q8_0_graph` backends.
+Builds GGML from source. Enables matmul backends (`ggml_q4_0`, `ggml_q8_0`) and attention backends (flash attention and matmul-composed paths with FP16/Q8_0/Q4_0 KV types).
 
 ### LiteRT (TFLite)
 
@@ -35,7 +44,7 @@ git clone https://github.com/google-ai-edge/LiteRT.git ../third_party/litert
 cmake .. -DWITH_LITERT=ON
 ```
 
-Fetches FlatBuffers + TFLite deps on first build (requires network). Enables `litert_neon`, `ruy_mc`, `ruy_1c`, and `litert_4bit_neon` backends.
+Fetches FlatBuffers + TFLite deps on first build (requires network). Enables `litert_neon`, `ruy`, and `litert_4bit_neon` matmul backends. No attention backends.
 
 ### MLX (Apple-only)
 
@@ -44,7 +53,7 @@ git clone https://github.com/ml-explore/mlx.git ../third_party/mlx
 cmake .. -DWITH_MLX=ON
 ```
 
-Requires macOS with Metal. Enables `mlx_q4_cpu`, `mlx_q8_cpu`, `mlx_q4_gpu`, and `mlx_q8_gpu` backends.
+Requires macOS with Metal. Enables matmul backends (`mlx_q{4,8}_{cpu,gpu}`) and attention backends (FP16 SDPA and quantized INT4/INT8 on both CPU and GPU).
 
 ### MLC-LLM (TVM runtime)
 
@@ -63,7 +72,7 @@ export MLC_MATMUL_LIB=path/to/bench_kernels.so
 cmake .. -DWITH_MLC=ON
 ```
 
-The compiled module must export `quantized_matmul_int4` and/or `quantized_matmul_int8` functions. Enables `mlc_int4` and `mlc_int8` backends.
+The compiled module must export `quantized_matmul_int4` and/or `quantized_matmul_int8` functions. Enables matmul backends (`mlc_int4`, `mlc_int8`) and attention backends (`mlc_q{4,8}_{prefill,decode}`).
 
 ### ONNX Runtime (prebuilt)
 
@@ -81,7 +90,7 @@ Download the prebuilt release for your platform from https://github.com/microsof
 cmake .. -DWITH_ONNXRT=ON
 ```
 
-Enables `onnxrt_int8` and `onnxrt_int4` backends.
+Enables `onnxrt_int8` and `onnxrt_int4` matmul backends. No attention backends.
 
 ### Executorch (XNNPACK)
 
@@ -89,16 +98,20 @@ Enables `onnxrt_int8` and `onnxrt_int4` backends.
 cmake .. -DWITH_EXECUTORCH=ON
 ```
 
-Fetches XNNPACK from GitHub at configure time (no manual clone needed). Enables `executorch_int8` and `executorch_int4` backends.
+Fetches XNNPACK from GitHub at configure time (no manual clone needed). Enables `executorch_int8` and `executorch_int4` matmul backends. No attention backends.
 
 ## Enabling Multiple Frameworks
 
-Combine flags:
+Combine flags, or use `--external-frameworks` to auto-detect:
 
 ```bash
+# Manual
 cmake .. -DWITH_GGML=ON -DWITH_LITERT=ON -DWITH_MLX=ON
-make -j matmul_bench
-./matmul_bench
+make -j matmul_bench attn_bench
+
+# Auto-detect
+./tests/run_benchmark.sh --external-frameworks
+./tests/run_benchmark.sh --attention --external-frameworks
 ```
 
 ## Quantization Granularity
@@ -126,9 +139,31 @@ Most backends use **group-wise** quantization (group size 32), where each group 
   --iterations N      Timed iterations (default: 1024)
   --matrices N        Distinct weight matrices to cycle through (default: 64)
   --backends FILTER   Comma-separated framework names to run
+  --threads N|max     Override thread count for all backends (default: each backend's own)
 ```
 
-The benchmark runs 1x1024x1024 and 1024x1024x1024 matmuls. Each timed run cycles through `--matrices` distinct weight matrices to simulate realistic cache pressure (64 matrices x ~1MB each exceeds L2 cache).
+```
+./attn_bench [options]
+
+  --warmup N          Warmup iterations (default: 100)
+  --iterations N      Timed iterations (default: 512)
+  --backends FILTER   Comma-separated framework names to run
+  --threads N|max     Override thread count for all backends (default: each backend's own)
+  --prefill_len N     Prefill sequence length (default: 1024)
+  --cache_len N       Decode KV cache length (default: 511)
+  --head_dim N        Head dimension (default: 128)
+  --q_heads N         Number of query heads (default: 32)
+  --kv_heads N        Number of KV heads (default: 8)
+```
+
+```
+./tests/run_benchmark.sh [options]
+
+  --attention             Run attention benchmark instead of matmul
+  --external-frameworks   Auto-detect and enable third-party frameworks
+  --threads N|max         Override thread count (also sets TVM_NUM_THREADS for MLC)
+  (all other flags are passed through to the benchmark executable)
+```
 
 ## Results
 

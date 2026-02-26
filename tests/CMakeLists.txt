@@ -174,9 +174,6 @@ add_library(bench_lib OBJECT
     bench/backend_mlx.cpp
     bench/backend_mlc.cpp
     bench/backend_onnxrt.cpp
-    bench/attn_driver.cpp
-    bench/attn_backend_cactus.cpp
-    bench/attn_backend_mlx.cpp
 )
 target_include_directories(bench_lib PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
@@ -193,7 +190,7 @@ if(WITH_LITERT)
 endif()
 
 if(WITH_GGML)
-    target_sources(bench_lib PRIVATE bench/backend_ggml.cpp bench/attn_backend_ggml.cpp)
+    target_sources(bench_lib PRIVATE bench/backend_ggml.cpp)
     target_link_libraries(bench_lib PUBLIC ggml)
 endif()
 

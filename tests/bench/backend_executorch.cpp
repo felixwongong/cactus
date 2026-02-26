@@ -92,6 +92,9 @@ void run_kernel(size_t M, void* weights, void*,
     auto* w = static_cast<XnnWeights*>(weights);
     if (!w || !w->op) return;
 
+    int thr = bench::get_thread_override();
+    if (thr > 0) ensure_threadpool(thr);
+
     w->output_buf.resize(M * w->N);
     if (w->current_M != M) reshape(w, M);
     fill_qparams(w->qp_buf.data(), M, act_scales);
@@ -201,11 +204,11 @@ void* int4_prepare(const float* fp32, size_t N, size_t K) {
 
 
 static int reg = [] {
-    bench::register_backend({
+    bench::register_matmul_backend({
         "executorch_int8", "executorch", bench::QuantCategory::INT8, 0,
         int8_prepare, nullptr, run_kernel, cleanup
     });
-    bench::register_backend({
+    bench::register_matmul_backend({
         "executorch_int4", "executorch", bench::QuantCategory::INT4, 0,
         int4_prepare, nullptr, run_kernel, cleanup
     });

@@ -11,7 +11,7 @@ namespace bench {
 
 enum class QuantCategory { INT8, INT4 };
 
-struct BackendVariant {
+struct MatmulBackendVariant {
     const char* name;
     const char* framework;
     QuantCategory category;
@@ -25,10 +25,27 @@ struct BackendVariant {
     void (*cleanup)(void* weights, void* activations);
 };
 
-void register_backend(BackendVariant v);
-const std::vector<BackendVariant>& get_backends();
+void register_matmul_backend(MatmulBackendVariant v);
+const std::vector<MatmulBackendVariant>& get_matmul_backends();
 
-bool run_benchmark(TestUtils::TestRunner& runner, const BenchOptions& opt);
+bool run_matmul_benchmark(TestUtils::TestRunner& runner, const MatmulBenchOptions& opt);
+
+struct AttnBackendVariant {
+    const char* name;
+    const char* framework;
+    AttnMode mode;
+
+    void* (*prepare)(const AttnDims& dims, size_t seq_len, size_t cache_len,
+                     const float* fp32_q, const float* fp32_k, const float* fp32_v);
+    void (*run)(void* state, float* output);
+    void (*cleanup)(void* state);
+};
+
+void register_attn_backend(AttnBackendVariant v);
+const std::vector<AttnBackendVariant>& get_attn_backends();
+
+bool run_attn_benchmark(TestUtils::TestRunner& runner, const AttnBenchOptions& opt);
+bool parse_attn_bench_args(int argc, char** argv, AttnBenchOptions& opt, std::string& err);
 
 } // namespace bench
 
