@@ -1,4 +1,5 @@
 #include "test_utils.h"
+#include "../cactus/ffi/cactus_cloud.h"
 #include "../cactus/telemetry/telemetry.h"
 #include "../cactus/kernel/kernel_utils.h"
 
@@ -11,7 +12,7 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
-#include <uuid/uuid.h>
+#include <random>
 
 std::string make_temp_dir(const char* prefix) {
     char pattern[256] = {0};
@@ -31,11 +32,20 @@ int count_events(const std::string& file_path) {
 }
 
 std::string random_project_id() {
-    uuid_t uuid;
-    uuid_generate_random(uuid);
-    char uuid_str[37];
-    uuid_unparse_lower(uuid, uuid_str);
-    return std::string(uuid_str);
+    static thread_local std::mt19937_64 rng(std::random_device{}());
+    uint64_t a = rng();
+    uint64_t b = rng();
+    a = (a & 0xffffffffffff0fffULL) | 0x0000000000004000ULL;
+    b = (b & 0x3fffffffffffffffULL) | 0x8000000000000000ULL;
+    char buf[37];
+    std::snprintf(buf, sizeof(buf),
+        "%08llx-%04llx-%04llx-%04llx-%012llx",
+        (unsigned long long)((a >> 32) & 0xffffffffULL),
+        (unsigned long long)((a >> 16) & 0xffffULL),
+        (unsigned long long)(a & 0xffffULL),
+        (unsigned long long)((b >> 48) & 0xffffULL),
+        (unsigned long long)(b & 0xffffffffffffULL));
+    return std::string(buf);
 }
 
 enum class CloudTelemetryTestResult {
@@ -152,8 +162,8 @@ CloudTelemetryTestResult test_cloud_upload_record_then_flush() {
         return CloudTelemetryTestResult::Skipped;
     }
 
-    const char* telemetry_key = std::getenv("CACTUS_CLOUD_API_KEY");
-    if (!telemetry_key || telemetry_key[0] == '\0') {
+    const std::string telemetry_key = cactus::ffi::resolve_cloud_api_key(nullptr);
+    if (telemetry_key.empty()) {
         return CloudTelemetryTestResult::Skipped;
     }
 
@@ -163,7 +173,7 @@ CloudTelemetryTestResult test_cloud_upload_record_then_flush() {
 
     cactus::telemetry::setTelemetryEnvironment("cpp", cache_dir.c_str());
     cactus::telemetry::setCloudDisabled(false);
-    cactus::telemetry::init(project_id.c_str(), "cloud-upload", telemetry_key);
+    cactus::telemetry::init(project_id.c_str(), "cloud-upload", telemetry_key.c_str());
 
     cactus::telemetry::recordCompletion("cloud-model", true, 7.0, 19.0, 15.0, 9, "cloud-ok");
     cactus::telemetry::flush();
@@ -184,7 +194,7 @@ int main() {
     runner.run_test("Record and Flush Race", test_record_and_flush_race_no_deadlock());
     CloudTelemetryTestResult cloud_result = test_cloud_upload_record_then_flush();
     if (cloud_result == CloudTelemetryTestResult::Skipped) {
-        runner.log_skip("Cloud record + Flush", "--enable-telemetry and CACTUS_CLOUD_API_KEY must be set");
+        runner.log_skip("Cloud record + Flush", "--enable-telemetry and resolved cloud key (env/cache) required");
     } else {
         runner.run_test("Cloud record + Flush", cloud_result == CloudTelemetryTestResult::Passed);
     }

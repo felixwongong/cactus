@@ -3,15 +3,16 @@ import sys
 import os
 import argparse
 import re
+import json
 import subprocess
 import shutil
 import platform
-import json
 from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).parent.resolve()
 PROJECT_ROOT = SCRIPT_DIR.parent.parent
 DEFAULT_MODEL_ID = "LiquidAI/LFM2.5-1.2B-Instruct"
+DEFAULT_TEST_TRANSCRIBE_MODEL_ID = "UsefulSensors/moonshine-base"
 
 RED = '\033[0;31m'
 GREEN = '\033[0;32m'
@@ -64,8 +65,12 @@ def run_command(cmd, cwd=None, check=True):
 
 
 def ensure_vad_weights(model_id, weights_dir, precision='INT8'):
-    """Bundle Silero VAD weights into <weights_dir>/vad/ for whisper/moonshine models."""
-    is_asr = 'whisper' in model_id.lower() or 'moonshine' in model_id.lower()
+    """Bundle Silero VAD weights into <weights_dir>/vad/ for ASR models."""
+    is_asr = (
+        'whisper' in model_id.lower()
+        or 'moonshine' in model_id.lower()
+        or 'parakeet' in model_id.lower()
+    )
     if not is_asr:
         return
     vad_dir = weights_dir / "vad"
@@ -160,7 +165,7 @@ def cmd_download(args):
     model_id = args.model_id
     weights_dir = get_weights_dir(model_id)
     reconvert = getattr(args, 'reconvert', False)
-    precision = getattr(args, 'precision', 'INT8')
+    precision = getattr(args, 'precision', 'INT4')
 
     if reconvert and weights_dir.exists():
         print_color(YELLOW, f"Removing cached weights for reconversion...")
@@ -195,13 +200,18 @@ def cmd_download(args):
 
     weights_dir.mkdir(parents=True, exist_ok=True)
 
-    precision = getattr(args, 'precision', 'INT8')
+    precision = getattr(args, 'precision', 'INT4')
     cache_dir = getattr(args, 'cache_dir', None)
     token = getattr(args, 'token', None)
 
     print(f"Converting {model_id} to {precision}...")
 
-    from transformers import AutoTokenizer, AutoModelForCausalLM, AutoProcessor, AutoModelForImageTextToText, AutoModel, AutoConfig
+    from transformers import AutoTokenizer, AutoModelForCausalLM, AutoModel
+
+    import logging
+    logging.getLogger("transformers").setLevel(logging.ERROR)
+    import transformers
+    transformers.logging.set_verbosity_error()
 
     def _download_config_json(repo_id):
         from huggingface_hub import hf_hub_download
@@ -263,10 +273,12 @@ def cmd_download(args):
 
     is_vlm = 'vl' in model_id.lower() or 'vlm' in model_id.lower()
     is_whisper = 'whisper' in model_id.lower()
+    is_parakeet = 'parakeet' in model_id.lower()
     is_vad = 'silero-vad' in model_id.lower()
 
     try:
         if is_vlm:
+            from transformers import AutoProcessor, AutoModelForImageTextToText, AutoConfig
             missing_deps = []
             try:
                 from PIL import Image
@@ -328,6 +340,49 @@ def cmd_download(args):
         elif is_whisper:
             tokenizer = AutoTokenizer.from_pretrained(model_id, cache_dir=cache_dir, trust_remote_code=True, token=token)
             model = AutoModel.from_pretrained(model_id, cache_dir=cache_dir, trust_remote_code=True, token=token)
+
+        elif is_parakeet:
+            from transformers import AutoConfig
+            from huggingface_hub import hf_hub_download, snapshot_download
+            from safetensors.torch import load_file as load_safetensors
+
+            tokenizer = AutoTokenizer.from_pretrained(model_id, cache_dir=cache_dir, trust_remote_code=True, token=token)
+            config_obj = AutoConfig.from_pretrained(model_id, cache_dir=cache_dir, trust_remote_code=True, token=token)
+
+            state_dict = None
+            try:
+                weights_path = hf_hub_download(
+                    repo_id=model_id,
+                    filename="model.safetensors",
+                    cache_dir=cache_dir,
+                    token=token
+                )
+                state_dict = load_safetensors(weights_path, device="cpu")
+            except Exception:
+                snapshot_path = snapshot_download(repo_id=model_id, cache_dir=cache_dir, token=token)
+                index_path = Path(snapshot_path) / "model.safetensors.index.json"
+                if not index_path.exists():
+                    raise
+                with open(index_path, "r", encoding="utf-8") as f:
+                    index_data = json.load(f)
+                shard_files = sorted(set(index_data.get("weight_map", {}).values()))
+                if not shard_files:
+                    raise RuntimeError("Parakeet safetensors index has no shard entries")
+                state_dict = {}
+                for shard_name in shard_files:
+                    shard_path = Path(snapshot_path) / shard_name
+                    shard_state = load_safetensors(str(shard_path), device="cpu")
+                    state_dict.update(shard_state)
+
+            class _StateDictModel:
+                def __init__(self, config, state_dict):
+                    self.config = config
+                    self._state_dict = state_dict
+
+                def state_dict(self):
+                    return self._state_dict
+
+            model = _StateDictModel(config_obj, state_dict)
 
         elif is_vad:
             import urllib.request
@@ -577,6 +632,7 @@ def cmd_build(args):
         else:
             print_color(YELLOW, "SDL2 not found - live transcription will be disabled")
             print_color(YELLOW, "Install SDL2 for live mic support: brew install sdl2 (macOS)")
+            print_color(YELLOW, "Then run `cactus build`")
 
         if is_darwin:
             cmd = [
@@ -759,7 +815,7 @@ def cmd_run(args):
     api_key = prompt_for_api_key(config)
 
     if api_key:
-        os.environ["CACTUS_CLOUD_API_KEY"] = api_key
+        os.environ["CACTUS_CLOUD_KEY"] = api_key
 
     model_id = args.model_id
 
@@ -794,7 +850,7 @@ def cmd_run(args):
     os.execv(str(chat_binary), [str(chat_binary), str(weights_dir)])
 
 
-DEFAULT_ASR_MODEL_ID = "openai/whisper-small"
+DEFAULT_ASR_MODEL_ID = "nvidia/parakeet-ctc-1.1b"
 
 def _pick_android_device_id(preferred_device=None):
     if preferred_device:
@@ -910,7 +966,7 @@ def _cmd_transcribe_android(weights_dir, audio_file, args):
         print_color(RED, "Failed to push audio file to device")
         return 1
 
-    cloud_api_key = os.environ.get("CACTUS_CLOUD_API_KEY", "")
+    cloud_api_key = os.environ.get("CACTUS_CLOUD_KEY", os.environ.get("CACTUS_CLOUD_API_KEY", ""))
     cloud_strict_ssl = os.environ.get("CACTUS_CLOUD_STRICT_SSL", "")
     cloud_handoff_threshold = os.environ.get("CACTUS_CLOUD_HANDOFF_THRESHOLD", "")
     ca_bundle = os.environ.get("CACTUS_CA_BUNDLE", "")
@@ -918,7 +974,7 @@ def _cmd_transcribe_android(weights_dir, audio_file, args):
     force_handoff = os.environ.get("CACTUS_FORCE_HANDOFF", "")
     env_exports = []
     if cloud_api_key:
-        env_exports.append(f"export CACTUS_CLOUD_API_KEY='{cloud_api_key}'")
+        env_exports.append(f"export CACTUS_CLOUD_KEY='{cloud_api_key}'")
     if cloud_strict_ssl:
         env_exports.append(f"export CACTUS_CLOUD_STRICT_SSL='{cloud_strict_ssl}'")
     if cloud_handoff_threshold:
@@ -971,7 +1027,7 @@ def cmd_transcribe(args):
     api_key = prompt_for_api_key(config)
 
     if api_key:
-        os.environ["CACTUS_CLOUD_API_KEY"] = api_key
+        os.environ["CACTUS_CLOUD_KEY"] = api_key
 
     model_id = getattr(args, 'model_id', DEFAULT_ASR_MODEL_ID)
     audio_file = getattr(args, 'audio_file', None)
@@ -1076,7 +1132,7 @@ def cmd_eval(args):
 
     dlargs = DownloadArgs()
     dlargs.model_id = model_id
-    dlargs.precision = getattr(args, 'precision', 'INT8')
+    dlargs.precision = getattr(args, 'precision', 'INT4')
     dlargs.cache_dir = getattr(args, 'cache_dir', None)
     dlargs.token = getattr(args, 'token', None)
     dlargs.reconvert = getattr(args, 'reconvert', False)
@@ -1187,15 +1243,15 @@ def cmd_test(args):
             "If tests fail unexpectedly, rerun with --reconvert."
         )
 
-    if getattr(args, 'large', False):
+    if getattr(args, 'benchmark', False):
         args.model = 'LiquidAI/LFM2.5-VL-1.6B'
-        args.transcribe_model = 'openai/whisper-small'
+        args.transcribe_model = 'nvidia/parakeet-ctc-1.1b'
         print_color(BLUE, f"Using large models: {args.model}, {args.transcribe_model}, {args.vad_model}")
 
     if getattr(args, 'reconvert', False):
         for model_id in [
             getattr(args, 'model', 'LiquidAI/LFM2-VL-450M'),
-            getattr(args, 'transcribe_model', 'openai/whisper-small'),
+            getattr(args, 'transcribe_model', DEFAULT_TEST_TRANSCRIBE_MODEL_ID),
             getattr(args, 'vad_model', 'snakers4/silero-vad')
         ]:
             class DownloadArgs:
@@ -1206,6 +1262,9 @@ def cmd_test(args):
             dl_args.cache_dir = None
             if args.precision:
                 dl_args.precision = args.precision
+            else:
+                is_asr = 'whisper' in model_id.lower() or 'moonshine' in model_id.lower() or 'silero-vad' in model_id.lower()
+                dl_args.precision = 'INT8' if is_asr else 'INT4'
             if args.token:
                 dl_args.token = args.token
             if cmd_download(dl_args) != 0:
@@ -1233,6 +1292,8 @@ def cmd_test(args):
         cmd.append("--android")
     if args.ios:
         cmd.append("--ios")
+    if getattr(args, 'exhaustive', False):
+        cmd.append("--exhaustive")
     if args.only:
         cmd.extend(["--only", args.only])
     env = os.environ.copy()
@@ -1279,6 +1340,15 @@ def cmd_clean(args):
         shutil.rmtree(telemetry_cache)
     else:
         print(f"Telemetry cache not found: {telemetry_cache}")
+
+    # Re-cache API key from config so users don't need to run `cactus auth` again
+    from .config_utils import CactusConfig
+    config = CactusConfig()
+    saved_key = config.load_config().get("api_key", "")
+    if saved_key:
+        config.cache_api_key(saved_key)
+        masked = saved_key[:4] + "..." + saved_key[-4:]
+        print(f"Restored cached API key: {masked}")
 
     print()
     print("Removing compiled libraries and frameworks...")
@@ -1492,26 +1562,26 @@ def create_parser():
                                        auto downloads and spins up
 
     Optional flags:
-    --precision INT4|INT8|FP16         default: INT8
+    --precision INT4|INT8|FP16         default: INT4
     --token <token>                    HF token (for gated models)
     --reconvert                        force model weights reconversion from source
 
   -----------------------------------------------------------------
 
   cactus transcribe [model]            live microphone transcription
-                                       default model: whisper-small
+                                       default model: parakeet-ctc-1.1b
 
     Optional flags:
     --file <audio.wav>                 transcribe audio file instead of mic
-    --precision INT4|INT8|FP16         default: INT8
+    --precision INT4|INT8|FP16         default: INT4
     --token <token>                    HF token (for gated models)
     --reconvert                        force model weights reconversion from source
 
     Examples:
     cactus transcribe                  live microphone transcription
     cactus transcribe --file audio.wav transcribe single file
-    cactus transcribe openai/whisper-small   use different model
-    cactus transcribe openai/whisper-small --file audio.wav
+    cactus transcribe nvidia/parakeet-ctc-1.1b   use different model
+    cactus transcribe nvidia/parakeet-ctc-1.1b --file audio.wav
 
    -----------------------------------------------------------------
 
@@ -1519,7 +1589,7 @@ def create_parser():
                                        see supported weights on ReadMe
 
     Optional flags:
-    --precision INT4|INT8|FP16         quantization (default: INT8)
+    --precision INT4|INT8|FP16         quantization (default: INT4)
     --token <token>                    HuggingFace API token
     --reconvert                        force model weights reconversion from source
 
@@ -1529,7 +1599,7 @@ def create_parser():
                                        supports LoRA adapter merging
 
     Optional flags:
-    --precision INT4|INT8|FP16   quantization (default: INT8)
+    --precision INT4|INT8|FP16   quantization (default: INT4)
     --lora <path>                      LoRA adapter path to merge
     --token <token>                    HuggingFace API token
 
@@ -1551,8 +1621,8 @@ def create_parser():
 
     Optional flags:
     --model <model>                    default: LFM2-VL-450M
-    --transcribe_model <model>         default: openai/whisper-small
-    --large                            use larger models (LFM2.5-VL-1.6B + openai/whisper-small)
+    --transcribe_model <model>         default: UsefulSensors/moonshine-base
+    --benchmark                        use larger models (LFM2.5-VL-1.6B + nvidia/parakeet-ctc-1.1b)
     --precision INT4|INT8|FP16         regenerates weights with precision
     --reconvert                        force model weights reconversion from source
     --no-rebuild                       skip building library and tests
@@ -1597,8 +1667,8 @@ def create_parser():
     download_parser = subparsers.add_parser('download', help='Download and convert model weights')
     download_parser.add_argument('model_id', nargs='?', default=DEFAULT_MODEL_ID,
                                  help=f'HuggingFace model ID (default: {DEFAULT_MODEL_ID})')
-    download_parser.add_argument('--precision', choices=['INT4', 'INT8', 'FP16'], default='INT8',
-                                 help='Quantization precision (default: INT8)')
+    download_parser.add_argument('--precision', choices=['INT4', 'INT8', 'FP16'], default='INT4',
+                                 help='Quantization precision (default: INT4)')
     download_parser.add_argument('--cache-dir', help='Cache directory for HuggingFace models')
     download_parser.add_argument('--token', help='HuggingFace API token')
     download_parser.add_argument('--reconvert', action='store_true',
@@ -1617,8 +1687,8 @@ def create_parser():
     run_parser = subparsers.add_parser('run', help='Build, download (if needed), and run chat')
     run_parser.add_argument('model_id', nargs='?', default=DEFAULT_MODEL_ID,
                             help=f'HuggingFace model ID (default: {DEFAULT_MODEL_ID})')
-    run_parser.add_argument('--precision', choices=['INT4', 'INT8', 'FP16'], default='INT8',
-                            help='Quantization precision (default: INT8)')
+    run_parser.add_argument('--precision', choices=['INT4', 'INT8', 'FP16'], default='INT4',
+                            help='Quantization precision (default: INT4)')
     run_parser.add_argument('--cache-dir', help='Cache directory for HuggingFace models')
     run_parser.add_argument('--token', help='HuggingFace API token')
     run_parser.add_argument('--no-cloud-tele', action='store_true',
@@ -1633,8 +1703,8 @@ def create_parser():
                                    help='Audio file to transcribe (WAV format). Omit for live microphone.')
     transcribe_parser.add_argument('--language', default='en',
                                    help='Language code for transcription (default: en). Examples: es, fr, de, zh, ja')
-    transcribe_parser.add_argument('--precision', choices=['INT4', 'INT8', 'FP16'], default='INT8',
-                                   help='Quantization precision (default: INT8)')
+    transcribe_parser.add_argument('--precision', choices=['INT4', 'INT8', 'FP16'], default='INT4',
+                                   help='Quantization precision (default: INT4)')
     transcribe_parser.add_argument('--cache-dir', help='Cache directory for HuggingFace models')
     transcribe_parser.add_argument('--token', help='HuggingFace API token')
     transcribe_parser.add_argument('--no-cloud-tele', action='store_true',
@@ -1653,8 +1723,8 @@ def create_parser():
     eval_parser = subparsers.add_parser('eval', help='Run evaluation scripts outside the cactus submodule')
     eval_parser.add_argument('model_id', nargs='?', default=DEFAULT_MODEL_ID,
                              help=f'HuggingFace model ID (default: {DEFAULT_MODEL_ID})')
-    eval_parser.add_argument('--precision', choices=['INT4', 'INT8', 'FP16'], default='INT8',
-                             help='Quantization precision (default: INT8)')
+    eval_parser.add_argument('--precision', choices=['INT4', 'INT8', 'FP16'], default='INT4',
+                             help='Quantization precision (default: INT4)')
     eval_parser.add_argument('--cache-dir', help='Cache directory for HuggingFace models')
     eval_parser.add_argument('--token', help='HuggingFace API token')
     eval_parser.add_argument('--tools', action='store_true', help='Run tools evals (default)')
@@ -1670,12 +1740,12 @@ def create_parser():
     test_parser = subparsers.add_parser('test', help='Run the test suite')
     test_parser.add_argument('--model', default='LiquidAI/LFM2-VL-450M',
                              help='Model to use for tests')
-    test_parser.add_argument('--transcribe_model', default='openai/whisper-small',
+    test_parser.add_argument('--transcribe_model', default=DEFAULT_TEST_TRANSCRIBE_MODEL_ID,
                              help='Transcribe model to use')
     test_parser.add_argument('--vad_model', default='snakers4/silero-vad',
                              help='VAD model to use')
-    test_parser.add_argument('--large', action='store_true',
-                             help='Use larger models (LFM2.5-VL-1.6B + openai/whisper-small)')
+    test_parser.add_argument('--benchmark', action='store_true',
+                             help='Use larger models (LFM2.5-VL-1.6B + nvidia/parakeet-ctc-1.1b)')
     test_parser.add_argument('--precision', choices=['INT4', 'INT8', 'FP16'],
                              help='Regenerate weights with this precision (deletes existing weights)')
     test_parser.add_argument('--no-rebuild', action='store_true',
@@ -1685,6 +1755,8 @@ def create_parser():
                              help='Run tests on Android')
     test_parser.add_argument('--ios', action='store_true',
                              help='Run tests on iOS')
+    test_parser.add_argument('--exhaustive', action='store_true',
+                             help='Run exhaustive golden tests for all model families and precisions')
     test_parser.add_argument('--only', help='Only run the specified test (llm, vlm, stt, embed, rag, graph, index, kernel, kv_cache, performance, etc)')
     test_parser.add_argument('--enable-telemetry', action='store_true',
                              help='Enable cloud telemetry (disabled by default in tests)')
@@ -1703,8 +1775,8 @@ def create_parser():
     convert_parser.add_argument('model_name', help='HuggingFace model name')
     convert_parser.add_argument('output_dir', nargs='?', default=None,
                                 help='Output directory (default: weights/<model_name>)')
-    convert_parser.add_argument('--precision', choices=['INT4', 'INT8', 'FP16'], default='INT8',
-                                help='Quantization precision (default: INT8)')
+    convert_parser.add_argument('--precision', choices=['INT4', 'INT8', 'FP16'], default='INT4',
+                                help='Quantization precision (default: INT4)')
     convert_parser.add_argument('--cache-dir', help='Cache directory for HuggingFace models')
     convert_parser.add_argument('--token', help='HuggingFace API token')
     convert_parser.add_argument('--lora', help='Path to LoRA adapter (local path or HuggingFace ID) to merge before conversion')

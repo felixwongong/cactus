@@ -27,3 +27,8 @@ profile.txt
 *.dylib
 *.bin
 tmp
+
+ruy
+notes.txt
+site/
+site_docs/
