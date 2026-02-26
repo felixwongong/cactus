@@ -235,7 +235,7 @@ int cactus_transcribe(
         float cloud_handoff_classifier_prob = 0.0f;
         bool cloud_handoff_classifier_fire = false;
 
-        if (use_cloud_handoff_classifier) {
+        if (use_cloud_handoff_classifier && handle->cloud_handoff_model) {
             auto* cloud_handoff_model = static_cast<WhisperCloudHandoffModel*>(handle->cloud_handoff_model.get());
             try {
                 std::vector<float> encoder_mean_features = handle->model->get_audio_embeddings(audio_buffer);
