@@ -34,14 +34,14 @@ static void token_callback_bridge(const char* token, uint32_t token_id, void* us
 extern "C" {
 
 JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM*, void*) {
-    cactus_set_telemetry_environment("kotlin", nullptr);
+    cactus_set_telemetry_environment("kotlin", nullptr, nullptr);
     return JNI_VERSION_1_6;
 }
 
 JNIEXPORT void JNICALL
 Java_com_cactus_Cactus_nativeSetCacheDir(JNIEnv* env, jobject, jstring cacheDir) {
     const char* dir = jstring_to_cstr(env, cacheDir);
-    cactus_set_telemetry_environment(nullptr, dir);
+    cactus_set_telemetry_environment(nullptr, dir, nullptr);
     release_jstring(env, cacheDir, dir);
 }
 

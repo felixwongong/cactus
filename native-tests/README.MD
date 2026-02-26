@@ -16,6 +16,7 @@ Install following libs:
   4. Point Flutter to the SDK: `flutter config --android-sdk $ANDROID_HOME`
   5. Accept licenses: `sdkmanager --licenses`
   6. Create an emulator: `avdmanager create avd --name "Pixel_6_API_34" --package "system-images;android-34;google_apis;arm64-v8a" --device "pixel_6"`
+  7. Start the emulator (in a separate terminal): `$ANDROID_HOME/emulator/emulator -avd Pixel_6_API_34`
 - Flutter: `brew install flutter`
 
 ### COMMANDS

@@ -15,6 +15,7 @@
 #include <condition_variable>
 #include <sys/stat.h>
 #include <sys/utsname.h>
+#include <unistd.h>
 #if defined(__APPLE__)
 #include <sys/sysctl.h>
 #include <CoreFoundation/CoreFoundation.h>
@@ -286,6 +287,29 @@ static std::string get_telemetry_dir_locked() {
         mkdir_p(cache_location);
         return cache_location;
     }
+
+#if defined(__ANDROID__)
+    {
+        std::ifstream f("/proc/self/cmdline");
+        if (f.is_open()) {
+            std::string pkg;
+            std::getline(f, pkg, '\0');
+            size_t colon = pkg.find(':');
+            if (colon != std::string::npos) pkg = pkg.substr(0, colon);
+            if (!pkg.empty()) {
+                uid_t uid = getuid();
+                int user_id = static_cast<int>((uid - 10000) / 100000);
+                std::string dir = "/data/user/" + std::to_string(user_id) + "/" + pkg + "/cache/cactus/telemetry";
+                mkdir_p(dir);
+                struct stat st;
+                if (stat(dir.c_str(), &st) == 0) return dir;
+                dir = "/data/data/" + pkg + "/cache/cactus/telemetry";
+                mkdir_p(dir);
+                if (stat(dir.c_str(), &st) == 0) return dir;
+            }
+        }
+    }
+#endif
 
     const char* home = getenv("HOME");
     if (!home) home = "/tmp";
@@ -818,6 +842,16 @@ static void collect_device_info() {
     }
 }
 
+static bool parse_version_line(const std::string& line) {
+    size_t start = line.find_first_not_of(" \t\r\n");
+    size_t end = line.find_last_not_of(" \t\r\n");
+    if (start != std::string::npos && end != std::string::npos) {
+        cactus_version = line.substr(start, end - start + 1);
+        return true;
+    }
+    return false;
+}
+
 static void read_cactus_version() {
     const char* version_paths[] = {
         "CACTUS_VERSION",
@@ -830,16 +864,35 @@ static void read_cactus_version() {
         std::ifstream file(path);
         if (file.is_open()) {
             std::string line;
-            if (std::getline(file, line)) {
-                size_t start = line.find_first_not_of(" \t\r\n");
-                size_t end = line.find_last_not_of(" \t\r\n");
-                if (start != std::string::npos && end != std::string::npos) {
-                    cactus_version = line.substr(start, end - start + 1);
-                    return;
-                }
-            }
+            if (std::getline(file, line) && parse_version_line(line)) return;
         }
     }
+
+#if defined(__APPLE__)
+    CFBundleRef bundle = CFBundleGetMainBundle();
+    if (bundle) {
+        CFURLRef url = CFBundleCopyResourceURL(bundle, CFSTR("CACTUS_VERSION"), NULL, NULL);
+        if (url) {
+            char fspath[4096];
+            if (CFURLGetFileSystemRepresentation(url, true, (UInt8*)fspath, sizeof(fspath))) {
+                std::ifstream file(fspath);
+                if (file.is_open()) {
+                    std::string line;
+                    if (std::getline(file, line) && parse_version_line(line)) {
+                        CFRelease(url);
+                        return;
+                    }
+                }
+            }
+            CFRelease(url);
+        }
+    }
+#endif
+
+#ifdef CACTUS_COMPILE_TIME_VERSION
+    cactus_version = CACTUS_COMPILE_TIME_VERSION;
+    return;
+#endif
 
     cactus_version = "";
 }
@@ -1013,19 +1066,22 @@ static CloudSendResult send_batch_to_cloud(const std::vector<Event>& local, cons
             payload << "\"tokens\":null,";
             payload << "\"prefill_tokens\":null,";
             payload << "\"decode_tokens\":null,";
-            payload << "\"session_ttft\":null,";
-            payload << "\"session_tps\":null,";
-            payload << "\"session_time_ms\":null,";
-            payload << "\"session_tokens\":null,";
         } else {
             payload << "\"confidence\":" << e.confidence << ",";
             payload << "\"tokens\":" << e.tokens << ",";
             payload << "\"prefill_tokens\":" << e.prefill_tokens << ",";
             payload << "\"decode_tokens\":" << e.decode_tokens << ",";
+        }
+        if (e.type == STREAM_TRANSCRIBE) {
             payload << "\"session_ttft\":" << e.session_ttft_ms << ",";
             payload << "\"session_tps\":" << e.session_tps << ",";
             payload << "\"session_time_ms\":" << e.session_time_ms << ",";
             payload << "\"session_tokens\":" << e.session_tokens << ",";
+        } else {
+            payload << "\"session_ttft\":null,";
+            payload << "\"session_tps\":null,";
+            payload << "\"session_time_ms\":null,";
+            payload << "\"session_tokens\":null,";
         }
         payload << "\"created_at\":\"" << format_timestamp(e.timestamp) << "\",";
         if (!snapshot.project_id.empty()) {
@@ -1094,19 +1150,22 @@ static void write_events_to_cache_in_dir(const std::vector<Event>& local, const 
             oss << "\"tokens\":null,";
             oss << "\"prefill_tokens\":null,";
             oss << "\"decode_tokens\":null,";
-            oss << "\"session_ttft\":null,";
-            oss << "\"session_tps\":null,";
-            oss << "\"session_time_ms\":null,";
-            oss << "\"session_tokens\":null";
         } else {
             oss << "\"confidence\":" << e.confidence << ",";
             oss << "\"tokens\":" << e.tokens << ",";
             oss << "\"prefill_tokens\":" << e.prefill_tokens << ",";
             oss << "\"decode_tokens\":" << e.decode_tokens << ",";
+        }
+        if (e.type == STREAM_TRANSCRIBE) {
             oss << "\"session_ttft\":" << e.session_ttft_ms << ",";
             oss << "\"session_tps\":" << e.session_tps << ",";
             oss << "\"session_time_ms\":" << e.session_time_ms << ",";
             oss << "\"session_tokens\":" << e.session_tokens;
+        } else {
+            oss << "\"session_ttft\":null,";
+            oss << "\"session_tps\":null,";
+            oss << "\"session_time_ms\":null,";
+            oss << "\"session_tokens\":null";
         }
         oss << ",\"ts_ms\":" << std::chrono::duration_cast<std::chrono::milliseconds>(e.timestamp.time_since_epoch()).count();
         if (e.message[0] != '\0') {
@@ -1452,11 +1511,16 @@ void shutdown() {
 
         shutdown_called = true;
         lifecycle_state = TelemetryLifecycleState::ShuttingDown;
+    }
+
+    flush();
+
+    {
+        std::lock_guard<std::mutex> lifecycle_guard(telemetry_mutex);
         enabled = false;
         ids_ready = false;
     }
 
-    flush();
     TelemetryDispatcher::instance().stop();
 
     {
