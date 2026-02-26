@@ -4,7 +4,6 @@ project(CactusTests LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 
-# ─── Framework options ───────────────────────────────────────────────
 option(WITH_LITERT "Build with LiteRT for matmul benchmarks (requires network on first build)" OFF)
 option(WITH_GGML "Build with GGML for Q4_0 matmul benchmarks" OFF)
 option(WITH_EXECUTORCH "Build with Executorch for matmul benchmarks" OFF)
@@ -12,7 +11,6 @@ option(WITH_MLX "Build with MLX for matmul benchmarks (Apple-only)" OFF)
 option(WITH_MLC "Build with MLC for matmul benchmarks" OFF)
 option(WITH_ONNXRT "Build with ONNX Runtime for matmul benchmarks" OFF)
 
-# ─── LiteRT setup ───────────────────────────────────────────────────
 if(WITH_LITERT)
     set(LITERT_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/litert)
 
@@ -76,7 +74,6 @@ if(WITH_LITERT)
     message(STATUS "LiteRT enabled from ${LITERT_DIR}")
 endif()
 
-# ─── GGML setup ──────────────────────────────────────────────────────
 if(WITH_GGML)
     set(GGML_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/ggml)
     set(GGML_BUILD_TESTS OFF CACHE BOOL "" FORCE)
@@ -85,7 +82,6 @@ if(WITH_GGML)
     message(STATUS "GGML enabled from ${GGML_DIR}")
 endif()
 
-# ─── MLX setup ────────────────────────────────────────────────────────
 if(WITH_MLX)
     if(NOT APPLE)
         message(FATAL_ERROR "MLX requires macOS (Metal framework)")
@@ -98,7 +94,6 @@ if(WITH_MLX)
     message(STATUS "MLX enabled from ${MLX_DIR}")
 endif()
 
-# ─── Executorch/XNNPACK setup ────────────────────────────────────────
 if(WITH_EXECUTORCH)
     include(FetchContent)
     set(XNNPACK_BUILD_TESTS OFF CACHE BOOL "" FORCE)
@@ -115,7 +110,6 @@ if(WITH_EXECUTORCH)
     message(STATUS "Executorch XNNPACK enabled")
 endif()
 
-# ─── Platform setup ─────────────────────────────────────────────────
 function(cactus_require_vendored_curl include_dir library_path platform_label)
     if(NOT EXISTS "${include_dir}/curl/curl.h" OR NOT EXISTS "${library_path}")
         message(WARNING "==============================================================================")
@@ -172,7 +166,6 @@ else()
     message(STATUS "SDL2 not found; microphone tests will be skipped")
 endif()
 
-# ─── Benchmark comparison suite (bench_lib) ──────────────────────────
 add_library(bench_lib OBJECT
     bench/bench_common.cpp
     bench/bench_driver.cpp
@@ -236,7 +229,6 @@ if(WITH_ONNXRT)
     message(STATUS "ONNX Runtime enabled from ${ONNXRT_DIR}")
 endif()
 
-# Matmul benchmark executable
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/bench/matmul_bench.cpp")
     add_executable(matmul_bench bench/matmul_bench.cpp test_utils.cpp)
     target_link_libraries(matmul_bench PRIVATE bench_lib)
@@ -261,7 +253,6 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/bench/matmul_bench.cpp")
     message(STATUS "Added benchmark: matmul_bench")
 endif()
 
-# ─── Standard tests (one executable per test_*.cpp) ──────────────────
 file(GLOB TEST_SOURCES "test_*.cpp")
 list(REMOVE_ITEM TEST_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/test_utils.cpp")
 

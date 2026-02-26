@@ -10,8 +10,6 @@
 
 namespace {
 
-// ─── INT8 backends (litert_neon, ruy) ────────────────────────────────
-
 static constexpr int kRuyGemvThreads = 1;
 static constexpr int kRuyGemmThreads = 4;
 
@@ -109,8 +107,6 @@ void ruy_run_kernel(size_t M, void* weights, void*,
         ruy_run_kernel_impl(M, w, act_int8, w->ctx_gemm.get());
     }
 }
-
-// ─── INT4 backend (litert_4bit_neon) ────────────────────────────────
 
 struct Int4FcWeights {
     size_t K, N;
@@ -279,8 +275,6 @@ void int4_cleanup(void* weights, void* activations) {
     delete static_cast<Int4FcWeights*>(weights);
     delete static_cast<Int4FcActivations*>(activations);
 }
-
-// ─── Registration ───────────────────────────────────────────────────
 
 static int reg = [] {
     bench::register_backend({

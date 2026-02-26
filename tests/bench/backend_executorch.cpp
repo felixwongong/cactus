@@ -57,8 +57,6 @@ static void fill_qparams(struct xnn_quantization_params* qp, size_t M,
         qp[m] = qp[M - 1];
 }
 
-// ──── Unified weights struct for INT8/INT4 ────
-
 using reshape_fn_t = xnn_status(*)(xnn_operator_t, size_t, size_t*, pthreadpool_t);
 using setup_fn_t = xnn_status(*)(xnn_operator_t, const int8_t*, float*, void*,
                                   const struct xnn_quantization_params*);
@@ -112,8 +110,6 @@ void cleanup(void* weights, void*) {
     }
 }
 
-// ──── INT8: qd8-f32-qc8w (dynamic quant activations, per-channel INT8 weights) ────
-
 void* int8_prepare(const float* fp32, size_t N, size_t K) {
     if (!ensure_init()) return nullptr;
 
@@ -149,8 +145,6 @@ void* int8_prepare(const float* fp32, size_t N, size_t K) {
     }
     return w;
 }
-
-// ──── INT4: qd8-f32-qb4w (dynamic quant activations, block-wise INT4 weights) ────
 
 void* int4_prepare(const float* fp32, size_t N, size_t K) {
     if (!ensure_init()) return nullptr;
@@ -205,8 +199,6 @@ void* int4_prepare(const float* fp32, size_t N, size_t K) {
     return w;
 }
 
-
-// ──── Registration ────
 
 static int reg = [] {
     bench::register_backend({

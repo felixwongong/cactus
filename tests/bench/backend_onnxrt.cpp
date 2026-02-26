@@ -9,8 +9,6 @@
 
 namespace {
 
-// ─── Minimal protobuf encoder for ONNX models ──────────────────────────────
-
 struct PBuf {
     std::vector<uint8_t> d;
     void varint(uint64_t v) {
@@ -64,8 +62,6 @@ static Ort::MemoryInfo& get_cpu_mem() {
     return mem;
 }
 
-// ─── Unified MatMulNBits model builder ──────────────────────────────────────
-
 static std::vector<uint8_t> build_model(size_t K, size_t N, int bits) {
     const size_t n_blocks = K / bench::kGroupSize;
     const size_t b_last_dim = (bits == 4) ? bench::kGroupSize / 2 : bench::kGroupSize;
@@ -86,7 +82,6 @@ static std::vector<uint8_t> build_model(size_t K, size_t N, int bits) {
     node.fld_ld(5, make_attr_int("block_size", static_cast<int64_t>(bench::kGroupSize)));
     node.fld_ld(5, make_attr_int("accuracy_level", 4));
 
-    // FLOAT=1, UINT8=2
     auto a_vi  = make_value_info("A", 1, make_dim_param("M"), make_dim_value(K));
     auto b_vi  = make_value_info("B", 2, make_dim_value(N), make_dim_value(n_blocks),
                                  make_dim_value(b_last_dim));
@@ -114,8 +109,6 @@ static std::vector<uint8_t> build_model(size_t K, size_t N, int bits) {
     model.fld_ld(7, graph);
     return model.d;
 }
-
-// ─── Unified weights / activations ──────────────────────────────────────────
 
 static constexpr int kGemvThreads = 2;
 static constexpr int kGemmThreads = 3;
@@ -162,8 +155,6 @@ struct OrtActivations {
     std::vector<float> fp32;
 };
 
-// ─── Shared prepare_act / run_kernel / cleanup ──────────────────────────────
-
 void* prepare_act(const float* fp32, size_t M, size_t K, void* raw_weights) {
     auto* w = static_cast<OrtWeights*>(raw_weights);
     auto* a = new OrtActivations();
@@ -192,8 +183,6 @@ void cleanup(void* weights, void* activations) {
     delete static_cast<OrtWeights*>(weights);
     if (activations) delete static_cast<OrtActivations*>(activations);
 }
-
-// ─── Quantization helpers ────────────────────────────────────────────────────
 
 static void pack_int8(OrtWeights* w, const float* fp32) {
     size_t N = w->N, K = w->K;
@@ -233,8 +222,6 @@ static void pack_int4(OrtWeights* w, const float* fp32) {
     w->zero_points.resize(N * zp_cols, 0x88);
 }
 
-// ─── Prepare ────────────────────────────────────────────────────────────────
-
 void* i8_prepare(const float* fp32, size_t N, size_t K) {
     auto* w = new OrtWeights();
     w->K = K; w->N = N; w->bits = 8;
@@ -248,8 +235,6 @@ void* i4_prepare(const float* fp32, size_t N, size_t K) {
     pack_int4(w, fp32);
     return w;
 }
-
-// ─── Registration ───────────────────────────────────────────────────────────
 
 static int reg = [] {
     bench::register_backend({"onnxrt_int8", "onnxrt", bench::QuantCategory::INT8, 0, i8_prepare, prepare_act, run_kernel, cleanup});

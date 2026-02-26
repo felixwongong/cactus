@@ -67,7 +67,6 @@ if [ "$EXTERNAL" = true ]; then
         CMAKE_FLAGS+=("-DWITH_ONNXRT=ON")
     fi
 
-    # Executorch/XNNPACK is fetched automatically, always enable when external
     echo "  Enabling Executorch (XNNPACK)"
     CMAKE_FLAGS+=("-DWITH_EXECUTORCH=ON")
 fi

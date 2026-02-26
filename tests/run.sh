@@ -145,7 +145,6 @@ echo ""
 echo "Step 4: Running tests..."
 echo "------------------------"
 
-# Set model path environment variables for tests
 MODEL_DIR=$(echo "$MODEL_NAME" | sed 's|.*/||' | tr '[:upper:]' '[:lower:]')
 TRANSCRIBE_MODEL_DIR=$(echo "$TRANSCRIBE_MODEL_NAME" | sed 's|.*/||' | tr '[:upper:]' '[:lower:]')
 VAD_MODEL_DIR=$(echo "$VAD_MODEL_NAME" | sed 's|.*/||' | tr '[:upper:]' '[:lower:]')
@@ -179,7 +178,6 @@ fi
 
 test_executables=("${executable_tests[@]}")
 
-# If --only is set, execute only the named test
 if [ -n "$ONLY_EXEC" ]; then
     allowed=()
     for test_file in "${executable_tests[@]}"; do

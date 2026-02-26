@@ -10,22 +10,6 @@
 #include <cstring>
 #include <vector>
 
-// MLC backend: loads a pre-compiled TVM module and dispatches quantized
-// matmul through the TVM runtime, matching the code path MLC-LLM uses.
-//
-// The module must export "quantized_matmul_int4" and/or
-// "quantized_matmul_int8" with signature: (A, B_packed, scales, C).
-//
-// Setup:
-//   1. git clone --recursive https://github.com/mlc-ai/mlc-llm ../third_party/mlc
-//   2. Build TVM runtime:
-//        cd ../third_party/mlc/3rdparty/tvm && mkdir build && cd build
-//        cmake .. -DUSE_LLVM=OFF && make tvm_runtime -j
-//   3. Compile the benchmark kernels with TVM:
-//        python tests/bench/compile_mlc_kernels.py
-//   4. Set MLC_MATMUL_LIB=<path to compiled .so>
-//   5. cmake -B build -DWITH_MLC=ON && cmake --build build
-
 namespace {
 
 static TVMModuleHandle s_mod = nullptr;
@@ -59,8 +43,6 @@ static bool load_module() {
 
     return true;
 }
-
-// ── Shared types and helpers ────────────────────────────────────────────
 
 struct MlcWeights {
     size_t K, N;
@@ -105,8 +87,6 @@ static void call_fn(TVMFunctionHandle fn, DLTensor* a, DLTensor* b,
     int ret_code;
     TVMFuncCall(fn, args, codes, 4, &ret, &ret_code);
 }
-
-// ── Prepare weights (shared, parameterized by bits) ─────────────────────
 
 static void* prepare_impl(const float* fp32, size_t N, size_t K,
                             int bits, TVMFunctionHandle fn) {
@@ -157,8 +137,6 @@ void* prepare_q8(const float* fp32, size_t N, size_t K) {
     return prepare_impl(fp32, N, K, 8, s_q8_fn);
 }
 
-// ── Prepare activations ─────────────────────────────────────────────────
-
 void* prepare_act(const float* fp32, size_t M, size_t K, void*) {
     auto* a = new MlcActivations();
     a->fp16.resize(M * K);
@@ -166,8 +144,6 @@ void* prepare_act(const float* fp32, size_t M, size_t K, void*) {
         a->fp16[i] = static_cast<__fp16>(fp32[i]);
     return a;
 }
-
-// ── Run kernel ──────────────────────────────────────────────────────────
 
 void run_kernel(size_t M, void* weights, void* activations,
                 const int8_t*, const float*,
@@ -193,14 +169,10 @@ void run_kernel(size_t M, void* weights, void* activations,
             output[i] = static_cast<float>(w->output_buf[i]);
 }
 
-// ── Cleanup ─────────────────────────────────────────────────────────────
-
 void cleanup(void* weights, void* activations) {
     delete static_cast<MlcWeights*>(weights);
     if (activations) delete static_cast<MlcActivations*>(activations);
 }
-
-// ── Registration ────────────────────────────────────────────────────────
 
 static int reg = [] {
     if (!load_module()) return 0;
