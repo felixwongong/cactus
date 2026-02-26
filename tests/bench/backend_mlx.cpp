@@ -38,8 +38,10 @@ void* prepare_impl(const float* fp32, size_t N, size_t K, int bits, mx::Device d
         std::move(parts[0]), std::move(parts[1]), std::move(parts[2])};
 }
 
-void* prepare_q4(const float* fp32, size_t N, size_t K) { return prepare_impl(fp32, N, K, 4, mx::Device::gpu); }
-void* prepare_q8(const float* fp32, size_t N, size_t K) { return prepare_impl(fp32, N, K, 8, mx::Device::gpu); }
+void* prepare_q4_gpu(const float* fp32, size_t N, size_t K) { return prepare_impl(fp32, N, K, 4, mx::Device::gpu); }
+void* prepare_q8_gpu(const float* fp32, size_t N, size_t K) { return prepare_impl(fp32, N, K, 8, mx::Device::gpu); }
+void* prepare_q4_cpu(const float* fp32, size_t N, size_t K) { return prepare_impl(fp32, N, K, 4, mx::Device::cpu); }
+void* prepare_q8_cpu(const float* fp32, size_t N, size_t K) { return prepare_impl(fp32, N, K, 8, mx::Device::cpu); }
 
 void* prepare_act(const float* fp32, size_t M, size_t K, void* weights) {
     auto* w = static_cast<MLXWeights*>(weights);
@@ -74,12 +76,20 @@ void cleanup(void* weights, void* activations) {
 
 static int reg = [] {
     bench::register_backend({
-        "mlx_q4", "mlx", bench::QuantCategory::INT4, 0,
-        prepare_q4, prepare_act, run_kernel, cleanup
+        "mlx_q4_gpu", "mlx", bench::QuantCategory::INT4, 0,
+        prepare_q4_gpu, prepare_act, run_kernel, cleanup
     });
     bench::register_backend({
-        "mlx_q8", "mlx", bench::QuantCategory::INT8, 0,
-        prepare_q8, prepare_act, run_kernel, cleanup
+        "mlx_q8_gpu", "mlx", bench::QuantCategory::INT8, 0,
+        prepare_q8_gpu, prepare_act, run_kernel, cleanup
+    });
+    bench::register_backend({
+        "mlx_q4_cpu", "mlx", bench::QuantCategory::INT4, 0,
+        prepare_q4_cpu, prepare_act, run_kernel, cleanup
+    });
+    bench::register_backend({
+        "mlx_q8_cpu", "mlx", bench::QuantCategory::INT8, 0,
+        prepare_q8_cpu, prepare_act, run_kernel, cleanup
     });
     return 0;
 }();

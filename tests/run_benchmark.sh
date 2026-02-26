@@ -74,9 +74,9 @@ fi
 echo "Configuring CMake..."
 cmake -B "$BUILD_DIR" -S "$SCRIPT_DIR" "${CMAKE_FLAGS[@]+"${CMAKE_FLAGS[@]}"}"
 
-echo "Building test_matmul_bench..."
-cmake --build "$BUILD_DIR" --target test_matmul_bench -j
+echo "Building matmul_bench..."
+cmake --build "$BUILD_DIR" --target matmul_bench -j
 
 echo ""
 echo "=== Running Benchmark ==="
-"$BUILD_DIR/test_matmul_bench" "${PASSTHROUGH_ARGS[@]+"${PASSTHROUGH_ARGS[@]}"}"
+"$BUILD_DIR/matmul_bench" "${PASSTHROUGH_ARGS[@]+"${PASSTHROUGH_ARGS[@]}"}"

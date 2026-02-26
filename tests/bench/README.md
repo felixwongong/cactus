@@ -142,19 +142,21 @@ Default settings: 100 warmup, 1024 iterations, 64 matrices.
 | **Cactus INT8** | **32.5 us** | **64.51** | **0.0051** |
 | Ruy | 35.3 us | 59.36 | — |
 | GGML Q8_0 | 57.0 us | 36.78 | 0.0000 |
-| MLX Q8 | 140.5 us | 14.92 | 0.0036 |
+| MLX Q8 GPU | 115.7 us | 18.13 | 0.0036 |
+| MLX Q8 CPU | 259.1 us | 8.10 | 0.0036 |
 | ONNX Runtime INT8 | 587.0 us | 3.57 | 0.0037 |
 
 ### INT8 — 1024x1024x1024 (GEMM)
 
 | Backend | Latency | GOPS | NRMSE |
 |---------|---------|------|-------|
-| MLX Q8 | 606.0 us | 3543.57 | 0.0037 |
+| MLX Q8 GPU | 545.4 us | 3937.39 | 0.0037 |
 | **Cactus INT8** | **828.2 us** | **2592.91** | **0.0055** |
 | Ruy | 1348.1 us | 1593.01 | — |
 | ONNX Runtime INT8 | 1616.1 us | 1328.85 | 0.0038 |
 | GGML Q8_0 | 3268.6 us | 657.01 | 0.0000 |
 | LiteRT NEON | 24816.6 us | 86.53 | 0.0000 |
+| MLX Q8 CPU | 142528.1 us | 15.07 | 0.0037 |
 
 ### INT4 — 1x1024x1024 (GEMV)
 
@@ -163,15 +165,17 @@ Default settings: 100 warmup, 1024 iterations, 64 matrices.
 | LiteRT 4bit NEON | 10.8 us | 194.06 | 0.0000 |
 | **Cactus INT4** | **33.6 us** | **62.44** | **0.0691** |
 | GGML Q4_0 | 55.1 us | 38.05 | 0.0000 |
-| MLX Q4 | 135.0 us | 15.54 | 0.0665 |
+| MLX Q4 GPU | 121.5 us | 17.26 | 0.0665 |
+| MLX Q4 CPU | 248.5 us | 8.44 | 0.0665 |
 | ONNX Runtime INT4 | 784.2 us | 2.67 | 0.0689 |
 
 ### INT4 — 1024x1024x1024 (GEMM)
 
 | Backend | Latency | GOPS | NRMSE |
 |---------|---------|------|-------|
-| MLX Q4 | 594.7 us | 3611.25 | 0.0650 |
+| MLX Q4 GPU | 541.8 us | 3963.46 | 0.0650 |
 | **Cactus INT4** | **1192.2 us** | **1801.34** | **0.0683** |
 | ONNX Runtime INT4 | 1743.5 us | 1231.68 | 0.0682 |
 | GGML Q4_0 | 3484.9 us | 616.22 | 0.0000 |
 | LiteRT 4bit NEON | 6851.5 us | 313.43 | 0.0000 |
+| MLX Q4 CPU | 133928.7 us | 16.03 | 0.0650 |
