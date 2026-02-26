@@ -196,7 +196,7 @@ def export_and_publish_model(args, api):
         readme = f"---\n{yaml.dump(meta, default_flow_style=False, allow_unicode=True).strip()}\n---\n"
         try:
             api.upload_file(
-                path_or_fileobj=readme.encode(),
+                path_or_fileobj=readme.encode("utf-8"),
                 path_in_repo="README.md",
                 repo_id=repo_id,
                 repo_type="model",
