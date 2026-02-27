@@ -49,43 +49,43 @@ This architecture is why Parakeet works well for both real-time and batch transc
                          │                  × Num Layers                  │
                          │                                                │
                          │   ┌────────────────────────────────────────┐   │
-                         │   │        FastConformer Block             │   │
+                         │   │           FastConformer Block          │   │
                          │   │                                        │   │
-                         │   │            ┌──────────────┐            │   │
-                         │   │            │     FFN      │            │   │
-                         │   │            │ Linear       │            │   │
-                         │   │            │ SwiGLU/Act   │            │   │
-                         │   │            │ Linear       │            │   │
-                         │   │            └──────┬───────┘            │   │
-                         │   │                   │                    │   │
-                         │   │                   ⊕                    │   │
-                         │   │                   │                    │   │
-                         │   │            ┌──────┴───────┐            │   │
-                         │   │            │  Conv Module │            │   │
-                         │   │            │ Pointwise    │            │   │
-                         │   │            │ Depthwise    │            │   │
-                         │   │            │ Pointwise    │            │   │
-                         │   │            └──────┬───────┘            │   │
-                         │   │                   │                    │   │
-                         │   │                   ⊕                    │   │
-                         │   │                   │                    │   │
-                         │   │   ┌───────────────┴──────────────┐     │   │
-                         │   │   │  Limited Context Attention   │     │   │
-                         │   │   │    local / sliding window    │     │   │
-                         │   │   │                              │     │   │
-                         │   │   │   Q        K        V        │     │   │
-                         │   │   │   ↑        ↑        ↑        │     │   │
-                         │   │   │ ┌─┴────────┴────────┴──────┐ │     │   │
-                         │   │   │ │        Linear            │ │     │   │
-                         │   │   │ └─────────────┬────────────┘ │     │   │
-                         │   │   └───────────────┼──────────────┘     │   │
-                         │   │                   │                    │   │
-                         │   │                   ⊕                    │   │
-                         │   │                   │                    │   │
-                         │   │   ┌───────────────┴──────────────┐     │   │
-                         │   │   │            FFN               │     │   │
-                         │   │   │    Linear → Act → Linear     │     │   │
-                         │   │   └──────────────────────────────┘     │   │
+                         │   │             ┌──────────────┐           │   │
+                         │   │             │     FFN      │           │   │
+                         │   │             │ Linear       │           │   │
+                         │   │             │ SwiGLU/Act   │           │   │
+                         │   │             │ Linear       │           │   │
+                         │   │             └──────┬───────┘           │   │
+                         │   │                    │                   │   │
+                         │   │                    ⊕                   │   │
+                         │   │                    │                   │   │
+                         │   │             ┌──────┴───────┐           │   │
+                         │   │             │  Conv Module │           │   │
+                         │   │             │ Pointwise    │           │   │
+                         │   │             │ Depthwise    │           │   │
+                         │   │             │ Pointwise    │           │   │
+                         │   │             └──────┬───────┘           │   │
+                         │   │                    │                   │   │
+                         │   │                    ⊕                   │   │
+                         │   │                    │                   │   │
+                         │   │    ┌───────────────┴──────────────┐    │   │
+                         │   │    │   Limited Context Attention  │    │   │
+                         │   │    │     local / sliding window   │    │   │
+                         │   │    │                              │    │   │
+                         │   │    │      Q        K        V     │    │   │
+                         │   │    │      ↑        ↑        ↑     │    │   │
+                         │   │    │ ┌────┴────────┴────────┴───┐ │    │   │
+                         │   │    │ │           Linear         │ │    │   │
+                         │   │    │ └─────────────┬────────────┘ │    │   │
+                         │   │    └───────────────┼──────────────┘    │   │
+                         │   │                    │                   │   │
+                         │   │                    ⊕                   │   │
+                         │   │                    │                   │   │
+                         │   │    ┌───────────────┴──────────────┐    │   │
+                         │   │    │            FFN               │    │   │
+                         │   │    │    Linear → Act → Linear     │    │   │
+                         │   │    └──────────────────────────────┘    │   │
                          │   │                                        │   │
                          │   └────────────────────────────────────────┘   │
                          └────────────────────────┬───────────────────────┘
@@ -139,7 +139,7 @@ cactus download nvidia/parakeet-ctc-1.1b
 
 ### 3. Live Transcription
 
-The fastest way to start transcribing with Parakeet is to run the CLI command:
+The fastest way to start transcribing with parakeet is by running the CLI command. It also provides an input for your cloud handoff key, for transcription models that support it (Parakeet currently does not support cloud handoff, but it will be added):
 
 ```bash
 cactus transcribe nvidia/parakeet-ctc-1.1b
