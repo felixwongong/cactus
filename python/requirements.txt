@@ -5,3 +5,5 @@ pillow==11.3.0
 num2words==0.5.12
 huggingface_hub==1.4.1
 einops==0.8.2
+fastapi>=0.100.0
+uvicorn>=0.20.0

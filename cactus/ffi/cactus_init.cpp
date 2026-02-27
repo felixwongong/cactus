@@ -475,4 +475,10 @@ void cactus_stop(cactus_model_t model) {
     handle->should_stop = true;
 }
 
+void cactus_set_context_length(cactus_model_t model, size_t context_length) {
+    if (!model) return;
+    auto* handle = static_cast<CactusModelHandle*>(model);
+    handle->model->set_cache_window(context_length);
+}
+
 }

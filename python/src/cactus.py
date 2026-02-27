@@ -104,6 +104,9 @@ _lib.cactus_stop.restype = None
 _lib.cactus_destroy.argtypes = [ctypes.c_void_p]
 _lib.cactus_destroy.restype = None
 
+_lib.cactus_set_context_length.argtypes = [ctypes.c_void_p, ctypes.c_size_t]
+_lib.cactus_set_context_length.restype = None
+
 _lib.cactus_get_last_error.argtypes = []
 _lib.cactus_get_last_error.restype = ctypes.c_char_p
 
@@ -480,6 +483,11 @@ def cactus_stop(model):
 def cactus_destroy(model):
     """Free model memory. Always call when done."""
     _lib.cactus_destroy(model)
+
+
+def cactus_set_context_length(model, context_length):
+    """Set the KV cache context window size."""
+    _lib.cactus_set_context_length(model, context_length)
 
 
 def cactus_get_last_error():

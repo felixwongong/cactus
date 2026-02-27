@@ -187,6 +187,8 @@ CACTUS_FFI_EXPORT int cactus_index_query(
 CACTUS_FFI_EXPORT int cactus_index_compact(cactus_index_t index);
 CACTUS_FFI_EXPORT void cactus_index_destroy(cactus_index_t index);
 
+CACTUS_FFI_EXPORT void cactus_set_context_length(cactus_model_t model, size_t context_length);
+
 CACTUS_FFI_EXPORT const char* cactus_get_last_error(void);
 
 CACTUS_FFI_EXPORT void cactus_set_telemetry_environment(const char* framework, const char* cache_location, const char* version);
