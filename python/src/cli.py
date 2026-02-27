@@ -209,7 +209,9 @@ def cmd_download(args):
     from transformers import AutoTokenizer, AutoModelForCausalLM, AutoModel
 
     import logging
-    logging.getLogger("transformers.modeling_utils").setLevel(logging.ERROR)
+    logging.getLogger("transformers").setLevel(logging.ERROR)
+    import transformers
+    transformers.logging.set_verbosity_error()
 
     def _download_config_json(repo_id):
         from huggingface_hub import hf_hub_download
@@ -1290,6 +1292,8 @@ def cmd_test(args):
         cmd.append("--android")
     if args.ios:
         cmd.append("--ios")
+    if getattr(args, 'exhaustive', False):
+        cmd.append("--exhaustive")
     if args.only:
         cmd.extend(["--only", args.only])
     env = os.environ.copy()
@@ -1751,6 +1755,8 @@ def create_parser():
                              help='Run tests on Android')
     test_parser.add_argument('--ios', action='store_true',
                              help='Run tests on iOS')
+    test_parser.add_argument('--exhaustive', action='store_true',
+                             help='Run exhaustive golden tests for all model families and precisions')
     test_parser.add_argument('--only', help='Only run the specified test (llm, vlm, stt, embed, rag, graph, index, kernel, kv_cache, performance, etc)')
     test_parser.add_argument('--enable-telemetry', action='store_true',
                              help='Enable cloud telemetry (disabled by default in tests)')
