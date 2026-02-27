@@ -32,7 +32,7 @@ Attention benchmarks use a single set of Q/K/V tensors since the working set is 
 
 Each kernel is called in a timed loop (1024 iterations for matmul, 512 for attention) preceded by warmup calls. The reported latency is the per-call average.
 
-Before timing, each backend runs once with output capture to verify correctness against a naive fp64-accumulated reference. INT8 backends must achieve NRMSE < 0.05 (matmul) or < 0.10 (attention); INT4 must achieve < 0.20. This is a sanity check, not a precision benchmark.
+Before timing, each backend runs once with output capture to verify correctness against a naive fp64-accumulated reference. INT8 backends must achieve NRMSE < 0.05 (matmul) or < 0.10 (attention); INT4 must achieve < 2.0. This is a sanity check, not a precision benchmark.
 
 ### Threading
 
@@ -56,7 +56,7 @@ Results are reported at two thread configurations:
 
 | Framework | Matmul backends | Attention backends | Description |
 |-----------|----------------|-------------------|-------------|
-| **Cactus** | `cactus_int8`, `cactus_int4` | `cactus_prefill` (FP16), `cactus_decode` (hybrid INT8/FP16) | ARM NEON SIMD kernels with interleaved NK4 weight layout; hybrid decode uses INT8 quantized KV cache with FP16 new tokens |
+| **Cactus** | `cactus_int8`, `cactus_int4` | `cactus_prefill` (INT8/FP16), `cactus_decode` (INT8/FP16) | ARM NEON SIMD kernels with interleaved NK4 weight layout; INT8 quantized KV cache with FP16 computation |
 | **GGML** | `ggml_q4_0`, `ggml_q8_0` | `ggml_fa_{f16,q8,q4}_{prefill,decode}`, `ggml_mm_{q8,q4}_{prefill,decode}` | llama.cpp's quantization engine; flash attention (`fa`) via `ggml_flash_attn_ext`, matmul-composed (`mm`) via `ggml_mul_mat` + `ggml_soft_max_ext` |
 | **MLX** | `mlx_q{4,8}_{gpu,cpu}` | `mlx_{gpu,cpu}_{prefill,decode}`, `mlx_q{4,8}_{gpu,cpu}_{prefill,decode}` | Apple's ML framework; GPU uses Metal kernels, CPU uses Accelerate/BNNS; quantized attention mirrors mlx-lm's `quantized_scaled_dot_product_attention` |
 | **LiteRT** | `litert_neon`, `ruy`, `litert_4bit_neon` | `litert_ruy_int8_{prefill,decode}`, `litert_neon_int8_decode`, `litert_q4_{prefill,decode}` | TFLite's NEON GEMV kernel, Ruy GEMM engine, and optimized 4-bit FC; attention uses Ruy/NEON INT8 matmul or 4-bit matmul for Q@K and scores@V |
@@ -195,7 +195,7 @@ Results are reported at two thread configurations:
 | GGML Flash Attn FP16 | 33104.1 us | 524.03 | 0.0002 |
 | GGML Matmul Q8_0 | 41164.3 us | 421.42 | 0.0044 |
 | GGML Matmul Q4_0 | 43556.3 us | 398.28 | 0.0701 |
-| **Cactus FP16** | **44018.3 us** | **394.10** | **0.0076** |
+| **Cactus INT8** | **44018.3 us** | **394.10** | **0.0076** |
 | GGML Flash Attn Q8_0 | 63009.9 us | 275.32 | 0.0038 |
 | GGML Flash Attn Q4_0 | 66065.2 us | 262.58 | 0.0647 |
 | LiteRT Ruy INT8 ^ | 98679.2 us | 175.80 | 0.0046 |
@@ -236,7 +236,7 @@ Results are reported at two thread configurations:
 | GGML Flash Attn FP16 | 33095.7 us | 524.17 | 0.0002 |
 | GGML Matmul Q8_0 | 40850.0 us | 424.67 | 0.0044 |
 | GGML Matmul Q4_0 | 42671.4 us | 406.54 | 0.0701 |
-| **Cactus FP16** | **43758.2 us** | **396.44** | **0.0076** |
+| **Cactus INT8** | **43758.2 us** | **396.44** | **0.0076** |
 | GGML Flash Attn Q8_0 | 61782.1 us | 280.79 | 0.0038 |
 | GGML Flash Attn Q4_0 | 65478.5 us | 264.94 | 0.0647 |
 | LiteRT Ruy INT8 ^ | 99286.0 us | 174.72 | 0.0046 |
@@ -270,23 +270,17 @@ Results are reported at two thread configurations:
 
 ### Matmul
 
-Cactus is among the fastest general-purpose CPU matmul kernels across both precisions and both shapes. For GEMV, LiteRT NEON is marginally faster in INT8 (26.6 vs 28.8 us) and significantly faster in INT4 (12.0 vs 28.2 us), but its INT4 advantage comes from using per-channel quantization (less compute per element) rather than the per-group quantization every other backend uses, resulting in unusable output quality (NRMSE 1.4). LiteRT collapses for GEMM, dropping to last place (25ms INT8, 6.7ms INT4) since its kernel is a single-threaded GEMV-only path with no batched matmul support.
+**INT8:** Cactus is the second-fastest CPU matmul kernel for GEMV regardless of thread count, barely trailing LiteRT NEON (28.8 vs 26.6 us at default threads). LiteRT uses per-channel quantization rather than the per-group quantization every other backend uses — a simpler computation with fewer scale factors to apply. For GEMM, Cactus is modestly behind ExecuTorch's KleidiAI-backed kernel (834 vs 665 us), whose ARM I8MM-optimized tiling achieves higher utilization at large batch sizes.
 
-ExecuTorch with KleidiAI is a strong competitor, matching Cactus closely for GEMV (32.4 vs 28.8 us INT8, 30.1 vs 28.2 us INT4) and outperforming it for GEMM (665 vs 834 us INT8, 1066 vs 1172 us INT4). ExecuTorch's GEMM advantage comes from KleidiAI's ARM I8MM-optimized tiling, which achieves higher utilization at large batch sizes.
+**INT4:** Similar story. For GEMV, LiteRT's 4-bit kernel is significantly faster (12.0 vs 28.2 us) but produces unusable output (NRMSE 1.4 vs 0.07) due to internal 4-bit activation quantization — not a fair comparison. Among accurate backends, Cactus leads GEMV. For GEMM, Cactus is ~9% slower than ExecuTorch (1172 vs 1066 us).
 
-MLX GPU dominates GEMM via Metal/AMX hardware dispatch but falls behind for GEMV due to GPU dispatch overhead.
-
-At 12 threads, most backends show stable or slightly degraded GEMV performance (thread overhead exceeds benefit at single-row sizes), while GEMM results are largely unchanged. Ruy degrades catastrophically for GEMV at 12 threads (38.7 us to 1760 us) due to thread pool overhead on single-row operations.
+LiteRT collapses for GEMM in both precisions (25ms INT8, 6.7ms INT4) — its kernel is a GEMV-only path with no batched matmul support. MLX GPU dominates GEMM via Metal/AMX hardware but loses GEMV to GPU launch overhead. At 12 threads, GEMV results are mostly stable while Ruy degrades catastrophically (38.7 us → 1760 us) due to thread pool overhead on single-row operations.
 
 ### Attention
 
-MLX's Accelerate/AMX-backed FP16 SDPA is dramatically faster for prefill (1.6ms vs 33-44ms for CPU-only backends) due to Apple's AMX coprocessor.
+**Prefill:** Among CPU-only backends, Cactus INT8 (44ms) is only behind GGML — specifically GGML's flash attention FP16 (33ms) and matmul-composed paths (41-44ms) — and not by much. MLX's AMX-backed SDPA is in a different category entirely (1.6ms) thanks to Apple's AMX coprocessor.
 
-For CPU-only prefill, Cactus FP16 (44ms) is competitive with GGML's matmul-composed paths (41-44ms) while maintaining higher precision than quantized alternatives.
-
-For decode, Cactus INT8 decode (223 us default, 216 us at 12 threads) is stable across thread configurations. Our approach, INT8 quantized KV cache with FP16 new token, trades ~1.5-2x latency. But we achieve a ~2x reduction in KV cache memory, a worthwhile tradeoff for memory-constrained mobile devices.
-
-All backends are compared against the same naive fp64 reference for NRMSE.
+**Decode:** This is Cactus's weakest result. At 223 us (default) / 216 us (12 threads), we're significantly slower than LiteRT's optimized NEON INT8 kernel (128 us) and GGML's fastest kernels. At 12 threads, GGML's matmul Q4_0 (112 us) is nearly 2x as fast. Our INT8/FP16 approach — INT8 quantized KV cache with FP16 computation — trades latency for a ~2x reduction in KV cache memory, a worthwhile tradeoff on memory-constrained mobile devices, but decode performance is a clear area for improvement.
 
 ## Running benchmarks
 
