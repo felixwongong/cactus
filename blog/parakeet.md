@@ -9,7 +9,7 @@ tags: ["Parakeet", "ASR", "speech-to-text", "Apple Silicon", "Transcription"]
 
 # Ridiculously Fast On-Device Transcription: Reviewing Parakeet CTC 1.1B with Cactus
 
-*By Satyajit Kumar (and Henry Ndubuaku)*
+*By Satyajit Kumar and Henry Ndubuaku*
 
 Placeholder for video
 
@@ -159,13 +159,10 @@ For integrating Parakeet into your own applications, use the Python FFI bindings
 import json
 from cactus import cactus_init, cactus_transcribe, cactus_destroy
 
-def on_token(token, token_id, user_data):
-    print(token.decode(), end="", flush=True)
-
 model = cactus_init("weights/parakeet-ctc-1.1b")
 
 result = json.loads(
-    cactus_transcribe(model, "/path/to/audio.wav", callback=on_token)
+    cactus_transcribe(model, "/path/to/audio.wav")
 )
 
 if not result["success"]:
@@ -175,10 +172,58 @@ print("\n\nFinal transcript:")
 print(result["response"])
 print(f"Decode speed: {result['decode_tps']:.1f} tokens/sec")
 
-    cactus_destroy(model)
+cactus_destroy(model)
 ```
 
-You can reuse the same initialized model to transcribe multiple files in a batch job and track `total_time_ms` / `decode_tps` from each response for throughput monitoring.
+Cactus also supports streaming for constant transcription. Below is a code snippet that uses the computer's mic to transcribe audio on-device. Note that sample rate is 16000 hz for Parakeet, and that each block is one second long to allow the model to have enough context to accurately transcribe the audio stream.
+
+Minimal streaming example using your computer mic (`Ctrl+C` to stop):
+
+```python
+import json
+import queue
+
+import sounddevice as sd
+from cactus import (
+    cactus_init,
+    cactus_stream_transcribe_start,
+    cactus_stream_transcribe_process,
+    cactus_stream_transcribe_stop,
+    cactus_destroy,
+)
+
+model = cactus_init("weights/parakeet-ctc-1.1b")
+stream = cactus_stream_transcribe_start(
+    model,
+    {"min_chunk_size": 16000, "confirmation_threshold": 0.99},
+    language="en",
+)
+
+audio_q = queue.Queue()
+
+def on_audio(indata, _frames, _time_info, status):
+    audio_q.put(bytes(indata))
+
+print("Listening... press Ctrl+C to stop.")
+with sd.RawInputStream(
+    samplerate=16000,
+    blocksize=16000,  # 1 second callbacks
+    channels=1,
+    dtype="int16",
+    callback=on_audio,
+):
+    try:
+        while True:
+            pcm_chunk = audio_q.get()
+            out = json.loads(cactus_stream_transcribe_process(stream, pcm_chunk))
+    except KeyboardInterrupt:
+        pass
+
+final = json.loads(cactus_stream_transcribe_stop(stream))
+print(final["confirmed"], end=" ", flush=True)
+
+cactus_destroy(model)
+```
 
 ## Conclusion
 
@@ -186,7 +231,6 @@ You can reuse the same initialized model to transcribe multiple files in a batch
 
 - [Cactus Engine API Reference](/docs/cactus_engine.md) — Full C API docs for completion, tool calling, and cloud handoff
 - [Python SDK](/python/) — Python bindings used in the examples above
-- [Fine-tuning Guide](/docs/finetuning.md) — Deploy your own LoRA fine-tunes to mobile
 - [Hybrid Transcription](/blog/hybrid_transcription.md) — On-device/cloud hybrid speech transcription with Cactus
 - [LFM2-24B-A2B](/blog/lfm2_24b_a2b.md) - Reviewing LFM2 24B MoE A2B with Cactus
 - [Runtime Compatibility](/docs/compatibility.md) — Weight versioning across Cactus releases
