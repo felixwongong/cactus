@@ -107,9 +107,6 @@ This architecture is why Parakeet works well for both real-time and batch transc
                                       └───────────────────────┘
 ```
 
-*Diagram based on NVIDIA's Parakeet / FastConformer architecture description:*  
-https://developer.nvidia.com/blog/pushing-the-boundaries-of-speech-recognition-with-nemo-parakeet-asr-models/
-
 ## Getting Started with Parakeet-CTC-1.1B on Cactus
 
 ### Prerequisites
