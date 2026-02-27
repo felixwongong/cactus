@@ -17,9 +17,98 @@ Parakeet CTC 1.1B is NVIDIA’s large-scale, non-autoregressive English speech-t
 
 ## Architecture Details
 
-The architecture has a lot of innovations compared to a base transformer. Firstly, the mel spectrogram features pass through a conformer, which is a transformer where every layer has a few convoolutional layers at the beginning. Another piece of innovation is the limited context attention, which intuitively makes sense because only the most immediate audio would affect the current decoding. then there's also the decoding head, which is a pointwise 1d conv on the output. It was trained with Connectionist Temporal Classification (CTC) loss, which is perfect for this decoding since it acts on empty space as well.
+Parakeet CTC 1.1B is built on NVIDIA's FastConformer encoder and optimized for non-autoregressive ASR. At a high level:
+
+1. **Audio front-end (mel + subsampling):** Input audio is converted to log-mel features, then an 8x depthwise-separable convolutional subsampler reduces sequence length before the encoder stack.
+2. **FastConformer encoder blocks:** The encoder combines Conformer layers with **Limited Context Attention (LCA)** for local efficiency and periodic **Global Tokens (GT)** so long-range context is still preserved.
+3. **CTC projection head:** Instead of an autoregressive decoder, Parakeet projects encoder states directly to token logits and uses **CTC** decoding (blank/repeat collapse), making inference highly parallel and low latency.
+
+This architecture is why Parakeet works well for both real-time and batch transcription: most compute is in the encoder pass, and decoding stays lightweight.
 
 ## Model Architecture Diagram
+
+```text
+                                      ┌───────────────────────┐
+                                      │     CTC Collapse      │
+                                      │ remove blanks / merge │
+                                      │ repeated labels       │
+                                      └───────────┬───────────┘
+                                                  ▲
+                                      ┌───────────┴───────────┐
+                                      │   CTC Projection Head │
+                                      │  Conv1D / Linear → V  │
+                                      └───────────┬───────────┘
+                                                  ▲
+                                      ┌───────────┴───────────┐
+                                      │         Norm          │
+                                      └───────────┬───────────┘
+                                                  ▲
+                         ┌────────────────────────⊕───────────────────────┐
+                         │                        │                       │
+                         │          FastConformer Encoder Stack           │
+                         │                  × Num Layers                  │
+                         │                                                │
+                         │   ┌────────────────────────────────────────┐   │
+                         │   │        FastConformer Block             │   │
+                         │   │                                        │   │
+                         │   │            ┌──────────────┐            │   │
+                         │   │            │     FFN      │            │   │
+                         │   │            │ Linear       │            │   │
+                         │   │            │ SwiGLU/Act   │            │   │
+                         │   │            │ Linear       │            │   │
+                         │   │            └──────┬───────┘            │   │
+                         │   │                   │                    │   │
+                         │   │                   ⊕                    │   │
+                         │   │                   │                    │   │
+                         │   │            ┌──────┴───────┐            │   │
+                         │   │            │  Conv Module │            │   │
+                         │   │            │ Pointwise    │            │   │
+                         │   │            │ Depthwise    │            │   │
+                         │   │            │ Pointwise    │            │   │
+                         │   │            └──────┬───────┘            │   │
+                         │   │                   │                    │   │
+                         │   │                   ⊕                    │   │
+                         │   │                   │                    │   │
+                         │   │   ┌───────────────┴──────────────┐     │   │
+                         │   │   │  Limited Context Attention   │     │   │
+                         │   │   │    local / sliding window    │     │   │
+                         │   │   │                              │     │   │
+                         │   │   │   Q        K        V        │     │   │
+                         │   │   │   ↑        ↑        ↑        │     │   │
+                         │   │   │ ┌─┴────────┴────────┴──────┐ │     │   │
+                         │   │   │ │        Linear            │ │     │   │
+                         │   │   │ └─────────────┬────────────┘ │     │   │
+                         │   │   └───────────────┼──────────────┘     │   │
+                         │   │                   │                    │   │
+                         │   │                   ⊕                    │   │
+                         │   │                   │                    │   │
+                         │   │   ┌───────────────┴──────────────┐     │   │
+                         │   │   │            FFN               │     │   │
+                         │   │   │    Linear → Act → Linear     │     │   │
+                         │   │   └──────────────────────────────┘     │   │
+                         │   │                                        │   │
+                         │   └────────────────────────────────────────┘   │
+                         └────────────────────────┬───────────────────────┘
+                                                  ▲
+                                      ┌───────────┴───────────┐
+                                      │  Conv Subsampling /   │
+                                      │ Sequence Reduction    │
+                                      │  (time downsample)    │
+                                      └───────────┬───────────┘
+                                                  ▲
+                                      ┌───────────┴───────────┐
+                                      │   Mel-Spectrogram /   │
+                                      │   Acoustic Features   │
+                                      └───────────┬───────────┘
+                                                  ▲
+                                      ┌───────────┴───────────┐
+                                      │     16 kHz Audio      │
+                                      │      Waveform In      │
+                                      └───────────────────────┘
+```
+
+*Diagram based on NVIDIA's Parakeet / FastConformer architecture description:*  
+https://developer.nvidia.com/blog/pushing-the-boundaries-of-speech-recognition-with-nemo-parakeet-asr-models/
 
 ## Getting Started with Parakeet-CTC-1.1B on Cactus
 
@@ -50,19 +139,46 @@ cactus download nvidia/parakeet-ctc-1.1b
 
 ### 3. Live Transcription
 
-The fastest way to start transcribing with parakeet is by running the CLI command. It also provides an input for your cloud handoff key, for transcription models that support it (Parakeet currently does not support cloud handoff, but it will be added):
+The fastest way to start transcribing with Parakeet is to run the CLI command:
 
 ```bash
 cactus transcribe nvidia/parakeet-ctc-1.1b
 ```
 
-This builds, downloads (if needed), and launches an session that you can live transcribe from using your computers microphone or an external mic. to run transcribe on a specific WAV file, simply pass in the --file argument to the command.
+This command downloads and converts the model if needed, then starts a live transcription session from your computer's microphone (or an external mic). To transcribe a specific WAV file, pass `--file`:
 
 ```bash
 cactus transcribe nvidia/parakeet-ctc-1.1b --file /path/to/your/file.wav
 ```
 
 ### 4. Use the Python API
+
+For integrating Parakeet into your own applications, use the Python FFI bindings directly:
+
+```python
+import json
+from cactus import cactus_init, cactus_transcribe, cactus_destroy
+
+def on_token(token, token_id, user_data):
+    print(token.decode(), end="", flush=True)
+
+model = cactus_init("weights/parakeet-ctc-1.1b")
+
+result = json.loads(
+    cactus_transcribe(model, "/path/to/audio.wav", callback=on_token)
+)
+
+if not result["success"]:
+    raise RuntimeError(result["error"])
+
+print("\n\nFinal transcript:")
+print(result["response"])
+print(f"Decode speed: {result['decode_tps']:.1f} tokens/sec")
+
+    cactus_destroy(model)
+```
+
+You can reuse the same initialized model to transcribe multiple files in a batch job and track `total_time_ms` / `decode_tps` from each response for throughput monitoring.
 
 ## Conclusion
 
