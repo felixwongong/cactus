@@ -54,6 +54,11 @@ class ModelManager:
             self.current_model_id = model_id
             return handle
 
+    def preload(self, model_id: str):
+        handle = self._load(model_id)
+        self.current_handle = handle
+        self.current_model_id = model_id
+
     def shutdown(self):
         if self.current_handle:
             cactus_destroy(self.current_handle)
@@ -65,77 +70,128 @@ manager = ModelManager()
 
 
 EMBEDDING_MODEL_TYPES = {"bert"}
+LLM_MODEL_TYPES = {"lfm2", "qwen", "gemma"}
+PREFERRED_DEFAULT_MODEL = "lfm2-24b-a2b"
 
 
-def _read_model_type(model_dir: Path) -> str:
+def _read_config_field(model_dir: Path, field: str) -> str:
     config = model_dir / "config.txt"
     if not config.exists():
         return ""
+    prefix = f"{field}="
     for line in config.read_text().splitlines():
-        if line.startswith("model_type="):
+        if line.startswith(prefix):
             return line.split("=", 1)[1].strip()
     return ""
+
+
+def _read_model_type(model_dir: Path) -> str:
+    return _read_config_field(model_dir, "model_type")
+
+
+def _pick_default_model() -> str:
+    if not WEIGHTS_DIR.exists():
+        raise RuntimeError("No weights/ directory found. Run 'cactus download <model>' first.")
+    preferred = WEIGHTS_DIR / PREFERRED_DEFAULT_MODEL
+    if preferred.is_dir() and (preferred / "config.txt").exists():
+        return PREFERRED_DEFAULT_MODEL
+    for entry in sorted(WEIGHTS_DIR.iterdir()):
+        if entry.is_dir() and (entry / "config.txt").exists():
+            if _read_model_type(entry) in LLM_MODEL_TYPES:
+                return entry.name
+    for entry in sorted(WEIGHTS_DIR.iterdir()):
+        if entry.is_dir() and (entry / "config.txt").exists():
+            return entry.name
+    raise RuntimeError("No models found in weights/. Run 'cactus download <model>' first.")
 
 
 def discover_models():
     models = []
     if not WEIGHTS_DIR.exists():
         return models
+    effective_ctx = manager.context_length or 512
     for entry in sorted(WEIGHTS_DIR.iterdir()):
         if entry.is_dir() and (entry / "config.txt").exists():
             stat = entry.stat()
+            model_max = int(_read_config_field(entry, "context_length") or 0)
+            ctx = min(effective_ctx, model_max) if model_max > 0 else effective_ctx
             models.append({
                 "id": entry.name,
                 "object": "model",
                 "created": int(stat.st_mtime),
                 "owned_by": "cactus",
+                "context_window": ctx,
             })
     return models
 
 
 # --- Request / Response Models ---
 
-class ChatMessage(BaseModel):
+class Permissive(BaseModel):
+    model_config = {"extra": "allow"}
+
+class ChatMessage(Permissive):
     role: str
-    content: Optional[str] = None
+    content: Optional[str | list] = None
     tool_call_id: Optional[str] = None
     tool_calls: Optional[list] = None
 
-class ToolFunction(BaseModel):
+class ToolFunction(Permissive):
     name: str
     description: Optional[str] = None
     parameters: Optional[dict] = None
 
-class Tool(BaseModel):
+class Tool(Permissive):
     type: str = "function"
     function: ToolFunction
 
-class ToolChoiceFunction(BaseModel):
+class ToolChoiceFunction(Permissive):
     name: str
 
-class ToolChoiceObject(BaseModel):
+class ToolChoiceObject(Permissive):
     type: str = "function"
     function: ToolChoiceFunction
 
-class ChatRequest(BaseModel):
+class ChatRequest(Permissive):
     model: str
     messages: list[ChatMessage]
     temperature: Optional[float] = None
     top_p: Optional[float] = None
     top_k: Optional[int] = None
     max_tokens: Optional[int] = None
+    max_completion_tokens: Optional[int] = None
     stop: Optional[list[str]] = None
     stream: bool = False
     tools: Optional[list[Tool]] = None
     tool_choice: Optional[str | ToolChoiceObject] = None
 
-class EmbeddingRequest(BaseModel):
+class EmbeddingRequest(Permissive):
     model: str
     input: str | list[str]
     encoding_format: Optional[str] = None
 
 
 # --- Helpers ---
+
+def _flatten_message(msg: ChatMessage) -> dict:
+    d = {"role": msg.role}
+    content = msg.content
+    if isinstance(content, list):
+        parts = []
+        for part in content:
+            if isinstance(part, dict) and part.get("type") == "text":
+                parts.append(part.get("text", ""))
+            elif isinstance(part, str):
+                parts.append(part)
+        d["content"] = "\n".join(parts)
+    elif content is not None:
+        d["content"] = content
+    if msg.tool_call_id is not None:
+        d["tool_call_id"] = msg.tool_call_id
+    if msg.tool_calls is not None:
+        d["tool_calls"] = msg.tool_calls
+    return d
+
 
 def translate_tools(tools: Optional[list[Tool]], tool_choice) -> tuple[Optional[list[dict]], bool]:
     if tools is None:
@@ -205,9 +261,11 @@ def build_chat_response(response_json: dict, model_id: str, request_id: str) -> 
         "object": "chat.completion",
         "created": int(time.time()),
         "model": model_id,
+        "system_fingerprint": None,
         "choices": [{
             "index": 0,
             "message": message,
+            "logprobs": None,
             "finish_reason": finish_reason,
         }],
         "usage": {
@@ -230,7 +288,7 @@ async def chat_completions(req: ChatRequest):
     handle = await manager.get(req.model)
     request_id = f"chatcmpl-{uuid.uuid4().hex[:29]}"
 
-    messages = [m.model_dump(exclude_none=True) for m in req.messages]
+    messages = [_flatten_message(m) for m in req.messages]
     cactus_tools, force_tools = translate_tools(req.tools, req.tool_choice)
 
     kwargs: dict = {}
@@ -240,8 +298,9 @@ async def chat_completions(req: ChatRequest):
         kwargs["top_p"] = req.top_p
     if req.top_k is not None:
         kwargs["top_k"] = req.top_k
-    if req.max_tokens is not None:
-        kwargs["max_tokens"] = req.max_tokens
+    max_tok = req.max_tokens or req.max_completion_tokens
+    if max_tok is not None:
+        kwargs["max_tokens"] = max_tok
     if req.stop:
         kwargs["stop_sequences"] = req.stop
     if force_tools:
@@ -293,7 +352,8 @@ async def _stream_completion(handle, messages, kwargs, request_id, model_id):
         "object": "chat.completion.chunk",
         "created": int(time.time()),
         "model": model_id,
-        "choices": [{"index": 0, "delta": {"role": "assistant", "content": ""}, "finish_reason": None}],
+        "system_fingerprint": None,
+        "choices": [{"index": 0, "delta": {"role": "assistant", "content": ""}, "logprobs": None, "finish_reason": None}],
     }
     yield f"data: {json.dumps(first_chunk)}\n\n"
 
@@ -306,7 +366,8 @@ async def _stream_completion(handle, messages, kwargs, request_id, model_id):
             "object": "chat.completion.chunk",
             "created": int(time.time()),
             "model": model_id,
-            "choices": [{"index": 0, "delta": {"content": token}, "finish_reason": None}],
+            "system_fingerprint": None,
+            "choices": [{"index": 0, "delta": {"content": token}, "logprobs": None, "finish_reason": None}],
         }
         yield f"data: {json.dumps(chunk)}\n\n"
 
@@ -324,7 +385,8 @@ async def _stream_completion(handle, messages, kwargs, request_id, model_id):
             "object": "chat.completion.chunk",
             "created": int(time.time()),
             "model": model_id,
-            "choices": [{"index": 0, "delta": {"tool_calls": tool_calls}, "finish_reason": None}],
+            "system_fingerprint": None,
+            "choices": [{"index": 0, "delta": {"tool_calls": tool_calls}, "logprobs": None, "finish_reason": None}],
         }
         yield f"data: {json.dumps(tool_chunk)}\n\n"
     else:
@@ -335,7 +397,8 @@ async def _stream_completion(handle, messages, kwargs, request_id, model_id):
         "object": "chat.completion.chunk",
         "created": int(time.time()),
         "model": model_id,
-        "choices": [{"index": 0, "delta": {}, "finish_reason": finish_reason}],
+        "system_fingerprint": None,
+        "choices": [{"index": 0, "delta": {}, "logprobs": None, "finish_reason": finish_reason}],
     }
 
     prefill = response_json.get("prefill_tokens", 0)
@@ -389,4 +452,8 @@ def on_shutdown():
 
 def create_app(context_length: Optional[int] = None) -> FastAPI:
     manager.context_length = context_length
+    default_model = _pick_default_model()
+    print(f"Preloading model: {default_model}")
+    manager.preload(default_model)
+    print(f"Model ready: {default_model}")
     return app

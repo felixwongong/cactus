@@ -274,6 +274,58 @@ If you use Cactus in your research, please cite it as follows:
 }
 ```
 
+## Cactus Server
+
+Cactus includes an OpenAI-compatible HTTP server for integrating with tools like [OpenCode](https://opencode.ai).
+
+### Start the Server
+
+```bash
+source ./setup                          # first time only
+cactus build --python                   # build shared library
+cactus download LiquidAI/LFM2-24B-A2B  # download a model
+cactus serve                            # start server on 127.0.0.1:8080
+```
+
+Options:
+```
+--host 0.0.0.0          bind address (default: 127.0.0.1)
+--port 3000             port (default: 8080)
+--context-length 8192   KV cache window (default: 4096)
+```
+
+Endpoints:
+- `GET  /v1/models` — list all downloaded models
+- `POST /v1/chat/completions` — chat (streaming & non-streaming)
+- `POST /v1/embeddings` — text embeddings (embedding models only)
+
+### Configure OpenCode
+
+Add `.opencode.json` to your project root:
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "model": "cactus/lfm2-24b-a2b",
+  "provider": {
+    "cactus": {
+      "models": {
+        "lfm2-24b-a2b": {
+          "name": "LFM2 24B A2B",
+          "maxTokens": 4096
+        }
+      },
+      "options": {
+        "apiKey": "no-key-needed",
+        "baseURL": "localhost:8080/v1"
+      }
+    }
+  }
+}
+```
+
+Then run `opencode` in that directory.
+
 **N/B:** Scroll all the way up and click the shields link for resources!
 
 [docs-shield]: https://img.shields.io/badge/Docs-555?style=for-the-badge&logo=readthedocs&logoColor=white

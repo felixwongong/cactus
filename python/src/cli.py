@@ -1050,8 +1050,8 @@ def cmd_serve(args):
         return 1
 
     from .server import create_app
-    create_app(context_length=args.context_length)
-    uvicorn.run("src.server:app", host=args.host, port=args.port, log_level="info")
+    application = create_app(context_length=args.context_length)
+    uvicorn.run(application, host=args.host, port=args.port, log_level="info")
     return 0
 
 
@@ -1745,8 +1745,8 @@ def create_parser():
     serve_parser = subparsers.add_parser('serve', help='Start OpenAI-compatible HTTP server')
     serve_parser.add_argument('--host', default='127.0.0.1', help='Bind address (default: 127.0.0.1)')
     serve_parser.add_argument('--port', type=int, default=8080, help='Port (default: 8080)')
-    serve_parser.add_argument('--context-length', type=int, default=4096,
-                              help='KV cache context window size (default: 4096)')
+    serve_parser.add_argument('--context-length', type=int, default=16384,
+                              help='KV cache context window size (default: 16384)')
 
     transcribe_parser = subparsers.add_parser('transcribe', help='Download ASR model and run transcription')
     transcribe_parser.add_argument('model_id', nargs='?', default=DEFAULT_ASR_MODEL_ID,
