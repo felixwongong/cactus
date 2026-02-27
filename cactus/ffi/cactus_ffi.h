@@ -29,6 +29,13 @@ CACTUS_FFI_EXPORT cactus_model_t cactus_init(
     bool cache_index                        // false = always rebuild index, true = load cached if available
 );
 
+CACTUS_FFI_EXPORT cactus_model_t cactus_init_with_context(
+    const char* model_path,
+    const char* corpus_dir,                 // optional: NULL if no RAG corpus
+    bool cache_index,                       // false = always rebuild index, true = load cached if available
+    size_t context_length                   // KV cache size in tokens
+);
+
 CACTUS_FFI_EXPORT void cactus_destroy(cactus_model_t model);
 CACTUS_FFI_EXPORT void cactus_reset(cactus_model_t model);
 CACTUS_FFI_EXPORT void cactus_stop(cactus_model_t model);
@@ -186,8 +193,6 @@ CACTUS_FFI_EXPORT int cactus_index_query(
 
 CACTUS_FFI_EXPORT int cactus_index_compact(cactus_index_t index);
 CACTUS_FFI_EXPORT void cactus_index_destroy(cactus_index_t index);
-
-CACTUS_FFI_EXPORT void cactus_set_context_length(cactus_model_t model, size_t context_length);
 
 CACTUS_FFI_EXPORT const char* cactus_get_last_error(void);
 

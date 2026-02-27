@@ -15,7 +15,6 @@ from .cactus import (
     cactus_reset,
     cactus_complete,
     cactus_embed,
-    cactus_set_context_length,
     cactus_get_last_error,
 )
 
@@ -36,12 +35,10 @@ class ModelManager:
         model_path = WEIGHTS_DIR / model_id
         if not model_path.exists():
             raise HTTPException(status_code=404, detail=f"Model '{model_id}' not found in weights/")
-        handle = cactus_init(str(model_path))
+        handle = cactus_init(str(model_path), context_length=self.context_length or 0)
         if not handle:
             err = cactus_get_last_error() or "unknown error"
             raise HTTPException(status_code=500, detail=f"Failed to load model: {err}")
-        if self.context_length:
-            cactus_set_context_length(handle, self.context_length)
         return handle
 
     async def get(self, model_id: str):

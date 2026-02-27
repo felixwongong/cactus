@@ -58,6 +58,9 @@ _lib.cactus_set_telemetry_environment(b"python", None)
 _lib.cactus_init.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_bool]
 _lib.cactus_init.restype = ctypes.c_void_p
 
+_lib.cactus_init_with_context.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_bool, ctypes.c_size_t]
+_lib.cactus_init_with_context.restype = ctypes.c_void_p
+
 _lib.cactus_complete.argtypes = [
     ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_size_t,
     ctypes.c_char_p, ctypes.c_char_p, TokenCallback, ctypes.c_void_p
@@ -103,9 +106,6 @@ _lib.cactus_stop.restype = None
 
 _lib.cactus_destroy.argtypes = [ctypes.c_void_p]
 _lib.cactus_destroy.restype = None
-
-_lib.cactus_set_context_length.argtypes = [ctypes.c_void_p, ctypes.c_size_t]
-_lib.cactus_set_context_length.restype = None
 
 _lib.cactus_get_last_error.argtypes = []
 _lib.cactus_get_last_error.restype = ctypes.c_char_p
@@ -197,7 +197,7 @@ def cactus_set_telemetry_environment(path):
     _lib.cactus_set_telemetry_environment(None, path.encode() if isinstance(path, str) else path)
 
 
-def cactus_init(model_path, corpus_dir=None, cache_index=False):
+def cactus_init(model_path, corpus_dir=None, cache_index=False, context_length=0):
     """
     Initialize a model and return its handle.
 
@@ -205,16 +205,17 @@ def cactus_init(model_path, corpus_dir=None, cache_index=False):
         model_path: Path to model weights directory
         corpus_dir: Optional path to RAG corpus directory for document Q&A
         cache_index: If True, load cached index if available; if False, always rebuild
+        context_length: KV cache size in tokens (0 = default 512)
 
     Returns:
         Model handle (opaque pointer) or None if initialization failed.
         Use cactus_get_last_error() to get error details.
     """
-    return _lib.cactus_init(
-        model_path.encode() if isinstance(model_path, str) else model_path,
-        corpus_dir.encode() if corpus_dir else None,
-        cache_index
-    )
+    path = model_path.encode() if isinstance(model_path, str) else model_path
+    corpus = corpus_dir.encode() if corpus_dir else None
+    if context_length > 0:
+        return _lib.cactus_init_with_context(path, corpus, cache_index, context_length)
+    return _lib.cactus_init(path, corpus, cache_index)
 
 
 def cactus_complete(
@@ -483,11 +484,6 @@ def cactus_stop(model):
 def cactus_destroy(model):
     """Free model memory. Always call when done."""
     _lib.cactus_destroy(model)
-
-
-def cactus_set_context_length(model, context_length):
-    """Set the KV cache context window size."""
-    _lib.cactus_set_context_length(model, context_length)
 
 
 def cactus_get_last_error():
