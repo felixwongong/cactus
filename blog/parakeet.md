@@ -11,9 +11,9 @@ tags: ["Parakeet", "ASR", "speech-to-text", "Apple Silicon", "Transcription"]
 
 *By Satyajit Kumar and Henry Ndubuaku*
 
-Placeholder for video
+[![Video Title](https://img.youtube.com/vi/x0t83tDr5S0/maxresdefault.jpg)](https://youtu.be/x0t83tDr5S0)
 
-Parakeet CTC 1.1B is NVIDIA’s large-scale, non-autoregressive English speech-to-text model built on FastConformer. It uses Limited Context Attention in the encoder and a lightweight CTC projection head instead of an autoregressive decoder, which makes the decoding stage extremely efficient. Using Cactus we achieve up to **6 million tokens/second** on decode speed. This makes Parakeet CTC 1.1B a strong choice for low-latency, high-throughput transcription.
+Parakeet CTC 1.1B is NVIDIA’s non-autoregressive English speech-to-text model built on FastConformer. At only **1.1 billion parameters**, it is small enough to run entirely on-device while still delivering state-of-the-art transcription quality. It uses Limited Context Attention in the encoder and a lightweight CTC projection head instead of an autoregressive decoder, which makes the decoding stage extremely efficient. Using Cactus we achieve up to **6 million tokens/second** decode speed with **sub-200 ms end-to-end latency** on Apple Silicon, fast enough for real-time, always-on transcription without a cloud round-trip.
 
 ## Architecture Details
 
@@ -109,14 +109,33 @@ This architecture is why Parakeet works well for both real-time and batch transc
 
 ## Getting Started with Parakeet-CTC-1.1B on Cactus
 
-### Prerequisites
+### Quick Start (Homebrew)
+
+The fastest way to try Parakeet: two commands, sub-200 ms latency:
+
+```bash
+brew install cactus-compute/cactus/cactus
+cactus transcribe nvidia/parakeet-ctc-1.1b
+```
+
+That's it. Cactus downloads the 1.1B model, quantizes it, and starts a live transcription session from your microphone. To transcribe a file instead:
+
+```bash
+cactus transcribe nvidia/parakeet-ctc-1.1b --file /path/to/your/file.wav
+```
+
+### Building from Source
+
+If you need the Python, Rust, or C libraries for integration, build from source:
+
+#### Prerequisites
 
 - macOS with Apple Silicon and 16GB+ RAM (M1 or later recommended)
 - Python 3.10+
 - CMake (`brew install cmake`)
 - Git
 
-### 1. Clone and Build
+#### Clone and Build
 
 ```bash
 git clone https://github.com/cactus-compute/cactus.git
@@ -126,7 +145,7 @@ cd cactus
 cactus build --python
 ```
 
-### 2. Download the Model
+#### Download the Model
 
 Cactus handles downloading and converting HuggingFace models to its optimized binary format with INT4/INT8 quantization, all in one command:
 
@@ -134,21 +153,7 @@ Cactus handles downloading and converting HuggingFace models to its optimized bi
 cactus download nvidia/parakeet-ctc-1.1b
 ```
 
-### 3. Live Transcription
-
-The fastest way to start transcribing with parakeet is by running the CLI command. It also provides an input for your cloud handoff key, for transcription models that support it (Parakeet currently does not support cloud handoff, but it will be added):
-
-```bash
-cactus transcribe nvidia/parakeet-ctc-1.1b
-```
-
-This command downloads and converts the model if needed, then starts a live transcription session from your computer's microphone (or an external mic). To transcribe a specific WAV file, pass `--file`:
-
-```bash
-cactus transcribe nvidia/parakeet-ctc-1.1b --file /path/to/your/file.wav
-```
-
-### 4. Use the Python API
+### 4. Use the [Python SDK](/python/)
 
 For integrating Parakeet into your own applications, use the Python FFI bindings directly:
 
@@ -220,6 +225,164 @@ final = json.loads(cactus_stream_transcribe_stop(stream))
 print(final["confirmed"], end=" ", flush=True)
 
 cactus_destroy(model)
+```
+
+### 5. Use the [C API](/docs/cactus_engine.md)
+
+The C API is the base layer all other SDKs build on. Link against `libcactus` and include the FFI header:
+
+```c
+#include "cactus_ffi.h"
+#include <stdio.h>
+#include <string.h>
+
+int main() {
+    cactus_model_t model = cactus_init("weights/parakeet-ctc-1.1b", NULL, false);
+
+    char response[16384];
+    int rc = cactus_transcribe(
+        model, "audio.wav", NULL,
+        response, sizeof(response),
+        NULL, NULL, NULL, NULL, 0
+    );
+
+    if (rc > 0) printf("Transcript: %s\n", response);
+
+    cactus_destroy(model);
+    return 0;
+}
+```
+
+Streaming works the same way — start a stream, feed PCM chunks, then stop:
+
+```c
+cactus_stream_transcribe_t stream = cactus_stream_transcribe_start(
+    model,
+    "{\"min_chunk_size\": 16000, \"confirmation_threshold\": 0.99, \"language\": \"en\"}"
+);
+
+char buf[8192];
+// In your audio callback, feed 16-bit 16kHz mono PCM:
+cactus_stream_transcribe_process(stream, pcm_data, pcm_size, buf, sizeof(buf));
+printf("Partial: %s\n", buf);
+
+cactus_stream_transcribe_stop(stream, buf, sizeof(buf));
+printf("Final: %s\n", buf);
+```
+
+### 6. Use the [Rust SDK](/rust/)
+
+Add `cactus-sys` to your `Cargo.toml` and call the FFI bindings directly:
+
+```rust
+use std::ffi::CString;
+use std::os::raw::c_char;
+use std::ptr;
+
+fn main() {
+    let model_path = CString::new("weights/parakeet-ctc-1.1b").unwrap();
+    let audio_path = CString::new("audio.wav").unwrap();
+
+    let model = unsafe {
+        cactus_sys::cactus_init(model_path.as_ptr(), ptr::null(), false)
+    };
+
+    let mut buf = vec![0u8; 16384];
+    let rc = unsafe {
+        cactus_sys::cactus_transcribe(
+            model,
+            audio_path.as_ptr(),
+            ptr::null(),
+            buf.as_mut_ptr() as *mut c_char,
+            buf.len(),
+            ptr::null(), None, ptr::null_mut(),
+            ptr::null(), 0,
+        )
+    };
+
+    if rc > 0 {
+        let response = String::from_utf8_lossy(&buf[..rc as usize]);
+        println!("Transcript: {}", response);
+    }
+
+    unsafe { cactus_sys::cactus_destroy(model) };
+}
+```
+
+### 7. Use the [Swift SDK](/apple/)
+
+The Swift SDK provides a high-level `Cactus` class with native Swift types:
+
+```swift
+import Foundation
+
+let model = try Cactus(modelPath: "weights/parakeet-ctc-1.1b")
+
+// File-based transcription
+let result = try model.transcribe(audioPath: "/path/to/audio.wav")
+print(result.text)
+
+// Streaming transcription
+let stream = try model.createStreamTranscriber()
+// Feed PCM chunks from your audio source (16-bit, 16kHz, mono)
+let partial = try stream.process(pcmData: audioChunk)
+print("Partial: \(partial.text)")
+
+let final = try stream.stop()
+print("Final: \(final.text)")
+stream.close()
+```
+
+### 8. Use the [Kotlin SDK](/android/)
+
+The Kotlin SDK supports Android and iOS via Kotlin Multiplatform:
+
+```kotlin
+import com.cactus.*
+
+val model = Cactus.create("weights/parakeet-ctc-1.1b")
+
+// File-based transcription
+val result = model.transcribe("/path/to/audio.wav")
+println(result.text)
+
+// Streaming transcription
+model.createStreamTranscriber().use { stream ->
+    stream.insert(audioChunk)
+    val partial = stream.process()
+    println("Partial: ${partial.text}")
+
+    val final = stream.finalize()
+    println("Final: ${final.text}")
+}
+
+model.close()
+```
+
+### 9. Use the [Flutter SDK](/flutter/)
+
+The Flutter SDK brings Cactus transcription to iOS, macOS, and Android:
+
+```dart
+import 'cactus.dart';
+
+final model = Cactus.create('weights/parakeet-ctc-1.1b');
+
+// File-based transcription
+final result = model.transcribe('/path/to/audio.wav');
+print(result.text);
+
+// Streaming transcription
+final stream = model.createStreamTranscriber();
+stream.insert(audioChunk);
+final partial = stream.process();
+print('Partial: ${partial.text}');
+
+final finalResult = stream.finalize();
+print('Final: ${finalResult.text}');
+
+stream.dispose();
+model.dispose();
 ```
 
 ## Conclusion
