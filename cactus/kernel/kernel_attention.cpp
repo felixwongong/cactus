@@ -12,7 +12,7 @@
 #endif
 
 #ifdef __APPLE__
-static void cactus_attention_f16_h64_accelerate(
+static void cactus_attention_f16_accelerate(
     const __fp16* queries,
     const __fp16* keys,
     const __fp16* values,
@@ -22,30 +22,30 @@ static void cactus_attention_f16_h64_accelerate(
     size_t kv_seq_len,
     size_t num_q_heads,
     size_t num_kv_heads,
+    size_t head_dim,
     float scale,
     size_t position_offset,
     bool is_causal
 ) {
-    constexpr size_t HEAD_DIM = 64;
     constexpr size_t BLOCK_SIZE = 64;
 
     const size_t group_size = num_q_heads / num_kv_heads;
-    const size_t q_batch_stride = seq_len * num_q_heads * HEAD_DIM;
-    const size_t kv_batch_stride = kv_seq_len * num_kv_heads * HEAD_DIM;
+    const size_t q_batch_stride = seq_len * num_q_heads * head_dim;
+    const size_t kv_batch_stride = kv_seq_len * num_kv_heads * head_dim;
     const size_t o_batch_stride = q_batch_stride;
-    const size_t q_seq_stride = num_q_heads * HEAD_DIM;
-    const size_t kv_seq_stride = num_kv_heads * HEAD_DIM;
+    const size_t q_seq_stride = num_q_heads * head_dim;
+    const size_t kv_seq_stride = num_kv_heads * head_dim;
     const size_t o_seq_stride = q_seq_stride;
 
     static constexpr CactusThreading::ParallelConfig ATTENTION_BATCHED{1, 1};
     CactusThreading::parallel_for(batch_size * num_q_heads, ATTENTION_BATCHED,
         [&](size_t start, size_t end) {
 
-        std::vector<float> Q_f32(seq_len * HEAD_DIM);
-        std::vector<float> K_f32(BLOCK_SIZE * HEAD_DIM);
-        std::vector<float> V_f32(BLOCK_SIZE * HEAD_DIM);
+        std::vector<float> Q_f32(seq_len * head_dim);
+        std::vector<float> K_f32(BLOCK_SIZE * head_dim);
+        std::vector<float> V_f32(BLOCK_SIZE * head_dim);
         std::vector<float> scores(seq_len * BLOCK_SIZE);
-        std::vector<float> acc(seq_len * HEAD_DIM);
+        std::vector<float> acc(seq_len * head_dim);
         std::vector<float> row_max(seq_len);
         std::vector<float> row_sum(seq_len);
 
@@ -55,9 +55,9 @@ static void cactus_attention_f16_h64_accelerate(
             const size_t kv_head = q_head / group_size;
 
             for (size_t q = 0; q < seq_len; ++q) {
-                const __fp16* q_src = queries + batch*q_batch_stride + q*q_seq_stride + q_head*HEAD_DIM;
-                float* q_dst = Q_f32.data() + q * HEAD_DIM;
-                for (size_t d = 0; d < HEAD_DIM; d += 8) {
+                const __fp16* q_src = queries + batch*q_batch_stride + q*q_seq_stride + q_head*head_dim;
+                float* q_dst = Q_f32.data() + q * head_dim;
+                for (size_t d = 0; d < head_dim; d += 8) {
                     float16x8_t v = vld1q_f16(q_src + d);
                     vst1q_f32(q_dst + d,     vcvt_f32_f16(vget_low_f16(v)));
                     vst1q_f32(q_dst + d + 4, vcvt_f32_f16(vget_high_f16(v)));
@@ -66,7 +66,7 @@ static void cactus_attention_f16_h64_accelerate(
 
             std::fill(row_max.begin(), row_max.begin() + seq_len, -INFINITY);
             std::fill(row_sum.begin(), row_sum.begin() + seq_len, 0.0f);
-            memset(acc.data(), 0, seq_len * HEAD_DIM * sizeof(float));
+            memset(acc.data(), 0, seq_len * head_dim * sizeof(float));
 
             for (size_t kv0 = 0; kv0 < kv_seq_len; kv0 += BLOCK_SIZE) {
                 const size_t block_len = std::min(BLOCK_SIZE, kv_seq_len - kv0);
@@ -82,9 +82,9 @@ static void cactus_attention_f16_h64_accelerate(
                 }
 
                 for (size_t i = 0; i < block_len; ++i) {
-                    const __fp16* k_src = keys + batch*kv_batch_stride + (kv0+i)*kv_seq_stride + kv_head*HEAD_DIM;
-                    float* k_dst = K_f32.data() + i * HEAD_DIM;
-                    for (size_t d = 0; d < HEAD_DIM; d += 8) {
+                    const __fp16* k_src = keys + batch*kv_batch_stride + (kv0+i)*kv_seq_stride + kv_head*head_dim;
+                    float* k_dst = K_f32.data() + i * head_dim;
+                    for (size_t d = 0; d < head_dim; d += 8) {
                         float16x8_t v = vld1q_f16(k_src + d);
                         vst1q_f32(k_dst + d,     vcvt_f32_f16(vget_low_f16(v)));
                         vst1q_f32(k_dst + d + 4, vcvt_f32_f16(vget_high_f16(v)));
@@ -92,10 +92,10 @@ static void cactus_attention_f16_h64_accelerate(
                 }
 
                 cblas_sgemm(CblasRowMajor, CblasNoTrans, CblasTrans,
-                            (int)active_rows, (int)block_len, (int)HEAD_DIM,
+                            (int)active_rows, (int)block_len, (int)head_dim,
                             scale,
-                            Q_f32.data() + q_start * HEAD_DIM, (int)HEAD_DIM,
-                            K_f32.data(), (int)HEAD_DIM,
+                            Q_f32.data() + q_start * head_dim, (int)head_dim,
+                            K_f32.data(), (int)head_dim,
                             0.0f,
                             scores.data(), (int)block_len);
 
@@ -128,9 +128,9 @@ static void cactus_attention_f16_h64_accelerate(
                     float scale_old = expf(prev_max - new_max);
 
                     if (prev_max != -INFINITY) {
-                        float* acc_row = acc.data() + q_pos * HEAD_DIM;
+                        float* acc_row = acc.data() + q_pos * head_dim;
                         float32x4_t sv = vdupq_n_f32(scale_old);
-                        for (size_t d = 0; d < HEAD_DIM; d += 4) {
+                        for (size_t d = 0; d < head_dim; d += 4) {
                             float32x4_t a = vld1q_f32(acc_row + d);
                             vst1q_f32(acc_row + d, vmulq_f32(a, sv));
                         }
@@ -168,9 +168,9 @@ static void cactus_attention_f16_h64_accelerate(
                 }
 
                 for (size_t i = 0; i < block_len; ++i) {
-                    const __fp16* v_src = values + batch*kv_batch_stride + (kv0+i)*kv_seq_stride + kv_head*HEAD_DIM;
-                    float* v_dst = V_f32.data() + i * HEAD_DIM;
-                    for (size_t d = 0; d < HEAD_DIM; d += 8) {
+                    const __fp16* v_src = values + batch*kv_batch_stride + (kv0+i)*kv_seq_stride + kv_head*head_dim;
+                    float* v_dst = V_f32.data() + i * head_dim;
+                    for (size_t d = 0; d < head_dim; d += 8) {
                         float16x8_t v = vld1q_f16(v_src + d);
                         vst1q_f32(v_dst + d,     vcvt_f32_f16(vget_low_f16(v)));
                         vst1q_f32(v_dst + d + 4, vcvt_f32_f16(vget_high_f16(v)));
@@ -178,25 +178,25 @@ static void cactus_attention_f16_h64_accelerate(
                 }
 
                 cblas_sgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans,
-                            (int)active_rows, (int)HEAD_DIM, (int)block_len,
+                            (int)active_rows, (int)head_dim, (int)block_len,
                             1.0f,
                             scores.data(), (int)block_len,
-                            V_f32.data(), (int)HEAD_DIM,
+                            V_f32.data(), (int)head_dim,
                             1.0f,
-                            acc.data() + q_start * HEAD_DIM, (int)HEAD_DIM);
+                            acc.data() + q_start * head_dim, (int)head_dim);
             }
 
             for (size_t q = 0; q < seq_len; ++q) {
-                __fp16* o = output + batch*o_batch_stride + q*o_seq_stride + q_head*HEAD_DIM;
+                __fp16* o = output + batch*o_batch_stride + q*o_seq_stride + q_head*head_dim;
                 float sum = row_sum[q];
                 if (sum == 0.0f) {
-                    memset(o, 0, HEAD_DIM * sizeof(__fp16));
+                    memset(o, 0, head_dim * sizeof(__fp16));
                     continue;
                 }
                 float inv = 1.0f / sum;
                 float32x4_t invv = vdupq_n_f32(inv);
-                float* acc_row = acc.data() + q * HEAD_DIM;
-                for (size_t d = 0; d < HEAD_DIM; d += 8) {
+                float* acc_row = acc.data() + q * head_dim;
+                for (size_t d = 0; d < head_dim; d += 8) {
                     float32x4_t a0 = vmulq_f32(vld1q_f32(acc_row + d), invv);
                     float32x4_t a1 = vmulq_f32(vld1q_f32(acc_row + d + 4), invv);
                     vst1q_f16(o + d, vcombine_f16(vcvt_f16_f32(a0), vcvt_f16_f32(a1)));
@@ -207,7 +207,7 @@ static void cactus_attention_f16_h64_accelerate(
 }
 #endif
 
-static inline void cactus_attention_f16_h64(
+static inline void cactus_attention_f16_fast(
     const __fp16* queries,
     const __fp16* keys,
     const __fp16* values,
@@ -217,20 +217,21 @@ static inline void cactus_attention_f16_h64(
     size_t kv_seq_len,
     size_t num_q_heads,
     size_t num_kv_heads,
+    size_t head_dim,
     float scale,
     size_t position_offset,
     bool is_causal
 ) {
-    constexpr size_t HEAD_DIM = 64;
     constexpr size_t BLOCK_SIZE = 32;
     constexpr float NEG_INF = -INFINITY;
+    const size_t nblocks = head_dim / 8;
 
 #ifdef __APPLE__
     if (seq_len >= 64) {
-        cactus_attention_f16_h64_accelerate(
+        cactus_attention_f16_accelerate(
             queries, keys, values, output,
             batch_size, seq_len, kv_seq_len,
-            num_q_heads, num_kv_heads,
+            num_q_heads, num_kv_heads, head_dim,
             scale, position_offset, is_causal
         );
         return;
@@ -238,17 +239,18 @@ static inline void cactus_attention_f16_h64(
 #endif
 
     const size_t group_size = num_q_heads / num_kv_heads;
-    const size_t q_batch_stride = seq_len * num_q_heads * HEAD_DIM;
-    const size_t kv_batch_stride = kv_seq_len * num_kv_heads * HEAD_DIM;
+    const size_t q_batch_stride = seq_len * num_q_heads * head_dim;
+    const size_t kv_batch_stride = kv_seq_len * num_kv_heads * head_dim;
     const size_t o_batch_stride = q_batch_stride;
-    const size_t q_seq_stride = num_q_heads * HEAD_DIM;
-    const size_t kv_seq_stride = num_kv_heads * HEAD_DIM;
+    const size_t q_seq_stride = num_q_heads * head_dim;
+    const size_t kv_seq_stride = num_kv_heads * head_dim;
     const size_t o_seq_stride = q_seq_stride;
 
     CactusThreading::parallel_for(batch_size * num_q_heads * seq_len, CactusThreading::Thresholds::ATTENTION,
         [&](size_t start, size_t end) {
 
         float block_scores[BLOCK_SIZE];
+        std::vector<float32x4_t> acc_lo(nblocks), acc_hi(nblocks);
 
         for (size_t work = start; work < end; ++work) {
             const size_t batch = work / (num_q_heads * seq_len);
@@ -257,12 +259,10 @@ static inline void cactus_attention_f16_h64(
             const size_t q_pos = rem % seq_len;
             const size_t kv_head = q_head / group_size;
 
-            const __fp16* q = queries + batch*q_batch_stride + q_pos*q_seq_stride + q_head*HEAD_DIM;
-            __fp16* o = output + batch*o_batch_stride + q_pos*o_seq_stride + q_head*HEAD_DIM;
+            const __fp16* q = queries + batch*q_batch_stride + q_pos*q_seq_stride + q_head*head_dim;
+            __fp16* o = output + batch*o_batch_stride + q_pos*o_seq_stride + q_head*head_dim;
 
-            float32x4_t acc_lo[8], acc_hi[8];
-            #pragma unroll
-            for (int i = 0; i < 8; i++) {
+            for (size_t i = 0; i < nblocks; i++) {
                 acc_lo[i] = vdupq_n_f32(0.f);
                 acc_hi[i] = vdupq_n_f32(0.f);
             }
@@ -281,10 +281,9 @@ static inline void cactus_attention_f16_h64(
                     float32x4_t s0 = vdupq_n_f32(0.f);
                     float32x4_t s1 = vdupq_n_f32(0.f);
 
-                    const __fp16* k = keys + batch*kv_batch_stride + i*kv_seq_stride + kv_head*HEAD_DIM;
+                    const __fp16* k = keys + batch*kv_batch_stride + i*kv_seq_stride + kv_head*head_dim;
 
-                    #pragma unroll
-                    for (int d = 0; d < 8; d++) {
+                    for (size_t d = 0; d < nblocks; d++) {
                         float16x8_t qv = vld1q_f16(q + d*8);
                         float16x8_t kv = vld1q_f16(k + d*8);
 
@@ -305,8 +304,7 @@ static inline void cactus_attention_f16_h64(
                 float scale_corr = expf(running_max - block_max);
                 running_sum *= scale_corr;
 
-                #pragma unroll
-                for (int d = 0; d < 8; d++) {
+                for (size_t d = 0; d < nblocks; d++) {
                     acc_lo[d] = vmulq_n_f32(acc_lo[d], scale_corr);
                     acc_hi[d] = vmulq_n_f32(acc_hi[d], scale_corr);
                 }
@@ -321,11 +319,10 @@ static inline void cactus_attention_f16_h64(
                     float w = block_scores[i];
                     if (w == 0.f) continue;
 
-                    const __fp16* v = values + batch*kv_batch_stride + (kv0+i)*kv_seq_stride + kv_head*HEAD_DIM;
+                    const __fp16* v = values + batch*kv_batch_stride + (kv0+i)*kv_seq_stride + kv_head*head_dim;
                     float32x4_t wv = vdupq_n_f32(w);
 
-                    #pragma unroll
-                    for (int d = 0; d < 8; d++) {
+                    for (size_t d = 0; d < nblocks; d++) {
                         float16x8_t vv = vld1q_f16(v + d*8);
                         acc_lo[d] = vfmaq_f32(acc_lo[d], vcvt_f32_f16(vget_low_f16(vv)), wv);
                         acc_hi[d] = vfmaq_f32(acc_hi[d], vcvt_f32_f16(vget_high_f16(vv)), wv);
@@ -337,15 +334,14 @@ static inline void cactus_attention_f16_h64(
             }
 
             if (running_sum == 0.f) {
-                memset(o, 0, HEAD_DIM * sizeof(__fp16));
+                memset(o, 0, head_dim * sizeof(__fp16));
                 continue;
             }
 
             float inv = 1.f / running_sum;
             float32x4_t invv = vdupq_n_f32(inv);
 
-            #pragma unroll
-            for (int d = 0; d < 8; d++) {
+            for (size_t d = 0; d < nblocks; d++) {
                 float16x8_t out = vcombine_f16(
                     vcvt_f16_f32(vmulq_f32(acc_lo[d], invv)),
                     vcvt_f16_f32(vmulq_f32(acc_hi[d], invv))
@@ -379,11 +375,11 @@ void cactus_attention_f16(
         scale = 1.0f / sqrtf(static_cast<float>(head_dim));
     }
     
-    if (head_dim == 64 && mask == nullptr && window_size == 0) {
-        cactus_attention_f16_h64(
+    if (head_dim % 8 == 0 && mask == nullptr && window_size == 0) {
+        cactus_attention_f16_fast(
             queries, keys, values, output,
             batch_size, seq_len, kv_seq_len,
-            num_q_heads, num_kv_heads,
+            num_q_heads, num_kv_heads, head_dim,
             scale, position_offset, is_causal
         );
         return;
