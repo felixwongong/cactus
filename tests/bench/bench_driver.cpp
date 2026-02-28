@@ -344,68 +344,97 @@ bool run_attn_benchmark(TestUtils::TestRunner& runner, const AttnBenchOptions& o
     }
 
     if (!decode_backends.empty()) {
-        runner.log_performance("",
-            "─────────────────────────────────────────────────────────────────────────────────────────────────────────");
-        runner.log_performance("DECODE", "seq_len=1, cache_len=" + std::to_string(opt.decode_cache_len));
+        std::vector<size_t> cache_lens;
+        if (opt.sweep)
+            cache_lens = {8, 16, 32, 64, 128, 256, 512};
+        else
+            cache_lens = {opt.decode_cache_len};
 
-        size_t cache_len = opt.decode_cache_len;
-        size_t kv_seq_len = cache_len + 1;
-        size_t q_count = dims.num_q_heads * 1 * dims.head_dim;
-        size_t kv_count = dims.num_kv_heads * kv_seq_len * dims.head_dim;
+        constexpr size_t TARGET_BYTES = 64 * 1024 * 1024;
 
-        std::vector<float> fp32_q(q_count), fp32_k(kv_count), fp32_v(kv_count);
-        for (auto& v : fp32_q) v = dist(gen);
-        for (auto& v : fp32_k) v = dist(gen);
-        for (auto& v : fp32_v) v = dist(gen);
+        for (size_t cache_len : cache_lens) {
+            size_t bytes_per_state = 2 * cache_len * dims.num_kv_heads * dims.head_dim
+                + 2 * kv_scales_count(cache_len, dims.num_kv_heads, dims.head_dim) * sizeof(float)
+                + dims.num_q_heads * dims.head_dim * sizeof(__fp16);
+            size_t NS = std::max(static_cast<size_t>(4),
+                        std::min(static_cast<size_t>(512),
+                        TARGET_BYTES / std::max(bytes_per_state, static_cast<size_t>(1))));
 
-        std::vector<float> reference(q_count);
-        reference_attention_fp32(fp32_q.data(), fp32_k.data(), fp32_v.data(),
-                                  reference.data(), dims.num_q_heads, dims.num_kv_heads,
-                                  1, kv_seq_len, dims.head_dim, scale);
+            runner.log_performance("",
+                "─────────────────────────────────────────────────────────────────────────────────────────────────────────");
+            runner.log_performance("DECODE",
+                "seq_len=1, cache_len=" + std::to_string(cache_len) + ", states=" + std::to_string(NS));
 
-        for (const auto* backend : decode_backends) {
-            void* state = backend->prepare(dims, 1, cache_len,
-                                            fp32_q.data(), fp32_k.data(), fp32_v.data());
-            if (!state) {
-                runner.log_performance(backend->name, "FAILED (prepare returned null)");
-                continue;
+            size_t kv_seq_len = cache_len + 1;
+            size_t q_count = dims.num_q_heads * 1 * dims.head_dim;
+            size_t kv_count = dims.num_kv_heads * kv_seq_len * dims.head_dim;
+
+            std::vector<std::vector<float>> all_q(NS), all_k(NS), all_v(NS);
+            for (size_t si = 0; si < NS; ++si) {
+                all_q[si].resize(q_count);
+                all_k[si].resize(kv_count);
+                all_v[si].resize(kv_count);
+                for (auto& v : all_q[si]) v = dist(gen);
+                for (auto& v : all_k[si]) v = dist(gen);
+                for (auto& v : all_v[si]) v = dist(gen);
             }
 
-            {
-                std::vector<float> captured(q_count, 0.0f);
-                backend->run(state, captured.data());
+            std::vector<float> reference(q_count);
+            reference_attention_fp32(all_q[0].data(), all_k[0].data(), all_v[0].data(),
+                                      reference.data(), dims.num_q_heads, dims.num_kv_heads,
+                                      1, kv_seq_len, dims.head_dim, scale);
 
-                auto acc = check_accuracy(reference.data(), captured.data(), q_count,
-                                           attn_tolerance(backend->name));
+            for (const auto* backend : decode_backends) {
+                std::vector<void*> states(NS);
+                for (size_t si = 0; si < NS; ++si) {
+                    states[si] = backend->prepare(dims, 1, cache_len,
+                                                   all_q[si].data(), all_k[si].data(), all_v[si].data());
+                }
 
-                std::ostringstream acc_line;
-                acc_line << std::fixed
-                         << (acc.passed ? "PASS" : "FAIL")
-                         << " nrmse=" << std::setprecision(4) << acc.nrmse
-                         << " max=" << std::setprecision(2) << acc.max_abs_error;
-                runner.log_performance(std::string(backend->name) + " accuracy", acc_line.str());
+                if (!states[0]) {
+                    runner.log_performance(backend->name, "FAILED (prepare returned null)");
+                    continue;
+                }
+
+                {
+                    std::vector<float> captured(q_count, 0.0f);
+                    backend->run(states[0], captured.data());
+
+                    auto acc = check_accuracy(reference.data(), captured.data(), q_count,
+                                               attn_tolerance(backend->name));
+
+                    std::ostringstream acc_line;
+                    acc_line << std::fixed
+                             << (acc.passed ? "PASS" : "FAIL")
+                             << " nrmse=" << std::setprecision(4) << acc.nrmse
+                             << " max=" << std::setprecision(2) << acc.max_abs_error;
+                    runner.log_performance(std::string(backend->name) + " accuracy", acc_line.str());
+                }
+
+                for (int w = 0; w < opt.warmup; ++w) {
+                    size_t si = static_cast<size_t>(w) % NS;
+                    backend->run(states[si], nullptr);
+                }
+
+                double total_ms = 0.0;
+                for (int iter = 0; iter < opt.iterations; ++iter) {
+                    size_t si = static_cast<size_t>(iter) % NS;
+                    double t0 = now_ms();
+                    backend->run(states[si], nullptr);
+                    total_ms += now_ms() - t0;
+                }
+
+                double avg_us = (total_ms * 1000.0) / opt.iterations;
+                double gflops = compute_attention_gflops(dims.num_q_heads, 1, kv_seq_len,
+                                                          dims.head_dim, opt.iterations, total_ms);
+
+                std::ostringstream perf_line;
+                perf_line << std::fixed << std::setprecision(1) << avg_us << "us"
+                          << " (" << std::setprecision(2) << gflops << " GFLOPS)";
+                runner.log_performance(backend->name, perf_line.str());
+
+                for (auto* s : states) backend->cleanup(s);
             }
-
-            for (int w = 0; w < opt.warmup; ++w)
-                backend->run(state, nullptr);
-
-            double total_ms = 0.0;
-            for (int iter = 0; iter < opt.iterations; ++iter) {
-                double t0 = now_ms();
-                backend->run(state, nullptr);
-                total_ms += now_ms() - t0;
-            }
-
-            double avg_us = (total_ms * 1000.0) / opt.iterations;
-            double gflops = compute_attention_gflops(dims.num_q_heads, 1, kv_seq_len,
-                                                      dims.head_dim, opt.iterations, total_ms);
-
-            std::ostringstream perf_line;
-            perf_line << std::fixed << std::setprecision(1) << avg_us << "us"
-                      << " (" << std::setprecision(2) << gflops << " GFLOPS)";
-            runner.log_performance(backend->name, perf_line.str());
-
-            backend->cleanup(state);
         }
     }
 
@@ -440,6 +469,8 @@ bool parse_attn_bench_args(int argc, char** argv, AttnBenchOptions& opt, std::st
         } else if (a == "--kv_heads") {
             if (++i >= argc) { err = "Missing --kv_heads value"; return false; }
             opt.dims.num_kv_heads = static_cast<size_t>(std::max(1, std::stoi(argv[i])));
+        } else if (a == "--sweep") {
+            opt.sweep = true;
         } else if (a == "--threads") {
             if (++i >= argc) { err = "Missing --threads value"; return false; }
             std::string val(argv[i]);

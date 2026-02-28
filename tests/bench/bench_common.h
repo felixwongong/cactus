@@ -42,6 +42,7 @@ struct AttnBenchOptions {
     int num_threads = 0;
     size_t prefill_seq_len = 1024;
     size_t decode_cache_len = 511;
+    bool sweep = false;
     AttnDims dims;
     std::string backends_filter;
 };

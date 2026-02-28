@@ -210,6 +210,99 @@ void run(void* state, float* output) {
 
 void cleanup(void* state) { delete static_cast<State*>(state); }
 
+void* decode_transposed(const bench::AttnDims& dims, size_t, size_t cache_len,
+                         const float* fp32_q, const float* fp32_k, const float* fp32_v) {
+    auto* s = new State();
+    s->dims = dims;
+    s->mode = bench::AttnMode::DECODE;
+    s->scale = 1.0f / std::sqrt(static_cast<float>(dims.head_dim));
+    s->seq_len = 1;
+    s->cache_len = cache_len;
+
+    size_t q_count = dims.num_q_heads * dims.head_dim;
+    size_t kv_per_token = dims.num_kv_heads * dims.head_dim;
+    size_t kv_seq_len = cache_len + 1;
+
+    s->q.resize(q_count);
+    bench::fp32_to_fp16(fp32_q, s->q.data(), q_count);
+
+    s->k_new.resize(kv_per_token);
+    s->v_new.resize(kv_per_token);
+    s->output.resize(q_count);
+
+    size_t kv_total = dims.num_kv_heads * kv_seq_len * dims.head_dim;
+    std::vector<__fp16> full_k(kv_total), full_v(kv_total);
+    bench::fp32_to_fp16(fp32_k, full_k.data(), kv_total);
+    bench::fp32_to_fp16(fp32_v, full_v.data(), kv_total);
+
+    size_t cached_per_head = cache_len * dims.head_dim;
+    size_t cached_elements = dims.num_kv_heads * cached_per_head;
+    std::vector<__fp16> cached_k(cached_elements), cached_v(cached_elements);
+    for (size_t h = 0; h < dims.num_kv_heads; ++h) {
+        std::memcpy(cached_k.data() + h * cached_per_head,
+                    full_k.data() + h * kv_seq_len * dims.head_dim,
+                    cached_per_head * sizeof(__fp16));
+        std::memcpy(cached_v.data() + h * cached_per_head,
+                    full_v.data() + h * kv_seq_len * dims.head_dim,
+                    cached_per_head * sizeof(__fp16));
+    }
+
+    s->k_cached.resize(cached_elements);
+    s->v_cached.resize(cached_elements);
+    size_t sc = kv_scales_count(cache_len, dims.num_kv_heads, dims.head_dim);
+    s->k_scales.resize(sc);
+    s->v_scales.resize(sc);
+
+    cactus_quantize_kv_fp16_to_int8(cached_k.data(), s->k_cached.data(), s->k_scales.data(),
+                                     cache_len, dims.num_kv_heads, dims.head_dim);
+    cactus_quantize_kv_fp16_to_int8(cached_v.data(), s->v_cached.data(), s->v_scales.data(),
+                                     cache_len, dims.num_kv_heads, dims.head_dim);
+
+    for (size_t h = 0; h < dims.num_kv_heads; ++h) {
+        std::memcpy(s->k_new.data() + h * dims.head_dim,
+                    full_k.data() + h * kv_seq_len * dims.head_dim + cache_len * dims.head_dim,
+                    dims.head_dim * sizeof(__fp16));
+        std::memcpy(s->v_new.data() + h * dims.head_dim,
+                    full_v.data() + h * kv_seq_len * dims.head_dim + cache_len * dims.head_dim,
+                    dims.head_dim * sizeof(__fp16));
+    }
+    return s;
+}
+
+void run_transposed(void* state, float* output) {
+    auto* s = static_cast<State*>(state);
+    cactus_attention_hybrid_int8_fp16_transposed(
+        s->q.data(),
+        s->k_cached.data(), s->v_cached.data(),
+        s->k_scales.data(), s->v_scales.data(),
+        s->k_new.data(), s->v_new.data(),
+        s->output.data(),
+        1, 1, s->cache_len, 1,
+        s->dims.num_q_heads, s->dims.num_kv_heads, s->dims.head_dim,
+        s->scale, s->cache_len, true, 0, bench::kGroupSize);
+    if (output)
+        transpose_and_convert_back(s->output.data(), output,
+                                    s->dims.num_q_heads, s->seq_len, s->dims.head_dim);
+}
+
+void run_highthread(void* state, float* output) {
+    auto* s = static_cast<State*>(state);
+    CactusThreading::set_attention_config(1, 4);
+    cactus_attention_hybrid_int8_fp16(
+        s->q.data(),
+        s->k_cached.data(), s->v_cached.data(),
+        s->k_scales.data(), s->v_scales.data(),
+        s->k_new.data(), s->v_new.data(),
+        s->output.data(),
+        1, 1, s->cache_len, 1,
+        s->dims.num_q_heads, s->dims.num_kv_heads, s->dims.head_dim,
+        s->scale, s->cache_len, true, 0, bench::kGroupSize);
+    CactusThreading::reset_attention_config();
+    if (output)
+        transpose_and_convert_back(s->output.data(), output,
+                                    s->dims.num_q_heads, s->seq_len, s->dims.head_dim);
+}
+
 } // namespace attn
 
 // ── Registration ────────────────────────────────────────────────────────────────
@@ -230,6 +323,14 @@ static int reg = [] {
     bench::register_attn_backend({
         "cactus_decode", "cactus", bench::AttnMode::DECODE,
         attn::decode, attn::run, attn::cleanup
+    });
+    bench::register_attn_backend({
+        "cactus_decode_transposed", "cactus", bench::AttnMode::DECODE,
+        attn::decode_transposed, attn::run_transposed, attn::cleanup
+    });
+    bench::register_attn_backend({
+        "cactus_decode_highthread", "cactus", bench::AttnMode::DECODE,
+        attn::decode, attn::run_highthread, attn::cleanup
     });
     return 0;
 }();

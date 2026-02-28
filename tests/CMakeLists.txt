@@ -269,6 +269,7 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/bench/attn_bench.cpp")
         target_link_libraries(attn_bench PRIVATE
             ${COREML_FRAMEWORK}
             ${FOUNDATION_FRAMEWORK}
+            ${ACCELERATE_FRAMEWORK}
             ${SECURITY_FRAMEWORK}
             ${SYSTEMCONFIGURATION_FRAMEWORK}
             ${CFNETWORK_FRAMEWORK}

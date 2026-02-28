@@ -179,6 +179,20 @@ void cactus_attention_hybrid_int8_fp16(
     float scale, size_t position_offset = 0, bool is_causal = true, size_t window_size = 0,
     size_t group_size = KV_QUANT_GROUP_SIZE);
 
+void cactus_attention_hybrid_int8_fp16_transposed(
+    const __fp16* queries,
+    const int8_t* keys_cached,
+    const int8_t* values_cached,
+    const float* k_scales,
+    const float* v_scales,
+    const __fp16* keys_new,
+    const __fp16* values_new,
+    __fp16* output,
+    size_t batch_size, size_t seq_len, size_t cache_len, size_t new_len,
+    size_t num_q_heads, size_t num_kv_heads, size_t head_dim,
+    float scale, size_t position_offset = 0, bool is_causal = true, size_t window_size = 0,
+    size_t group_size = KV_QUANT_GROUP_SIZE);
+
 void cactus_conv1d_causal_depthwise_f16(
     const __fp16* input,
     const __fp16* weight,

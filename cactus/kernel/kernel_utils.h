@@ -320,7 +320,7 @@ namespace CactusThreading {
     };
 
     inline size_t& get_gemm_thread_override() {
-        static size_t override_threads = 0; 
+        static size_t override_threads = 0;
         return override_threads;
     }
 
@@ -331,7 +331,24 @@ namespace CactusThreading {
     inline void reset_gemm_threads() {
         get_gemm_thread_override() = 0;
     }
-    
+
+    inline ParallelConfig& get_attention_config() {
+        static ParallelConfig config = Thresholds::ATTENTION;
+        return config;
+    }
+
+    inline void set_attention_config(size_t min_work_gate, size_t work_per_thread) {
+        auto& config = get_attention_config();
+        config.min_work_gate = min_work_gate;
+        config.work_per_thread = work_per_thread;
+    }
+
+    inline void reset_attention_config() {
+        auto& config = get_attention_config();
+        config.min_work_gate = Thresholds::ATTENTION.min_work_gate;
+        config.work_per_thread = Thresholds::ATTENTION.work_per_thread;
+    }
+
     class TaskHandle {
     private:
         std::vector<std::future<void>> futures_;
