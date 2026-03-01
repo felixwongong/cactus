@@ -902,19 +902,19 @@ void cactus_conv2d_f16_k3s2p1_nchw(
                             float x1 = (float)row0[(size_t)(iw_base0 + 2)];
                             float x2 = (float)row0[(size_t)(iw_base0 + 4)];
                             float x3 = (float)row0[(size_t)(iw_base0 + 6)];
-                            vacc = vfmaq_f32(vacc, (float32x4_t){x0,x1,x2,x3}, vdupq_n_f32(w00));
+                            { float32x4_t _xv = {x0,x1,x2,x3}; vacc = vfmaq_f32(vacc, _xv, vdupq_n_f32(w00)); }
 
                             x0 = (float)row0[(size_t)(iw_base0 + 1)];
                             x1 = (float)row0[(size_t)(iw_base0 + 3)];
                             x2 = (float)row0[(size_t)(iw_base0 + 5)];
                             x3 = (float)row0[(size_t)(iw_base0 + 7)];
-                            vacc = vfmaq_f32(vacc, (float32x4_t){x0,x1,x2,x3}, vdupq_n_f32(w01));
+                            { float32x4_t _xv = {x0,x1,x2,x3}; vacc = vfmaq_f32(vacc, _xv, vdupq_n_f32(w01)); }
 
                             x0 = (float)row0[(size_t)(iw_base0 + 2)];
                             x1 = (float)row0[(size_t)(iw_base0 + 4)];
                             x2 = (float)row0[(size_t)(iw_base0 + 6)];
                             x3 = (float)row0[(size_t)(iw_base0 + 8)];
-                            vacc = vfmaq_f32(vacc, (float32x4_t){x0,x1,x2,x3}, vdupq_n_f32(w02));
+                            { float32x4_t _xv = {x0,x1,x2,x3}; vacc = vfmaq_f32(vacc, _xv, vdupq_n_f32(w02)); }
                         }
 
                         {
@@ -927,19 +927,19 @@ void cactus_conv2d_f16_k3s2p1_nchw(
                             float x1 = (float)row1[(size_t)(iw_base0 + 2)];
                             float x2 = (float)row1[(size_t)(iw_base0 + 4)];
                             float x3 = (float)row1[(size_t)(iw_base0 + 6)];
-                            vacc = vfmaq_f32(vacc, (float32x4_t){x0,x1,x2,x3}, vdupq_n_f32(w10));
+                            { float32x4_t _xv = {x0,x1,x2,x3}; vacc = vfmaq_f32(vacc, _xv, vdupq_n_f32(w10)); }
 
                             x0 = (float)row1[(size_t)(iw_base0 + 1)];
                             x1 = (float)row1[(size_t)(iw_base0 + 3)];
                             x2 = (float)row1[(size_t)(iw_base0 + 5)];
                             x3 = (float)row1[(size_t)(iw_base0 + 7)];
-                            vacc = vfmaq_f32(vacc, (float32x4_t){x0,x1,x2,x3}, vdupq_n_f32(w11));
+                            { float32x4_t _xv = {x0,x1,x2,x3}; vacc = vfmaq_f32(vacc, _xv, vdupq_n_f32(w11)); }
 
                             x0 = (float)row1[(size_t)(iw_base0 + 2)];
                             x1 = (float)row1[(size_t)(iw_base0 + 4)];
                             x2 = (float)row1[(size_t)(iw_base0 + 6)];
                             x3 = (float)row1[(size_t)(iw_base0 + 8)];
-                            vacc = vfmaq_f32(vacc, (float32x4_t){x0,x1,x2,x3}, vdupq_n_f32(w12));
+                            { float32x4_t _xv = {x0,x1,x2,x3}; vacc = vfmaq_f32(vacc, _xv, vdupq_n_f32(w12)); }
                         }
 
                         {
@@ -952,19 +952,19 @@ void cactus_conv2d_f16_k3s2p1_nchw(
                             float x1 = (float)row2[(size_t)(iw_base0 + 2)];
                             float x2 = (float)row2[(size_t)(iw_base0 + 4)];
                             float x3 = (float)row2[(size_t)(iw_base0 + 6)];
-                            vacc = vfmaq_f32(vacc, (float32x4_t){x0,x1,x2,x3}, vdupq_n_f32(w20));
+                            { float32x4_t _xv = {x0,x1,x2,x3}; vacc = vfmaq_f32(vacc, _xv, vdupq_n_f32(w20)); }
 
                             x0 = (float)row2[(size_t)(iw_base0 + 1)];
                             x1 = (float)row2[(size_t)(iw_base0 + 3)];
                             x2 = (float)row2[(size_t)(iw_base0 + 5)];
                             x3 = (float)row2[(size_t)(iw_base0 + 7)];
-                            vacc = vfmaq_f32(vacc, (float32x4_t){x0,x1,x2,x3}, vdupq_n_f32(w21));
+                            { float32x4_t _xv = {x0,x1,x2,x3}; vacc = vfmaq_f32(vacc, _xv, vdupq_n_f32(w21)); }
 
                             x0 = (float)row2[(size_t)(iw_base0 + 2)];
                             x1 = (float)row2[(size_t)(iw_base0 + 4)];
                             x2 = (float)row2[(size_t)(iw_base0 + 6)];
                             x3 = (float)row2[(size_t)(iw_base0 + 8)];
-                            vacc = vfmaq_f32(vacc, (float32x4_t){x0,x1,x2,x3}, vdupq_n_f32(w22));
+                            { float32x4_t _xv = {x0,x1,x2,x3}; vacc = vfmaq_f32(vacc, _xv, vdupq_n_f32(w22)); }
                         }
                     }
 
@@ -1067,55 +1067,55 @@ void cactus_conv2d_depthwise_f16_k3s2p1_nchw(
                     x1 = (float)row0[(size_t)(iw_base0 + 2)];
                     x2 = (float)row0[(size_t)(iw_base0 + 4)];
                     x3 = (float)row0[(size_t)(iw_base0 + 6)];
-                    vacc = vfmaq_f32(vacc, (float32x4_t){x0, x1, x2, x3}, vdupq_n_f32(w00));
+                    { float32x4_t _xv = {x0, x1, x2, x3}; vacc = vfmaq_f32(vacc, _xv, vdupq_n_f32(w00)); }
 
                     x0 = (float)row0[(size_t)(iw_base0 + 1)];
                     x1 = (float)row0[(size_t)(iw_base0 + 3)];
                     x2 = (float)row0[(size_t)(iw_base0 + 5)];
                     x3 = (float)row0[(size_t)(iw_base0 + 7)];
-                    vacc = vfmaq_f32(vacc, (float32x4_t){x0, x1, x2, x3}, vdupq_n_f32(w01));
+                    { float32x4_t _xv = {x0, x1, x2, x3}; vacc = vfmaq_f32(vacc, _xv, vdupq_n_f32(w01)); }
 
                     x0 = (float)row0[(size_t)(iw_base0 + 2)];
                     x1 = (float)row0[(size_t)(iw_base0 + 4)];
                     x2 = (float)row0[(size_t)(iw_base0 + 6)];
                     x3 = (float)row0[(size_t)(iw_base0 + 8)];
-                    vacc = vfmaq_f32(vacc, (float32x4_t){x0, x1, x2, x3}, vdupq_n_f32(w02));
+                    { float32x4_t _xv = {x0, x1, x2, x3}; vacc = vfmaq_f32(vacc, _xv, vdupq_n_f32(w02)); }
 
                     x0 = (float)row1[(size_t)(iw_base0 + 0)];
                     x1 = (float)row1[(size_t)(iw_base0 + 2)];
                     x2 = (float)row1[(size_t)(iw_base0 + 4)];
                     x3 = (float)row1[(size_t)(iw_base0 + 6)];
-                    vacc = vfmaq_f32(vacc, (float32x4_t){x0, x1, x2, x3}, vdupq_n_f32(w10));
+                    { float32x4_t _xv = {x0, x1, x2, x3}; vacc = vfmaq_f32(vacc, _xv, vdupq_n_f32(w10)); }
 
                     x0 = (float)row1[(size_t)(iw_base0 + 1)];
                     x1 = (float)row1[(size_t)(iw_base0 + 3)];
                     x2 = (float)row1[(size_t)(iw_base0 + 5)];
                     x3 = (float)row1[(size_t)(iw_base0 + 7)];
-                    vacc = vfmaq_f32(vacc, (float32x4_t){x0, x1, x2, x3}, vdupq_n_f32(w11));
+                    { float32x4_t _xv = {x0, x1, x2, x3}; vacc = vfmaq_f32(vacc, _xv, vdupq_n_f32(w11)); }
 
                     x0 = (float)row1[(size_t)(iw_base0 + 2)];
                     x1 = (float)row1[(size_t)(iw_base0 + 4)];
                     x2 = (float)row1[(size_t)(iw_base0 + 6)];
                     x3 = (float)row1[(size_t)(iw_base0 + 8)];
-                    vacc = vfmaq_f32(vacc, (float32x4_t){x0, x1, x2, x3}, vdupq_n_f32(w12));
+                    { float32x4_t _xv = {x0, x1, x2, x3}; vacc = vfmaq_f32(vacc, _xv, vdupq_n_f32(w12)); }
 
                     x0 = (float)row2[(size_t)(iw_base0 + 0)];
                     x1 = (float)row2[(size_t)(iw_base0 + 2)];
                     x2 = (float)row2[(size_t)(iw_base0 + 4)];
                     x3 = (float)row2[(size_t)(iw_base0 + 6)];
-                    vacc = vfmaq_f32(vacc, (float32x4_t){x0, x1, x2, x3}, vdupq_n_f32(w20));
+                    { float32x4_t _xv = {x0, x1, x2, x3}; vacc = vfmaq_f32(vacc, _xv, vdupq_n_f32(w20)); }
 
                     x0 = (float)row2[(size_t)(iw_base0 + 1)];
                     x1 = (float)row2[(size_t)(iw_base0 + 3)];
                     x2 = (float)row2[(size_t)(iw_base0 + 5)];
                     x3 = (float)row2[(size_t)(iw_base0 + 7)];
-                    vacc = vfmaq_f32(vacc, (float32x4_t){x0, x1, x2, x3}, vdupq_n_f32(w21));
+                    { float32x4_t _xv = {x0, x1, x2, x3}; vacc = vfmaq_f32(vacc, _xv, vdupq_n_f32(w21)); }
 
                     x0 = (float)row2[(size_t)(iw_base0 + 2)];
                     x1 = (float)row2[(size_t)(iw_base0 + 4)];
                     x2 = (float)row2[(size_t)(iw_base0 + 6)];
                     x3 = (float)row2[(size_t)(iw_base0 + 8)];
-                    vacc = vfmaq_f32(vacc, (float32x4_t){x0, x1, x2, x3}, vdupq_n_f32(w22));
+                    { float32x4_t _xv = {x0, x1, x2, x3}; vacc = vfmaq_f32(vacc, _xv, vdupq_n_f32(w22)); }
 
                     __fp16* Y = output + out_idx(n, c, oh, ow);
                     vst1_f16(Y, vcvt_f16_f32(vacc));
