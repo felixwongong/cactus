@@ -43,7 +43,12 @@ extern void compute_groupnorm_node(GraphNode& node, const std::vector<std::uniqu
 extern void compute_rope_gptj_node(GraphNode& node, const std::vector<std::unique_ptr<GraphNode>>& nodes, const std::unordered_map<size_t, size_t>& node_index_map);
 extern void shrink_thread_local_buffers();
 extern void compute_lstm_cell_node(GraphNode& node, const std::vector<std::unique_ptr<GraphNode>>& nodes, const std::unordered_map<size_t, size_t>& node_index_map);
+extern void compute_gated_deltanet_decode_node(GraphNode& node, const std::vector<std::unique_ptr<GraphNode>>& nodes, const std::unordered_map<size_t, size_t>& node_index_map);
+extern void compute_gated_deltanet_prefill_node(GraphNode& node, const std::vector<std::unique_ptr<GraphNode>>& nodes, const std::unordered_map<size_t, size_t>& node_index_map);
 extern void compute_stft_node(GraphNode& node, const std::vector<std::unique_ptr<GraphNode>>& nodes, const std::unordered_map<size_t, size_t>& node_index_map);
+extern void compute_altup_predict_node(GraphNode& node, const std::vector<std::unique_ptr<GraphNode>>& nodes, const std::unordered_map<size_t, size_t>& node_index_map);
+extern void compute_altup_correct_node(GraphNode& node, const std::vector<std::unique_ptr<GraphNode>>& nodes, const std::unordered_map<size_t, size_t>& node_index_map);
+extern void compute_gaussian_topk_node(GraphNode& node, const std::vector<std::unique_ptr<GraphNode>>& nodes, const std::unordered_map<size_t, size_t>& node_index_map);
 
 extern void compute_transpose_node(GraphNode& node, const std::vector<std::unique_ptr<GraphNode>>& nodes, const std::unordered_map<size_t, size_t>& node_index_map);
 extern void compute_gather_node(GraphNode& node, const std::vector<std::unique_ptr<GraphNode>>& nodes, const std::unordered_map<size_t, size_t>& node_index_map);
@@ -78,7 +83,12 @@ static const char* op_type_names[] = {
     "PERSISTENT",
     "QUANTIZE_ACTIVATIONS",
     "LSTM_CELL",
-    "STFT"
+    "GATED_DELTANET_DECODE",
+    "GATED_DELTANET_PREFILL",
+    "STFT",
+    "ALTUP_PREDICT",
+    "ALTUP_CORRECT",
+    "GAUSSIAN_TOPK"
 };
 
 static const char* get_op_name(OpType op) {
@@ -275,8 +285,28 @@ void compute_node_optimized(GraphNode& node, const std::vector<std::unique_ptr<G
             compute_lstm_cell_node(node, nodes, node_index_map);
             break;
 
+        case OpType::GATED_DELTANET_DECODE:
+            compute_gated_deltanet_decode_node(node, nodes, node_index_map);
+            break;
+
+        case OpType::GATED_DELTANET_PREFILL:
+            compute_gated_deltanet_prefill_node(node, nodes, node_index_map);
+            break;
+
         case OpType::STFT:
             compute_stft_node(node, nodes, node_index_map);
+            break;
+
+        case OpType::ALTUP_PREDICT:
+            compute_altup_predict_node(node, nodes, node_index_map);
+            break;
+
+        case OpType::ALTUP_CORRECT:
+            compute_altup_correct_node(node, nodes, node_index_map);
+            break;
+
+        case OpType::GAUSSIAN_TOPK:
+            compute_gaussian_topk_node(node, nodes, node_index_map);
             break;
 
         default:

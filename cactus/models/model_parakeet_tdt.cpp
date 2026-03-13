@@ -2,10 +2,14 @@
 #include "../graph/graph.h"
 #include "../npu/npu.h"
 #include "../kernel/kernel.h"
+
 #include <algorithm>
-#include <cctype>
 #include <cmath>
+#include <cctype>
+#include <filesystem>
+#include <limits>
 #include <stdexcept>
+#include <string>
 #include <vector>
 
 namespace {
@@ -177,14 +181,91 @@ bool infer_npu_encoder_output_shape(
     return true;
 }
 
+std::vector<__fp16> copy_buffer_to_fp16(const BufferDesc& buffer) {
+    std::vector<__fp16> out(buffer.total_size, static_cast<__fp16>(0.0f));
+    if (buffer.total_size == 0) {
+        return out;
+    }
+
+    if (buffer.precision == Precision::FP16) {
+        const __fp16* src = buffer.data_as<__fp16>();
+        std::copy(src, src + buffer.total_size, out.begin());
+        return out;
+    }
+
+    if (buffer.precision == Precision::FP32) {
+        const float* src = buffer.data_as<float>();
+        cactus_fp32_to_fp16(src, out.data(), buffer.total_size);
+        return out;
+    }
+
+    if (buffer.precision == Precision::INT8 && !buffer.is_interleaved) {
+        const int8_t* src = buffer.data_as<int8_t>();
+        Quantization::int8_to_fp16(src, out.data(), buffer.total_size, 1.0f);
+        return out;
+    }
+
+    throw std::runtime_error("Unsupported precision for FP16 conversion in ParakeetTDT");
+}
+
+size_t argmax_range(const BufferDesc& buffer, size_t offset, size_t length) {
+    if (length == 0 || (offset + length) > buffer.total_size) {
+        throw std::runtime_error("Invalid argmax range");
+    }
+
+    size_t best_idx = 0;
+    float best_val = -std::numeric_limits<float>::infinity();
+
+    if (buffer.precision == Precision::FP16) {
+        const __fp16* src = buffer.data_as<__fp16>() + offset;
+        best_val = static_cast<float>(src[0]);
+        for (size_t i = 1; i < length; ++i) {
+            float v = static_cast<float>(src[i]);
+            if (v > best_val) {
+                best_val = v;
+                best_idx = i;
+            }
+        }
+        return best_idx;
+    }
+
+    if (buffer.precision == Precision::FP32) {
+        const float* src = buffer.data_as<float>() + offset;
+        best_val = src[0];
+        for (size_t i = 1; i < length; ++i) {
+            float v = src[i];
+            if (v > best_val) {
+                best_val = v;
+                best_idx = i;
+            }
+        }
+        return best_idx;
+    }
+
+    if (buffer.precision == Precision::INT8) {
+        const int8_t* src = buffer.data_as<int8_t>() + offset;
+        best_val = static_cast<float>(src[0]);
+        for (size_t i = 1; i < length; ++i) {
+            float v = static_cast<float>(src[i]);
+            if (v > best_val) {
+                best_val = v;
+                best_idx = i;
+            }
+        }
+        return best_idx;
+    }
+
+    throw std::runtime_error("Unsupported logits precision in argmax");
+}
+
 } // namespace
 
 namespace cactus {
 namespace engine {
 
-ParakeetModel::ParakeetModel() : Model() {}
+ParakeetTDTModel::ParakeetTDTModel() : Model() {}
 
-ParakeetModel::ParakeetModel(const Config& config) : Model(config) {
+ParakeetTDTModel::ParakeetTDTModel(const Config& config) : Model(config) {
     weight_nodes_.layers.resize(config.num_layers);
 
     float hd = static_cast<float>(config.attention_head_dim);
@@ -193,15 +274,13 @@ ParakeetModel::ParakeetModel(const Config& config) : Model(config) {
     }
     attention_scale_ = 1.0f / std::sqrt(hd);
 
-    // Legacy converted Parakeet configs inherited generic rope_theta defaults.
-    // Keep RoPE disabled unless explicitly set to a non-default value.
     if (std::fabs(config_.rope_theta - 10000.0f) < 1e-3f ||
         std::fabs(config_.rope_theta - 1000000.0f) < 1e-3f) {
         config_.rope_theta = 0.0f;
     }
 }
 
-void ParakeetModel::load_weights_to_graph(CactusGraph* gb) {
+void ParakeetTDTModel::load_weights_to_graph(CactusGraph* gb) {
     weight_nodes_.subsampling_conv0_weight = gb->mmap_weights(model_folder_path_ + "/subsampling_conv0_weight.weights");
     weight_nodes_.subsampling_conv0_bias = gb->mmap_weights(model_folder_path_ + "/subsampling_conv0_bias.bias");
     weight_nodes_.subsampling_depthwise1_weight = gb->mmap_weights(model_folder_path_ + "/subsampling_depthwise1_weight.weights");
@@ -215,8 +294,39 @@ void ParakeetModel::load_weights_to_graph(CactusGraph* gb) {
     weight_nodes_.subsampling_linear_weight = gb->mmap_weights(model_folder_path_ + "/subsampling_linear_weight.weights");
     weight_nodes_.subsampling_linear_bias = gb->mmap_weights(model_folder_path_ + "/subsampling_linear_bias.bias");
 
-    weight_nodes_.ctc_head_weight = gb->mmap_weights(model_folder_path_ + "/ctc_head_weight.weights");
-    weight_nodes_.ctc_head_bias = gb->mmap_weights(model_folder_path_ + "/ctc_head_bias.bias");
+    weight_nodes_.predictor_embed = gb->mmap_weights(model_folder_path_ + "/tdt_predictor_embed.weights");
+
+    size_t predictor_layers = static_cast<size_t>(config_.predictor_num_layers);
+    if (predictor_layers == 0) {
+        while (true) {
+            const std::string prefix = model_folder_path_ + "/tdt_predictor_lstm_" + std::to_string(predictor_layers);
+            if (!std::filesystem::exists(prefix + "_weight_ih.weights") ||
+                !std::filesystem::exists(prefix + "_weight_hh.weights") ||
+                !std::filesystem::exists(prefix + "_bias.weights")) {
+                break;
+            }
+            ++predictor_layers;
+        }
+    }
+    if (predictor_layers == 0) {
+        predictor_layers = 1;
+    }
+
+    weight_nodes_.predictor_layers.resize(predictor_layers);
+    for (size_t i = 0; i < predictor_layers; ++i) {
+        auto& layer = weight_nodes_.predictor_layers[i];
+        const std::string prefix = model_folder_path_ + "/tdt_predictor_lstm_" + std::to_string(i);
+        layer.weight_ih = gb->mmap_weights(prefix + "_weight_ih.weights");
+        layer.weight_hh = gb->mmap_weights(prefix + "_weight_hh.weights");
+        layer.bias = gb->mmap_weights(prefix + "_bias.weights");
+    }
+
+    weight_nodes_.joint_enc_weight = gb->mmap_weights(model_folder_path_ + "/tdt_joint_enc.weights");
+    weight_nodes_.joint_enc_bias = gb->mmap_weights(model_folder_path_ + "/tdt_joint_enc.bias");
+    weight_nodes_.joint_pred_weight = gb->mmap_weights(model_folder_path_ + "/tdt_joint_pred.weights");
+    weight_nodes_.joint_pred_bias = gb->mmap_weights(model_folder_path_ + "/tdt_joint_pred.bias");
+    weight_nodes_.joint_out_weight = gb->mmap_weights(model_folder_path_ + "/tdt_joint_out.weights");
+    weight_nodes_.joint_out_bias = gb->mmap_weights(model_folder_path_ + "/tdt_joint_out.bias");
 
     if (npu::is_npu_available()) {
         std::string npu_encoder_path = model_folder_path_ + "/model.mlpackage";
@@ -283,10 +393,10 @@ void ParakeetModel::load_weights_to_graph(CactusGraph* gb) {
     }
 }
 
-size_t ParakeetModel::build_subsampling(CactusGraph* gb, const std::vector<float>& audio_features) {
+size_t ParakeetTDTModel::build_subsampling(CactusGraph* gb, const std::vector<float>& audio_features) {
     const size_t num_mels = std::max<size_t>(1, static_cast<size_t>(config_.num_mel_bins));
     if (audio_features.empty() || (audio_features.size() % num_mels) != 0) {
-        throw std::runtime_error("Parakeet expects audio_features with shape [num_mels, num_frames]");
+        throw std::runtime_error("ParakeetTDT expects audio_features with shape [num_mels, num_frames]");
     }
 
     const size_t frames = audio_features.size() / num_mels;
@@ -317,7 +427,7 @@ size_t ParakeetModel::build_subsampling(CactusGraph* gb, const std::vector<float
 
     const auto& conv_shape = gb->get_output_buffer(x).shape;
     if (conv_shape.size() != 4 || conv_shape[0] != 1) {
-        throw std::runtime_error("Parakeet subsampling produced invalid shape");
+        throw std::runtime_error("ParakeetTDT subsampling produced invalid shape");
     }
 
     const size_t C = conv_shape[1];
@@ -331,7 +441,7 @@ size_t ParakeetModel::build_subsampling(CactusGraph* gb, const std::vector<float
     return projected;
 }
 
-size_t ParakeetModel::build_relative_position_embeddings(CactusGraph* gb, size_t seq_len) {
+size_t ParakeetTDTModel::build_relative_position_embeddings(CactusGraph* gb, size_t seq_len) {
     const size_t hidden_dim = std::max<size_t>(1, static_cast<size_t>(config_.hidden_dim));
     const size_t half_dim = hidden_dim / 2;
     const size_t rel_len = 2 * seq_len - 1;
@@ -358,8 +468,8 @@ size_t ParakeetModel::build_relative_position_embeddings(CactusGraph* gb, size_t
     return pos_node;
 }
 
-size_t ParakeetModel::build_self_attention(CactusGraph* gb, size_t hidden, size_t position_embeddings,
-                                           uint32_t layer_idx, ComputeBackend backend) {
+size_t ParakeetTDTModel::build_self_attention(CactusGraph* gb, size_t hidden, size_t position_embeddings,
+                                              uint32_t layer_idx, ComputeBackend backend) {
     const auto& layer = weight_nodes_.layers[layer_idx];
 
     size_t q = gb->matmul(hidden, layer.self_attn_q_weight, true, backend);
@@ -371,7 +481,7 @@ size_t ParakeetModel::build_self_attention(CactusGraph* gb, size_t hidden, size_
 
     const auto& q_shape = gb->get_output_buffer(q).shape;
     if (q_shape.size() != 2) {
-        throw std::runtime_error("Parakeet self-attention expects [T, D]");
+        throw std::runtime_error("ParakeetTDT self-attention expects [T, D]");
     }
 
     const size_t T = q_shape[0];
@@ -400,7 +510,8 @@ size_t ParakeetModel::build_self_attention(CactusGraph* gb, size_t hidden, size_
     return out;
 }
 
-size_t ParakeetModel::build_feed_forward(CactusGraph* gb, size_t hidden, uint32_t layer_idx, bool second_ff, ComputeBackend backend) {
+size_t ParakeetTDTModel::build_feed_forward(CactusGraph* gb, size_t hidden, uint32_t layer_idx,
+                                            bool second_ff, ComputeBackend backend) {
     const auto& layer = weight_nodes_.layers[layer_idx];
 
     size_t w1 = second_ff ? layer.ff2_linear1_weight : layer.ff1_linear1_weight;
@@ -412,7 +523,7 @@ size_t ParakeetModel::build_feed_forward(CactusGraph* gb, size_t hidden, uint32_
     x = gb->add(x, b1);
 
     std::string act = config_.encoder_hidden_act;
-    std::transform(act.begin(), act.end(), act.begin(), ::tolower);
+    std::transform(act.begin(), act.end(), act.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
     if (act.find("gelu") != std::string::npos) {
         x = gb->gelu(x);
     } else if (act == "relu") {
@@ -426,12 +537,12 @@ size_t ParakeetModel::build_feed_forward(CactusGraph* gb, size_t hidden, uint32_
     return x;
 }
 
-size_t ParakeetModel::build_convolution_module(CactusGraph* gb, size_t hidden, uint32_t layer_idx, ComputeBackend backend) {
+size_t ParakeetTDTModel::build_convolution_module(CactusGraph* gb, size_t hidden, uint32_t layer_idx, ComputeBackend backend) {
     (void)backend;
     const auto& layer = weight_nodes_.layers[layer_idx];
     const auto& hidden_shape = gb->get_output_buffer(hidden).shape;
     if (hidden_shape.size() != 2) {
-        throw std::runtime_error("Parakeet convolution module expects [T, D]");
+        throw std::runtime_error("ParakeetTDT convolution module expects [T, D]");
     }
 
     const size_t T = hidden_shape[0];
@@ -454,7 +565,7 @@ size_t ParakeetModel::build_convolution_module(CactusGraph* gb, size_t hidden, u
     );
 
     std::string act = config_.encoder_hidden_act;
-    std::transform(act.begin(), act.end(), act.begin(), ::tolower);
+    std::transform(act.begin(), act.end(), act.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
     if (act.find("gelu") != std::string::npos) {
         x = gb->gelu(x);
     } else if (act == "relu") {
@@ -469,8 +580,8 @@ size_t ParakeetModel::build_convolution_module(CactusGraph* gb, size_t hidden, u
     return x;
 }
 
-size_t ParakeetModel::build_encoder_block(CactusGraph* gb, size_t hidden, size_t position_embeddings,
-                                          uint32_t layer_idx, ComputeBackend backend) {
+size_t ParakeetTDTModel::build_encoder_block(CactusGraph* gb, size_t hidden, size_t position_embeddings,
+                                             uint32_t layer_idx, ComputeBackend backend) {
     const auto& layer = weight_nodes_.layers[layer_idx];
 
     size_t ff1_in = gb->layernorm(hidden, layer.norm_ff1_weight, layer.norm_ff1_bias);
@@ -495,22 +606,19 @@ size_t ParakeetModel::build_encoder_block(CactusGraph* gb, size_t hidden, size_t
     return x;
 }
 
-size_t ParakeetModel::build_encoder(CactusGraph* gb, const std::vector<float>& audio_features) {
+size_t ParakeetTDTModel::build_encoder(CactusGraph* gb, const std::vector<float>& audio_features) {
     const size_t num_mels = std::max<size_t>(1, static_cast<size_t>(config_.num_mel_bins));
     if (audio_features.empty() || (audio_features.size() % num_mels) != 0) {
-        throw std::runtime_error("Parakeet expects audio_features with shape [num_mels, num_frames]");
+        throw std::runtime_error("ParakeetTDT expects audio_features with shape [num_mels, num_frames]");
     }
+
     const size_t frames = audio_features.size() / num_mels;
+
     size_t expected_hidden_dim = std::max<size_t>(1, static_cast<size_t>(config_.hidden_dim));
-    size_t expected_vocab_size = std::max<size_t>(1, static_cast<size_t>(config_.vocab_size));
     {
-        const auto& ctc_w_shape = gb->get_output_buffer(weight_nodes_.ctc_head_weight).shape;
-        if (ctc_w_shape.size() == 2) {
-            expected_vocab_size = ctc_w_shape[0];
-            expected_hidden_dim = ctc_w_shape[1];
-        } else if (ctc_w_shape.size() == 3) {
-            expected_vocab_size = ctc_w_shape[0];
-            expected_hidden_dim = ctc_w_shape[1];
+        const auto& joint_enc_shape = gb->get_output_buffer(weight_nodes_.joint_enc_weight).shape;
+        if (joint_enc_shape.size() == 2) {
+            expected_hidden_dim = joint_enc_shape[1];
         }
     }
 
@@ -537,8 +645,7 @@ size_t ParakeetModel::build_encoder(CactusGraph* gb, const std::vector<float>& a
                 output_capacity = shape_elements(output_shape);
             }
             if (output_capacity == 0) {
-                output_capacity = std::max<size_t>(
-                    1, frames * std::max<size_t>(1, static_cast<size_t>(config_.hidden_dim)));
+                output_capacity = std::max<size_t>(1, frames * expected_hidden_dim);
             }
 
             std::vector<__fp16> npu_output(output_capacity);
@@ -553,8 +660,7 @@ size_t ParakeetModel::build_encoder(CactusGraph* gb, const std::vector<float>& a
             size_t T_enc = 0;
             size_t D_enc = 0;
             if (elements_written > 0 &&
-                infer_npu_encoder_output_shape(output_shape, elements_written,
-                                               static_cast<size_t>(config_.hidden_dim), T_enc, D_enc)) {
+                infer_npu_encoder_output_shape(output_shape, elements_written, expected_hidden_dim, T_enc, D_enc)) {
                 const __fp16* src = npu_output.data();
                 __fp16* cached_output = npu_encoder_->get_output_buffer();
                 const size_t cached_count = npu_encoder_->get_output_buffer_size();
@@ -563,8 +669,7 @@ size_t ParakeetModel::build_encoder(CactusGraph* gb, const std::vector<float>& a
                     src = cached_output;
                 }
 
-                // Accept encoder hidden output [T, hidden] or direct logits [T, vocab].
-                if (D_enc == expected_hidden_dim || D_enc == expected_vocab_size) {
+                if (D_enc == expected_hidden_dim) {
                     size_t enc_output = gb->input({T_enc, D_enc}, Precision::FP16);
                     gb->set_input(enc_output, src, Precision::FP16);
                     return enc_output;
@@ -572,149 +677,239 @@ size_t ParakeetModel::build_encoder(CactusGraph* gb, const std::vector<float>& a
             }
         }
     }
+
     ComputeBackend backend = ComputeBackend::CPU;
     size_t hidden = build_subsampling(gb, audio_features);
     const auto& hidden_shape = gb->get_output_buffer(hidden).shape;
     if (hidden_shape.size() != 2) {
-        throw std::runtime_error("Parakeet encoder expects subsampling output [T, D]");
+        throw std::runtime_error("ParakeetTDT encoder expects subsampling output [T, D]");
     }
+
     size_t position_embeddings = build_relative_position_embeddings(gb, hidden_shape[0]);
     for (uint32_t i = 0; i < config_.num_layers; ++i) {
         hidden = build_encoder_block(gb, hidden, position_embeddings, i, backend);
     }
+
     return hidden;
 }
 
-size_t ParakeetModel::build_ctc_logits(CactusGraph* gb, size_t hidden_states) {
-    const auto& hidden_shape = gb->get_output_buffer(hidden_states).shape;
-    if (hidden_shape.size() != 2) {
-        throw std::runtime_error("Parakeet CTC head expects hidden states [T, D]");
-    }
-    const size_t T = hidden_shape[0];
-    const size_t D = hidden_shape[1];
-
-    size_t hidden_nlc = gb->reshape(hidden_states, {1, T, D});
-    const auto& ctc_w_shape = gb->get_output_buffer(weight_nodes_.ctc_head_weight).shape;
-    size_t vocab_size = ctc_w_shape.empty() ? config_.vocab_size : ctc_w_shape[0];
-    size_t logits_nlc = gb->conv1d_pointwise(hidden_nlc, weight_nodes_.ctc_head_weight, weight_nodes_.ctc_head_bias);
-
-    return gb->reshape(logits_nlc, {T, vocab_size});
-}
-
-size_t ParakeetModel::forward(const std::vector<float>& audio_features, const std::vector<uint32_t>& tokens, bool use_cache) {
+size_t ParakeetTDTModel::forward(const std::vector<float>& audio_features,
+                                 const std::vector<uint32_t>& tokens,
+                                 bool use_cache) {
     (void)tokens;
     (void)use_cache;
+
     auto* gb = static_cast<CactusGraph*>(graph_handle_);
     gb->clear_debug_nodes();
-    size_t encoder_out = build_encoder(gb, audio_features);
-
-    const auto& enc_shape = gb->get_output_buffer(encoder_out).shape;
-    if (enc_shape.size() != 2) {
-        throw std::runtime_error("Parakeet encoder output must be rank-2 [T, D]");
-    }
-
-    size_t ctc_hidden_dim = std::max<size_t>(1, static_cast<size_t>(config_.hidden_dim));
-    size_t ctc_vocab_size = std::max<size_t>(1, static_cast<size_t>(config_.vocab_size));
-    const auto& ctc_w_shape = gb->get_output_buffer(weight_nodes_.ctc_head_weight).shape;
-    if (ctc_w_shape.size() == 2) {
-        ctc_vocab_size = ctc_w_shape[0];
-        ctc_hidden_dim = ctc_w_shape[1];
-    } else if (ctc_w_shape.size() == 3) {
-        ctc_vocab_size = ctc_w_shape[0];
-        ctc_hidden_dim = ctc_w_shape[1];
-    }
-
-    // If the NPU graph already emits [T, vocab] logits, skip CPU CTC head.
-    if (enc_shape[1] == ctc_vocab_size && ctc_vocab_size != ctc_hidden_dim) {
-        return encoder_out;
-    }
-
-    if (enc_shape[1] != ctc_hidden_dim) {
-        throw std::runtime_error(
-            "Parakeet encoder output dim mismatch: expected hidden dim " +
-            std::to_string(ctc_hidden_dim) + ", got " + std::to_string(enc_shape[1]));
-    }
-
-    return build_ctc_logits(gb, encoder_out);
+    return build_encoder(gb, audio_features);
 }
 
-std::vector<uint32_t> ParakeetModel::greedy_decode_tokens(CactusGraph* gb, size_t logits_node) const {
-    const auto& logits_buf = gb->get_output_buffer(logits_node);
-    if (logits_buf.shape.size() != 2) {
-        throw std::runtime_error("Parakeet logits must be rank-2 [T, vocab]");
+std::vector<ParakeetTDTModel::TDTToken> ParakeetTDTModel::greedy_decode_tdt_tokens(CactusGraph* gb, size_t encoder_hidden_node) const {
+    const auto& enc_buf = gb->get_output_buffer(encoder_hidden_node);
+    if (enc_buf.shape.size() != 2) {
+        throw std::runtime_error("ParakeetTDT encoder output must be rank-2 [T, D]");
     }
 
-    const size_t T = logits_buf.shape[0];
-    const size_t vocab_size = logits_buf.shape[1];
-    std::vector<uint32_t> frame_ids(T, 0);
+    const size_t T = enc_buf.shape[0];
+    const size_t D = enc_buf.shape[1];
+    if (T == 0 || D == 0) {
+        return {};
+    }
 
-    if (logits_buf.precision == Precision::FP32) {
-        const float* src = logits_buf.data_as<float>();
-        for (size_t t = 0; t < T; ++t) {
-            const float* row = src + t * vocab_size;
-            size_t best_idx = 0;
-            float best_val = row[0];
-            for (size_t v = 1; v < vocab_size; ++v) {
-                if (row[v] > best_val) {
-                    best_val = row[v];
-                    best_idx = v;
-                }
-            }
-            frame_ids[t] = static_cast<uint32_t>(best_idx);
+    std::vector<__fp16> encoder_fp16 = copy_buffer_to_fp16(enc_buf);
+
+    gb->soft_reset();
+
+    size_t frame_in = gb->input({1, D}, Precision::FP16);
+    size_t token_idx = gb->input({1}, Precision::FP32);
+
+    size_t pred = gb->embedding(weight_nodes_.predictor_embed, token_idx);
+
+    const size_t predictor_layers = weight_nodes_.predictor_layers.size();
+    std::vector<size_t> h_prev_nodes;
+    std::vector<size_t> c_prev_nodes;
+    std::vector<size_t> h_new_nodes;
+    std::vector<size_t> c_new_nodes;
+    std::vector<size_t> bias_hh_zero_nodes;
+    std::vector<size_t> hidden_sizes;
+
+    h_prev_nodes.reserve(predictor_layers);
+    c_prev_nodes.reserve(predictor_layers);
+    h_new_nodes.reserve(predictor_layers);
+    c_new_nodes.reserve(predictor_layers);
+    bias_hh_zero_nodes.reserve(predictor_layers);
+    hidden_sizes.reserve(predictor_layers);
+
+    for (size_t i = 0; i < predictor_layers; ++i) {
+        const auto w_ih = weight_nodes_.predictor_layers[i].weight_ih;
+        const auto w_hh = weight_nodes_.predictor_layers[i].weight_hh;
+        const auto b_ih = weight_nodes_.predictor_layers[i].bias;
+
+        if (gb->get_output_buffer(w_ih).precision != Precision::FP16 ||
+            gb->get_output_buffer(w_hh).precision != Precision::FP16 ||
+            gb->get_output_buffer(b_ih).precision != Precision::FP16) {
+            throw std::runtime_error(
+                "ParakeetTDT predictor LSTM weights must be FP16. "
+                "Re-convert the model with updated converter.");
         }
-    } else if (logits_buf.precision == Precision::FP16) {
-        const __fp16* src = logits_buf.data_as<__fp16>();
-        for (size_t t = 0; t < T; ++t) {
-            const __fp16* row = src + t * vocab_size;
-            size_t best_idx = 0;
-            float best_val = static_cast<float>(row[0]);
-            for (size_t v = 1; v < vocab_size; ++v) {
-                const float val = static_cast<float>(row[v]);
-                if (val > best_val) {
-                    best_val = val;
-                    best_idx = v;
-                }
-            }
-            frame_ids[t] = static_cast<uint32_t>(best_idx);
+
+        const auto& w_ih_shape = gb->get_output_buffer(w_ih).shape;
+        if (w_ih_shape.size() != 2 || (w_ih_shape[0] % 4) != 0) {
+            throw std::runtime_error("ParakeetTDT predictor LSTM weight_ih must be [4*hidden, input]");
         }
-    } else {
-        const int8_t* src = logits_buf.data_as<int8_t>();
-        for (size_t t = 0; t < T; ++t) {
-            const int8_t* row = src + t * vocab_size;
-            size_t best_idx = 0;
-            int best_val = static_cast<int>(row[0]);
-            for (size_t v = 1; v < vocab_size; ++v) {
-                const int val = static_cast<int>(row[v]);
-                if (val > best_val) {
-                    best_val = val;
-                    best_idx = v;
-                }
+        const size_t hidden_size = w_ih_shape[0] / 4;
+        hidden_sizes.push_back(hidden_size);
+
+        size_t h_prev = gb->input({1, hidden_size}, Precision::FP16);
+        size_t c_prev = gb->input({1, hidden_size}, Precision::FP16);
+        size_t b_hh_zero = gb->input({4 * hidden_size}, Precision::FP16);
+
+        size_t lstm_out = gb->lstm_cell(pred, h_prev, c_prev, w_ih, w_hh, b_ih, b_hh_zero);
+        size_t h_new = gb->slice(lstm_out, 2, 0, 1);
+        size_t c_new = gb->slice(lstm_out, 2, 1, 1);
+
+        h_new = gb->reshape(h_new, {1, hidden_size});
+        c_new = gb->reshape(c_new, {1, hidden_size});
+
+        pred = h_new;
+
+        h_prev_nodes.push_back(h_prev);
+        c_prev_nodes.push_back(c_prev);
+        h_new_nodes.push_back(h_new);
+        c_new_nodes.push_back(c_new);
+        bias_hh_zero_nodes.push_back(b_hh_zero);
+    }
+
+    size_t enc_proj = gb->matmul(frame_in, weight_nodes_.joint_enc_weight, true, ComputeBackend::CPU);
+    enc_proj = gb->add(enc_proj, weight_nodes_.joint_enc_bias);
+
+    size_t pred_proj = gb->matmul(pred, weight_nodes_.joint_pred_weight, true, ComputeBackend::CPU);
+    pred_proj = gb->add(pred_proj, weight_nodes_.joint_pred_bias);
+
+    size_t joint = gb->add(enc_proj, pred_proj);
+    joint = gb->relu(joint);
+
+    size_t logits = gb->matmul(joint, weight_nodes_.joint_out_weight, true, ComputeBackend::CPU);
+    logits = gb->add(logits, weight_nodes_.joint_out_bias);
+
+    const auto& logits_shape = gb->get_output_buffer(logits).shape;
+    if (logits_shape.size() != 2 || logits_shape[0] != 1) {
+        throw std::runtime_error("ParakeetTDT joint output must be [1, classes]");
+    }
+
+    const size_t total_classes = logits_shape[1];
+    std::vector<uint32_t> durations = config_.tdt_durations;
+    size_t duration_classes = durations.size();
+    if (duration_classes == 0) {
+        const size_t fallback = static_cast<size_t>(config_.tdt_num_durations);
+        if (fallback > 0) {
+            durations.resize(fallback);
+            for (size_t i = 0; i < fallback; ++i) {
+                durations[i] = static_cast<uint32_t>(i);
             }
-            frame_ids[t] = static_cast<uint32_t>(best_idx);
+            duration_classes = fallback;
         }
     }
 
-    const uint32_t blank_id = config_.pad_token_id > 0 ? config_.pad_token_id : static_cast<uint32_t>(vocab_size - 1);
-    std::vector<uint32_t> decoded;
-    decoded.reserve(frame_ids.size());
-
-    uint32_t prev = blank_id;
-    for (uint32_t id : frame_ids) {
-        if (id == blank_id) {
-            prev = blank_id;
-            continue;
-        }
-        if (id == prev) {
-            continue;
-        }
-        decoded.push_back(id);
-        prev = id;
+    if (duration_classes == 0 || duration_classes >= total_classes) {
+        throw std::runtime_error("ParakeetTDT duration classes are invalid");
     }
 
-    return decoded;
+    const size_t token_classes = total_classes - duration_classes;
+
+    uint32_t blank_id = config_.tdt_blank_id;
+    if (blank_id >= token_classes) {
+        const auto& emb_shape = gb->get_output_buffer(weight_nodes_.predictor_embed).shape;
+        if (emb_shape.size() == 2 && emb_shape[0] > 0) {
+            const size_t inferred_blank = emb_shape[0] - 1;
+            blank_id = static_cast<uint32_t>(std::min(inferred_blank, token_classes - 1));
+        } else {
+            blank_id = static_cast<uint32_t>(token_classes - 1);
+        }
+    }
+
+    std::vector<std::vector<__fp16>> h_state(predictor_layers);
+    std::vector<std::vector<__fp16>> c_state(predictor_layers);
+    std::vector<std::vector<__fp16>> bias_hh_zero_state(predictor_layers);
+
+    for (size_t i = 0; i < predictor_layers; ++i) {
+        h_state[i].assign(hidden_sizes[i], static_cast<__fp16>(0.0f));
+        c_state[i].assign(hidden_sizes[i], static_cast<__fp16>(0.0f));
+        bias_hh_zero_state[i].assign(4 * hidden_sizes[i], static_cast<__fp16>(0.0f));
+        gb->set_input(bias_hh_zero_nodes[i], bias_hh_zero_state[i].data(), Precision::FP16);
+    }
+
+    constexpr float kHopSec = 160.0f / 16000.0f;
+    const float frame_sec = kHopSec * static_cast<float>(config_.subsampling_factor);
+
+    std::vector<TDTToken> output_tokens;
+    output_tokens.reserve(T * 2);
+
+    uint32_t last_token = blank_id;
+    size_t time_idx = 0;
+    constexpr size_t kMaxSymbolsPerStep = 10;
+
+    while (time_idx < T) {
+        bool advanced = false;
+        size_t symbols_added = 0;
+
+        while (symbols_added < kMaxSymbolsPerStep) {
+            const __fp16* frame_ptr = encoder_fp16.data() + time_idx * D;
+            gb->set_input(frame_in, frame_ptr, Precision::FP16);
+
+            float token_value = static_cast<float>(last_token);
+            gb->set_input(token_idx, &token_value, Precision::FP32);
+
+            for (size_t i = 0; i < predictor_layers; ++i) {
+                gb->set_input(h_prev_nodes[i], h_state[i].data(), Precision::FP16);
+                gb->set_input(c_prev_nodes[i], c_state[i].data(), Precision::FP16);
+            }
+
+            gb->execute();
+
+            const auto& logits_buf = gb->get_output_buffer(logits);
+            const size_t best_token = argmax_range(logits_buf, 0, token_classes);
+            const size_t best_duration_idx = argmax_range(logits_buf, token_classes, duration_classes);
+            const uint32_t skip = durations[best_duration_idx];
+
+            if (best_token != blank_id) {
+                output_tokens.push_back({static_cast<uint32_t>(best_token), time_idx * frame_sec, (time_idx + skip) * frame_sec});
+                last_token = static_cast<uint32_t>(best_token);
+
+                for (size_t i = 0; i < predictor_layers; ++i) {
+                    const auto& h_buf = gb->get_output_buffer(h_new_nodes[i]);
+                    const auto& c_buf = gb->get_output_buffer(c_new_nodes[i]);
+                    const __fp16* h_ptr = h_buf.data_as<__fp16>();
+                    const __fp16* c_ptr = c_buf.data_as<__fp16>();
+                    std::copy(h_ptr, h_ptr + hidden_sizes[i], h_state[i].begin());
+                    std::copy(c_ptr, c_ptr + hidden_sizes[i], c_state[i].begin());
+                }
+            }
+
+            ++symbols_added;
+
+            if (skip > 0) {
+                time_idx += skip;
+                advanced = true;
+                break;
+            }
+
+            if (best_token == blank_id) {
+                ++time_idx;
+                advanced = true;
+                break;
+            }
+        }
+
+        if (!advanced) {
+            ++time_idx;
+        }
+    }
+
+    return output_tokens;
 }
 
-uint32_t ParakeetModel::decode_with_audio(
+uint32_t ParakeetTDTModel::decode_with_audio(
     const std::vector<uint32_t>& tokens,
     const std::vector<float>& audio_features,
     float temperature,
@@ -722,8 +917,8 @@ uint32_t ParakeetModel::decode_with_audio(
     size_t top_k,
     const std::string& profile_file,
     float* out_entropy,
-    float* /*out_token_time_start*/,
-    float* /*out_token_time_end*/)
+    float* out_token_time_start,
+    float* out_token_time_end)
 {
     (void)temperature;
     (void)top_p;
@@ -733,14 +928,15 @@ uint32_t ParakeetModel::decode_with_audio(
         throw std::runtime_error("Model not initialized - call init() first");
     }
     if (audio_features.empty()) {
-        throw std::runtime_error("Audio features cannot be empty in Parakeet decode_with_audio");
+        throw std::runtime_error("Audio features cannot be empty in ParakeetTDT decode_with_audio");
     }
 
     auto* gb = static_cast<CactusGraph*>(graph_handle_);
-    const bool new_request = !ctc_tokens_ready_ || tokens.empty() || tokens.size() < last_input_token_count_;
+
+    const bool new_request = !tdt_tokens_ready_ || tokens.empty() || tokens.size() < last_input_token_count_;
     if (new_request) {
         gb->soft_reset();
-        size_t logits_node = forward(audio_features, tokens, false);
+        size_t encoder_out = forward(audio_features, tokens, false);
 
         if (!profile_file.empty()) {
             gb->execute(profile_file);
@@ -748,9 +944,9 @@ uint32_t ParakeetModel::decode_with_audio(
             gb->execute();
         }
 
-        ctc_tokens_ = greedy_decode_tokens(gb, logits_node);
-        ctc_emit_index_ = 0;
-        ctc_tokens_ready_ = true;
+        tdt_tokens_ = greedy_decode_tdt_tokens(gb, encoder_out);
+        tdt_emit_index_ = 0;
+        tdt_tokens_ready_ = true;
     }
 
     last_input_token_count_ = tokens.size();
@@ -758,41 +954,21 @@ uint32_t ParakeetModel::decode_with_audio(
         *out_entropy = 0.0f;
     }
 
-    if (ctc_emit_index_ < ctc_tokens_.size()) {
-        return ctc_tokens_[ctc_emit_index_++];
+    if (tdt_emit_index_ < tdt_tokens_.size()) {
+        const auto& tok = tdt_tokens_[tdt_emit_index_++];
+        if (out_token_time_start) *out_token_time_start = tok.time_start;
+        if (out_token_time_end)   *out_token_time_end   = tok.time_end;
+        return tok.id;
     }
+
     return get_tokenizer()->get_eos_token();
 }
 
-std::vector<float> ParakeetModel::get_audio_embeddings(const std::vector<float>& audio_features) {
+std::vector<float> ParakeetTDTModel::get_audio_embeddings(const std::vector<float>& audio_features) {
     auto* gb = static_cast<CactusGraph*>(graph_handle_);
     gb->soft_reset();
+
     size_t hidden = build_encoder(gb, audio_features);
-
-    const auto& hidden_shape = gb->get_output_buffer(hidden).shape;
-    size_t ctc_hidden_dim = std::max<size_t>(1, static_cast<size_t>(config_.hidden_dim));
-    size_t ctc_vocab_size = std::max<size_t>(1, static_cast<size_t>(config_.vocab_size));
-    const auto& ctc_w_shape = gb->get_output_buffer(weight_nodes_.ctc_head_weight).shape;
-    if (ctc_w_shape.size() == 2) {
-        ctc_vocab_size = ctc_w_shape[0];
-        ctc_hidden_dim = ctc_w_shape[1];
-    } else if (ctc_w_shape.size() == 3) {
-        ctc_vocab_size = ctc_w_shape[0];
-        ctc_hidden_dim = ctc_w_shape[1];
-    }
-
-    // Embeddings require hidden states; if NPU returned logits, rerun CPU encoder.
-    if (hidden_shape.size() == 2 &&
-        hidden_shape[1] == ctc_vocab_size &&
-        ctc_vocab_size != ctc_hidden_dim &&
-        use_npu_encoder_) {
-        const bool prev_use_npu = use_npu_encoder_;
-        use_npu_encoder_ = false;
-        gb->soft_reset();
-        hidden = build_encoder(gb, audio_features);
-        use_npu_encoder_ = prev_use_npu;
-    }
-
     size_t pooled = gb->mean(hidden, 0);
     gb->execute();
 
@@ -815,11 +991,11 @@ std::vector<float> ParakeetModel::get_audio_embeddings(const std::vector<float>&
     return embedding;
 }
 
-void ParakeetModel::reset_cache() {
+void ParakeetTDTModel::reset_cache() {
     Model::reset_cache();
-    ctc_tokens_ready_ = false;
-    ctc_emit_index_ = 0;
-    ctc_tokens_.clear();
+    tdt_tokens_ready_ = false;
+    tdt_emit_index_ = 0;
+    tdt_tokens_.clear();
     last_input_token_count_ = 0;
 }
 

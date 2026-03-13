@@ -543,7 +543,9 @@ uint32_t MoonshineModel::decode_with_audio(
     float top_p,
     size_t top_k,
     const std::string& profile_file,
-    float* out_entropy)
+    float* out_entropy,
+    float* /*out_token_time_start*/,
+    float* /*out_token_time_end*/)
 {
     if (!initialized_ || !graph_handle_)
         throw std::runtime_error("Model not initialized - call init() first");
@@ -577,7 +579,7 @@ uint32_t MoonshineModel::decode_with_audio(
         std::vector<uint32_t> last_token_vec = { tokens.back() };
         logits_node = build_decoder(last_token_vec, true, true);
     }
-    size_t sampled_token_id = gb->sample(logits_node, temperature, top_p, top_k);
+    size_t sampled_token_id = sample_token(gb, logits_node, temperature, top_p, top_k);
     if (!profile_file.empty()) gb->execute(profile_file);
    	else gb->execute();
     if (out_entropy) {

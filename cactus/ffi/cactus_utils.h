@@ -538,8 +538,161 @@ inline std::vector<ToolFunction> parse_tools_json(const std::string& json) {
         
         pos = json.find("\"function\"", name_pos);
     }
-    
+
     return tools;
+}
+
+inline bool try_parse_json_float(const std::string& json, const std::string& key, float& out_value) {
+    std::string pattern = "\"" + key + "\":";
+    size_t pos = json.find(pattern);
+    if (pos == std::string::npos) return false;
+
+    size_t start = pos + pattern.size();
+    while (start < json.size() && std::isspace(static_cast<unsigned char>(json[start]))) ++start;
+
+    size_t end = start;
+    while (end < json.size() && std::string(",}] \t\n\r").find(json[end]) == std::string::npos) ++end;
+
+    try {
+        out_value = std::stof(json.substr(start, end - start));
+        return true;
+    } catch (...) {
+        return false;
+    }
+}
+
+inline std::vector<std::string> parse_json_string_array_field(const std::string& json, const std::string& key) {
+    std::vector<std::string> out;
+    std::string pattern = "\"" + key + "\":";
+    size_t pos = json.find(pattern);
+    if (pos == std::string::npos) return out;
+
+    size_t start = pos + pattern.size();
+    while (start < json.size() && std::isspace(static_cast<unsigned char>(json[start]))) ++start;
+    if (start >= json.size() || json[start] != '[') return out;
+
+    int depth = 1;
+    bool in_string = false;
+    bool escaped = false;
+    size_t end = start + 1;
+
+    while (end < json.size() && depth > 0) {
+        char c = json[end];
+        if (in_string) {
+            if (escaped) escaped = false;
+            else if (c == '\\') escaped = true;
+            else if (c == '"') in_string = false;
+        } else {
+            if (c == '"') in_string = true;
+            else if (c == '[') depth++;
+            else if (c == ']') depth--;
+        }
+        ++end;
+    }
+
+    if (depth != 0) return out;
+    const std::string array_json = json.substr(start, end - start);
+    if (array_json.size() < 2 || array_json.front() != '[' || array_json.back() != ']') return out;
+
+    size_t i = 1;
+    while (i + 1 < array_json.size()) {
+        while (i + 1 < array_json.size() &&
+               (std::isspace(static_cast<unsigned char>(array_json[i])) || array_json[i] == ',')) {
+            ++i;
+        }
+        if (i + 1 >= array_json.size() || array_json[i] == ']') break;
+        if (array_json[i] != '"') break;
+
+        ++i;
+        std::string value;
+        bool escaped = false;
+        while (i < array_json.size()) {
+            char c = array_json[i++];
+            if (escaped) {
+                switch (c) {
+                    case '"': value.push_back('"'); break;
+                    case '\\': value.push_back('\\'); break;
+                    case '/': value.push_back('/'); break;
+                    case 'b': value.push_back('\b'); break;
+                    case 'f': value.push_back('\f'); break;
+                    case 'n': value.push_back('\n'); break;
+                    case 'r': value.push_back('\r'); break;
+                    case 't': value.push_back('\t'); break;
+                    default: value.push_back(c); break;
+                }
+                escaped = false;
+                continue;
+            }
+            if (c == '\\') {
+                escaped = true;
+                continue;
+            }
+            if (c == '"') {
+                out.push_back(value);
+                break;
+            }
+            value.push_back(c);
+        }
+    }
+
+    return out;
+}
+
+inline void parse_custom_vocabulary_options(const std::string& json,
+                                            std::vector<std::string>& custom_vocabulary,
+                                            float& vocabulary_boost) {
+    custom_vocabulary.clear();
+    vocabulary_boost = 5.0f;
+    if (json.empty()) return;
+
+    float parsed_boost = vocabulary_boost;
+    if (try_parse_json_float(json, "vocabulary_boost", parsed_boost)) {
+        vocabulary_boost = std::clamp(parsed_boost, 0.0f, 20.0f);
+    }
+
+    custom_vocabulary = parse_json_string_array_field(json, "custom_vocabulary");
+}
+
+inline std::unordered_map<uint32_t, float> build_token_bias_map(const std::vector<std::vector<uint32_t>>& tokenized_entries,
+                                                                float vocabulary_boost) {
+    std::unordered_map<uint32_t, float> vocab_bias;
+    const float clamped_boost = std::clamp(vocabulary_boost, 0.0f, 20.0f);
+    if (clamped_boost == 0.0f) return vocab_bias;
+
+    for (const auto& token_ids : tokenized_entries) {
+        for (uint32_t token_id : token_ids) {
+            float& entry = vocab_bias[token_id];
+            if (entry < clamped_boost) {
+                entry = clamped_boost;
+            }
+        }
+    }
+
+    return vocab_bias;
+}
+
+inline std::unordered_map<uint32_t, float> build_custom_vocabulary_bias(cactus::engine::Tokenizer* tokenizer,
+                                                                        const std::vector<std::string>& custom_vocabulary,
+                                                                        float vocabulary_boost) {
+    if (!tokenizer || custom_vocabulary.empty()) return {};
+    std::vector<std::vector<uint32_t>> tokenized_entries;
+    tokenized_entries.reserve(custom_vocabulary.size());
+
+    for (const auto& word : custom_vocabulary) {
+        if (word.empty()) continue;
+        tokenized_entries.push_back(tokenizer->encode(word));
+    }
+
+    return build_token_bias_map(tokenized_entries, vocabulary_boost);
+}
+
+inline void apply_custom_vocabulary_options(cactus::engine::Model* model, const std::string& json) {
+    if (!model) return;
+
+    std::vector<std::string> custom_vocabulary;
+    float vocabulary_boost = 5.0f;
+    parse_custom_vocabulary_options(json, custom_vocabulary, vocabulary_boost);
+    model->set_vocab_bias(build_custom_vocabulary_bias(model->get_tokenizer(), custom_vocabulary, vocabulary_boost));
 }
 
 inline void parse_options_json(const std::string& json,
@@ -554,7 +707,8 @@ inline void parse_options_json(const std::string& json,
                                bool& telemetry_enabled,
                                bool* auto_handoff = nullptr,
                                size_t* cloud_timeout_ms = nullptr,
-                               bool* handoff_with_images = nullptr) {
+                               bool* handoff_with_images = nullptr,
+                               bool* enable_thinking_if_supported = nullptr) {
     temperature = 0.0f;
     top_p = 0.0f;
     top_k = 0;
@@ -568,6 +722,7 @@ inline void parse_options_json(const std::string& json,
     if (auto_handoff) *auto_handoff = true;
     if (cloud_timeout_ms) *cloud_timeout_ms = 15000;
     if (handoff_with_images) *handoff_with_images = true;
+    if (enable_thinking_if_supported) *enable_thinking_if_supported = true;
     stop_sequences.clear();
 
     if (json.empty()) return;
@@ -659,6 +814,15 @@ inline void parse_options_json(const std::string& json,
             pos = json.find(':', pos) + 1;
             while (pos < json.length() && std::isspace(json[pos])) pos++;
             *handoff_with_images = (json.substr(pos, 4) == "true");
+        }
+    }
+
+    if (enable_thinking_if_supported) {
+        pos = json.find("\"enable_thinking_if_supported\"");
+        if (pos != std::string::npos) {
+            pos = json.find(':', pos) + 1;
+            while (pos < json.length() && std::isspace(json[pos])) pos++;
+            *enable_thinking_if_supported = (json.substr(pos, 4) == "true");
         }
     }
 
@@ -813,23 +977,49 @@ inline void parse_function_calls_from_response(const std::string& response_text,
 
             if (!content.empty() && content.front() == '[' && content.back() == ']') {
                 std::string inner = content.substr(1, content.size() - 2);
-                size_t start = 0;
-                int paren_depth = 0;
 
-                for (size_t i = 0; i < inner.size(); ++i) {
-                    char c = inner[i];
-                    if (c == '(') {
-                        paren_depth++;
-                    } else if (c == ')' && paren_depth > 0) {
-                        paren_depth--;
-                    } else if (c == ',' && paren_depth == 0) {
-                        append_lfm2_call(inner.substr(start, i - start), function_calls);
-                        start = i + 1;
+                size_t inner_first = inner.find_first_not_of(" \t\n\r");
+                if (inner_first != std::string::npos && inner[inner_first] == '{') {
+                    size_t pos = inner_first;
+                    while (pos < inner.size()) {
+                        if (inner[pos] == '{') {
+                            int brace_depth = 1;
+                            size_t obj_start = pos;
+                            pos++;
+                            while (pos < inner.size() && brace_depth > 0) {
+                                if (inner[pos] == '{') brace_depth++;
+                                else if (inner[pos] == '}') brace_depth--;
+                                pos++;
+                            }
+                            if (brace_depth == 0) {
+                                std::string json_obj = inner.substr(obj_start, pos - obj_start);
+                                if (json_obj.find("\"name\"") != std::string::npos) {
+                                    function_calls.push_back(json_obj);
+                                }
+                            }
+                        } else {
+                            pos++;
+                        }
                     }
-                }
+                } else {
+                    size_t start = 0;
+                    int paren_depth = 0;
 
-                if (start < inner.size()) {
-                    append_lfm2_call(inner.substr(start), function_calls);
+                    for (size_t i = 0; i < inner.size(); ++i) {
+                        char c = inner[i];
+                        if (c == '(') {
+                            paren_depth++;
+                        } else if (c == ')' && paren_depth > 0) {
+                            paren_depth--;
+                        } else if (c == ',' && paren_depth == 0) {
+                            append_lfm2_call(inner.substr(start, i - start), function_calls);
+                            start = i + 1;
+                        }
+                    }
+
+                    if (start < inner.size()) {
+                        append_lfm2_call(inner.substr(start), function_calls);
+                    }
                 }
             } else if (!content.empty()) {
                 append_lfm2_call(content, function_calls);
@@ -872,6 +1062,69 @@ inline void parse_function_calls_from_response(const std::string& response_text,
     }
 }
 
+inline void strip_tag_blocks(std::string& text, std::string& extracted,
+                             const std::string& open_tag, const std::string& close_tag) {
+    std::string result;
+    size_t pos = 0;
+
+    size_t first_close = text.find(close_tag);
+    size_t first_open = text.find(open_tag);
+    if (first_close != std::string::npos &&
+        (first_open == std::string::npos || first_close < first_open)) {
+        extracted += text.substr(0, first_close);
+        pos = first_close + close_tag.size();
+    }
+
+    while (pos < text.size()) {
+        size_t open_pos = text.find(open_tag, pos);
+        if (open_pos == std::string::npos) {
+            result += text.substr(pos);
+            break;
+        }
+        result += text.substr(pos, open_pos - pos);
+        size_t content_start = open_pos + open_tag.size();
+        size_t close_pos = text.find(close_tag, content_start);
+        if (close_pos == std::string::npos) {
+            if (!extracted.empty()) extracted += "\n";
+            extracted += text.substr(content_start);
+            break;
+        }
+        if (!extracted.empty()) extracted += "\n";
+        extracted += text.substr(content_start, close_pos - content_start);
+        pos = close_pos + close_tag.size();
+    }
+    text = result;
+}
+
+inline void strip_thinking_block(const std::string& input, std::string& thinking, std::string& content) {
+    thinking.clear();
+    content = input;
+
+    auto trim = [](std::string& s) {
+        size_t first = s.find_first_not_of(" \t\n\r");
+        size_t last = s.find_last_not_of(" \t\n\r");
+        if (first != std::string::npos && last != std::string::npos)
+            s = s.substr(first, last - first + 1);
+        else
+            s.clear();
+    };
+
+    if (content.find("<think>") != std::string::npos || content.find("</think>") != std::string::npos) {
+        strip_tag_blocks(content, thinking, "<think>", "</think>");
+    } else {
+        return;
+    }
+
+    trim(thinking);
+    trim(content);
+}
+
+struct TranscriptSegment {
+    float start;
+    float end;
+    std::string text;
+};
+
 inline std::string construct_response_json(const std::string& regular_response,
                                            const std::vector<std::string>& function_calls,
                                            double time_to_first_token,
@@ -881,17 +1134,30 @@ inline std::string construct_response_json(const std::string& regular_response,
                                            size_t prompt_tokens,
                                            size_t completion_tokens,
                                            float confidence = 0.0f,
-                                           bool cloud_handoff = false) {
+                                           bool cloud_handoff = false,
+                                           const std::string& thinking = "",
+                                           const std::vector<TranscriptSegment>& segments = {}) {
     std::ostringstream json;
     json << "{";
     json << "\"success\":true,";
     json << "\"error\":null,";
     json << "\"cloud_handoff\":" << (cloud_handoff ? "true" : "false") << ",";
     json << "\"response\":\"" << escape_json_string(regular_response) << "\",";
+    if (!thinking.empty()) {
+        json << "\"thinking\":\"" << escape_json_string(thinking) << "\",";
+    }
     json << "\"function_calls\":[";
     for (size_t i = 0; i < function_calls.size(); ++i) {
         if (i > 0) json << ",";
         json << function_calls[i];
+    }
+    json << "],";
+    json << "\"segments\":[";
+    for (size_t i = 0; i < segments.size(); ++i) {
+        if (i > 0) json << ",";
+        json << "{\"start\":" << std::fixed << std::setprecision(3) << segments[i].start
+             << ",\"end\":" << std::fixed << std::setprecision(3) << segments[i].end
+             << ",\"text\":\"" << escape_json_string(segments[i].text) << "\"}";
     }
     json << "],";
     json << "\"confidence\":" << std::fixed << std::setprecision(4) << confidence << ",";

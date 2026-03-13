@@ -956,6 +956,112 @@ size_t CactusGraph::lstm_cell(size_t input, size_t h_prev, size_t c_prev, size_t
     return add_node(OpType::LSTM_CELL, {input, h_prev, c_prev, weight_ih, weight_hh, bias_ih, bias_hh}, output_shape, {});
 }
 
+size_t CactusGraph::gated_deltanet_decode(size_t query, size_t key, size_t value, size_t gate_log, size_t beta,
+                                          size_t initial_state, float scale) {
+    const auto& q = get_output_buffer(query);
+    const auto& k = get_output_buffer(key);
+    const auto& v = get_output_buffer(value);
+    const auto& g = get_output_buffer(gate_log);
+    const auto& b = get_output_buffer(beta);
+    const auto& s = get_output_buffer(initial_state);
+
+    if (q.shape.size() != 4 || k.shape.size() != 4 || v.shape.size() != 4) {
+        throw std::runtime_error("gated_deltanet_decode expects query/key/value rank 4 [B, T, H, D]");
+    }
+    if (g.shape.size() != 3 || b.shape.size() != 3) {
+        throw std::runtime_error("gated_deltanet_decode expects gate_log/beta rank 3 [B, T, H]");
+    }
+    if (s.shape.size() != 4) {
+        throw std::runtime_error("gated_deltanet_decode expects initial_state rank 4 [B, K, H, V]");
+    }
+
+    const size_t B = q.shape[0];
+    const size_t T = q.shape[1];
+    const size_t Hq = q.shape[2];
+    const size_t K = q.shape[3];
+    const size_t Hv = v.shape[2];
+    const size_t V = v.shape[3];
+    if (T != 1) {
+        throw std::runtime_error("gated_deltanet_decode expects sequence length T=1");
+    }
+    auto is_supported_precision = [](Precision p) {
+        return p == Precision::FP16 || p == Precision::FP32;
+    };
+    if (!is_supported_precision(q.precision) || !is_supported_precision(k.precision) ||
+        !is_supported_precision(v.precision) || !is_supported_precision(g.precision) ||
+        !is_supported_precision(b.precision) || !is_supported_precision(s.precision)) {
+        throw std::runtime_error("gated_deltanet_decode requires FP16/FP32 inputs");
+    }
+
+    float op_scale = scale;
+    if (op_scale == 0.0f) {
+        op_scale = 1.0f / std::sqrt(static_cast<float>(K));
+    }
+
+    OpParams params;
+    params.scale = op_scale;
+    params.num_kv_heads = Hq;
+    params.output_precision = Precision::FP16;
+    return add_node(OpType::GATED_DELTANET_DECODE,
+                    {query, key, value, gate_log, beta, initial_state},
+                    {B, static_cast<size_t>(1 + K), Hv, V},
+                    params);
+}
+
+size_t CactusGraph::gated_deltanet_prefill(size_t query, size_t key, size_t value, size_t gate_log, size_t beta,
+                                           size_t initial_state, size_t chunk_size, float scale) {
+    const auto& q = get_output_buffer(query);
+    const auto& k = get_output_buffer(key);
+    const auto& v = get_output_buffer(value);
+    const auto& g = get_output_buffer(gate_log);
+    const auto& b = get_output_buffer(beta);
+    const auto& s = get_output_buffer(initial_state);
+
+    if (q.shape.size() != 4 || k.shape.size() != 4 || v.shape.size() != 4) {
+        throw std::runtime_error("gated_deltanet_prefill expects query/key/value rank 4 [B, T, H, D]");
+    }
+    if (g.shape.size() != 3 || b.shape.size() != 3) {
+        throw std::runtime_error("gated_deltanet_prefill expects gate_log/beta rank 3 [B, T, H]");
+    }
+    if (s.shape.size() != 4) {
+        throw std::runtime_error("gated_deltanet_prefill expects initial_state rank 4 [B, K, H, V]");
+    }
+
+    const size_t B = q.shape[0];
+    const size_t T = q.shape[1];
+    const size_t Hq = q.shape[2];
+    const size_t K = q.shape[3];
+    const size_t Hv = v.shape[2];
+    const size_t V = v.shape[3];
+    auto is_supported_precision = [](Precision p) {
+        return p == Precision::FP16 || p == Precision::FP32;
+    };
+    if (!is_supported_precision(q.precision) || !is_supported_precision(k.precision) ||
+        !is_supported_precision(v.precision) || !is_supported_precision(g.precision) ||
+        !is_supported_precision(b.precision) || !is_supported_precision(s.precision)) {
+        throw std::runtime_error("gated_deltanet_prefill requires FP16/FP32 inputs");
+    }
+
+    if (chunk_size == 0) {
+        chunk_size = 64;
+    }
+
+    float op_scale = scale;
+    if (op_scale == 0.0f) {
+        op_scale = 1.0f / std::sqrt(static_cast<float>(K));
+    }
+
+    OpParams params;
+    params.scale = op_scale;
+    params.chunk_size = chunk_size;
+    params.num_kv_heads = Hq;
+    params.output_precision = Precision::FP16;
+    return add_node(OpType::GATED_DELTANET_PREFILL,
+                    {query, key, value, gate_log, beta, initial_state},
+                    {B, T + K, Hv, V},
+                    params);
+}
+
 size_t CactusGraph::stft(size_t input, size_t weight, size_t stride, size_t num_fft_bins) {
     const auto& xin = get_output_buffer(input);
     const auto& w = get_output_buffer(weight);
@@ -1301,4 +1407,41 @@ bool CactusGraph::is_populated(size_t persistent_node_id) const {
 void CactusGraph::invalidate_persistent(size_t persistent_node_id) {
     populated_node_ids_.erase(persistent_node_id);
     persistent_node_ids_.erase(persistent_node_id);
+}
+
+size_t CactusGraph::altup_predict(size_t coefs, const size_t* streams, size_t num_streams) {
+    const auto& stream0_buf = get_output_buffer(streams[0]);
+
+    size_t seq_len = stream0_buf.shape[0];
+    size_t hidden_dim = stream0_buf.shape[1];
+
+    std::vector<size_t> input_ids = {coefs};
+    for (size_t i = 0; i < num_streams; i++)
+        input_ids.push_back(streams[i]);
+
+    OpParams params;
+    params.num_altup_inputs = num_streams;
+    return add_node(OpType::ALTUP_PREDICT, input_ids, {num_streams * seq_len, hidden_dim}, params);
+}
+
+size_t CactusGraph::altup_correct(size_t coefs, size_t innovation, const size_t* predictions, size_t num_predictions) {
+    const auto& pred0_buf = get_output_buffer(predictions[0]);
+
+    size_t seq_len = pred0_buf.shape[0];
+    size_t hidden_dim = pred0_buf.shape[1];
+
+    std::vector<size_t> input_ids = {coefs, innovation};
+    for (size_t i = 0; i < num_predictions; i++)
+        input_ids.push_back(predictions[i]);
+
+    OpParams params;
+    params.num_altup_inputs = num_predictions;
+    return add_node(OpType::ALTUP_CORRECT, input_ids, {num_predictions * seq_len, hidden_dim}, params);
+}
+
+size_t CactusGraph::gaussian_topk(size_t input, float ppf) {
+    const auto& in_buf = get_output_buffer(input);
+    OpParams params;
+    params.scalar = ppf;
+    return add_node(OpType::GAUSSIAN_TOPK, {input}, in_buf.shape, params);
 }
