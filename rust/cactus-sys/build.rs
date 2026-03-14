@@ -9,7 +9,7 @@ fn main() {
     set_rebuild_triggers(&cactus_src);
 
     if target_os == "linux" {
-        apply_linux_compiler_workaround();
+        apply_gcc_compiler_workaround();
     }
 
     let build_dir = if target_os == "android" {
@@ -62,8 +62,9 @@ fn set_rebuild_triggers(cactus_src: &Path) {
     );
 }
 
-fn apply_linux_compiler_workaround() {
-    // GCC requires explicit <iomanip>; upstream telemetry.cpp omits it.
+fn apply_gcc_compiler_workaround() {
+    // GCC (Linux native or MinGW cross) requires explicit <iomanip>;
+    // upstream telemetry.cpp omits it.
     let existing = env::var("CXXFLAGS").unwrap_or_default();
     let cxxflags = if existing.is_empty() {
         "-include iomanip".to_string()
@@ -86,25 +87,41 @@ fn cofy_cactus_root() -> PathBuf {
 /// and routes through SIMDe, which provides the complete NEON API using native
 /// x86 SSE/AVX/FMA instructions. Zero vendor C++ source modifications required.
 fn build_native_library_x86(cactus_src: &Path) -> PathBuf {
+    let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
+    let target_env = env::var("CARGO_CFG_TARGET_ENV").unwrap_or_default();
     let include_dir = cofy_cactus_root().join("include");
 
-    cmake::Config::new(cactus_src)
+    let mut config = cmake::Config::new(cactus_src);
+    config
         .define("BUILD_SHARED_LIBS", "OFF")
-        .define("CMAKE_BUILD_TYPE", "Release")
-        // Our shim include dir must come first so #include <arm_neon.h> finds ours
-        .cxxflag(&format!("-I{}", include_dir.display()))
-        // x86 SIMD features required by SIMDe and F16C conversion
-        .cxxflag("-msse4.2")
-        .cxxflag("-mssse3")
-        .cxxflag("-mfma")
-        .cxxflag("-mf16c")
-        // Trick code into thinking ARM NEON is available
-        // (NOT defining __ARM_FEATURE_DOTPROD — use emulated dot product path)
-        // (NOT defining __aarch64__ — avoid ARM stnp assembly in kernel_utils.h)
-        .cxxflag("-D__ARM_NEON=1")
-        .cxxflag("-D__ARM_FEATURE_FP16_VECTOR_ARITHMETIC=1")
-        // Define __fp16 globally — npu.h uses it without including arm_neon.h
-        .cxxflag("-D__fp16=_Float16")
+        .define("CMAKE_BUILD_TYPE", "Release");
+
+    if target_os == "windows" && target_env == "msvc" {
+        // MSVC/clang-cl: use /flags style
+        config
+            .cxxflag(&format!("/I{}", include_dir.display()))
+            .cxxflag("/arch:AVX2")
+            .cxxflag("/D__ARM_NEON=1")
+            .cxxflag("/D__ARM_FEATURE_FP16_VECTOR_ARITHMETIC=1")
+            .cxxflag("/D__fp16=float")
+            // Force C++ include of <iomanip> (telemetry.cpp needs it)
+            .cxxflag("/FIiomanip")
+            // PLATFORM_CPU_ONLY skips GPU/NPU code paths
+            .cxxflag("/DPLATFORM_CPU_ONLY=1");
+    } else {
+        // GCC/Clang: use -flags style (Linux, MinGW)
+        config
+            .cxxflag(&format!("-I{}", include_dir.display()))
+            .cxxflag("-msse4.2")
+            .cxxflag("-mssse3")
+            .cxxflag("-mfma")
+            .cxxflag("-mf16c")
+            .cxxflag("-D__ARM_NEON=1")
+            .cxxflag("-D__ARM_FEATURE_FP16_VECTOR_ARITHMETIC=1")
+            .cxxflag("-D__fp16=_Float16");
+    }
+
+    config
         .build_target("cactus")
         .build()
         .join("build")
@@ -327,6 +344,13 @@ fn link_platform_dependencies(target_os: &str) {
             println!("cargo:rustc-link-lib=pthread");
             println!("cargo:rustc-link-lib=curl");
         }
+        "windows" => {
+            // MSVC cross-compilation via cargo-xwin (clang-cl + lld-link).
+            // Windows networking (used by curl/telemetry if enabled)
+            println!("cargo:rustc-link-lib=ws2_32");
+            // Suppress missing curl — Cactus cmake treats it as optional;
+            // Rust-side downloads use reqwest (rustls) instead.
+        }
         _ => {}
     }
 }
@@ -356,6 +380,11 @@ fn generate_bindings(cactus_src: &Path, target_os: &str) {
             .clang_arg("--target=aarch64-linux-android24")
             .clang_arg(format!("--sysroot={}", ndk_sysroot.display()))
             .clang_arg("-DPLATFORM_CPU_ONLY=1");
+    }
+
+    // For Windows cross-compilation (MSVC), set the target triple for bindgen/clang
+    if target_os == "windows" {
+        builder = builder.clang_arg("--target=x86_64-pc-windows-msvc");
     }
 
     builder
