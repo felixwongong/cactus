@@ -15,6 +15,13 @@ void cactus_relu_f16(const __fp16* input, __fp16* output, size_t num_elements) {
     }
 }
 
+void cactus_leaky_relu_f16(const __fp16* input, __fp16* output, size_t num_elements, float negative_slope) {
+    for (size_t i = 0; i < num_elements; ++i) {
+        __fp16 x = input[i];
+        output[i] = x > static_cast<__fp16>(0) ? x : static_cast<__fp16>(static_cast<float>(x) * negative_slope);
+    }
+}
+
 void cactus_silu_f16(const __fp16* input, __fp16* output, size_t num_elements) {
     CactusThreading::parallel_for(num_elements, CactusThreading::Thresholds::SCALAR_EXPENSIVE,
         [&](size_t start_idx, size_t end_idx) {
@@ -530,7 +537,7 @@ void cactus_sample_f32(const float* logits, uint32_t* output, size_t vocab_size,
         }
     }
 
-    if (temperature == 0.0f && top_p <= 0.0f && top_k == 0) {
+    if (temperature == 0.0f) {
         auto it = std::max_element(filtered_logits.begin(), filtered_logits.end());
         output[0] = static_cast<uint32_t>(std::distance(filtered_logits.begin(), it));
         return;
@@ -714,7 +721,7 @@ void cactus_sample_f16(const __fp16* logits, uint32_t* output, size_t vocab_size
         }
     }
 
-    if (temperature == 0.0f && top_p <= 0.0f && top_k == 0) {
+    if (temperature == 0.0f) {
         auto it = std::max_element(filtered_logits.begin(), filtered_logits.end());
         output[0] = static_cast<uint32_t>(std::distance(filtered_logits.begin(), it));
         return;

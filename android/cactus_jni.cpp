@@ -93,7 +93,8 @@ Java_com_cactus_CactusJNI_nativeStop(JNIEnv*, jobject, jlong handle) {
 JNIEXPORT jstring JNICALL
 Java_com_cactus_CactusJNI_nativeComplete(JNIEnv* env, jobject, jlong handle,
                                           jstring messagesJson, jstring optionsJson,
-                                          jstring toolsJson, jobject callback) {
+                                          jstring toolsJson, jobject callback,
+                                          jbyteArray pcmData) {
     if (handle == 0) { throwCactusException(env, "Model not initialized"); return nullptr; }
 
     const char* messages = jstring_to_cstr(env, messagesJson);
@@ -114,6 +115,16 @@ Java_com_cactus_CactusJNI_nativeComplete(JNIEnv* env, jobject, jlong handle,
         }
     }
 
+    const uint8_t* pcmBuffer = nullptr;
+    size_t pcmSize = 0;
+    jbyte* pcmBytes = nullptr;
+
+    if (pcmData != nullptr) {
+        pcmSize = env->GetArrayLength(pcmData);
+        pcmBytes = env->GetByteArrayElements(pcmData, nullptr);
+        pcmBuffer = reinterpret_cast<const uint8_t*>(pcmBytes);
+    }
+
     int result = cactus_complete(
         reinterpret_cast<cactus_model_t>(handle),
         messages,
@@ -122,10 +133,61 @@ Java_com_cactus_CactusJNI_nativeComplete(JNIEnv* env, jobject, jlong handle,
         options,
         tools,
         cb,
-        ctx
+        ctx,
+        pcmBuffer,
+        pcmSize
     );
 
     delete ctx;
+
+    if (pcmBytes != nullptr) {
+        env->ReleaseByteArrayElements(pcmData, pcmBytes, JNI_ABORT);
+    }
+
+    release_jstring(env, messagesJson, messages);
+    release_jstring(env, optionsJson, options);
+    release_jstring(env, toolsJson, tools);
+
+    if (result < 0) { throwOnError(env); return nullptr; }
+    return env->NewStringUTF(buffer.data());
+}
+
+JNIEXPORT jstring JNICALL
+Java_com_cactus_CactusJNI_nativePrefill(JNIEnv* env, jobject, jlong handle,
+                                         jstring messagesJson, jstring optionsJson,
+                                         jstring toolsJson, jbyteArray pcmData) {
+    if (handle == 0) { throwCactusException(env, "Model not initialized"); return nullptr; }
+
+    const char* messages = jstring_to_cstr(env, messagesJson);
+    const char* options = jstring_to_cstr(env, optionsJson);
+    const char* tools = jstring_to_cstr(env, toolsJson);
+
+    std::vector<char> buffer(DEFAULT_BUFFER_SIZE);
+
+    const uint8_t* pcmBuffer = nullptr;
+    size_t pcmSize = 0;
+    jbyte* pcmBytes = nullptr;
+
+    if (pcmData != nullptr) {
+        pcmSize = env->GetArrayLength(pcmData);
+        pcmBytes = env->GetByteArrayElements(pcmData, nullptr);
+        pcmBuffer = reinterpret_cast<const uint8_t*>(pcmBytes);
+    }
+
+    int result = cactus_prefill(
+        reinterpret_cast<cactus_model_t>(handle),
+        messages,
+        buffer.data(),
+        buffer.size(),
+        options,
+        tools,
+        pcmBuffer,
+        pcmSize
+    );
+
+    if (pcmBytes != nullptr) {
+        env->ReleaseByteArrayElements(pcmData, pcmBytes, JNI_ABORT);
+    }
 
     release_jstring(env, messagesJson, messages);
     release_jstring(env, optionsJson, options);
@@ -481,6 +543,88 @@ Java_com_cactus_CactusJNI_nativeVad(JNIEnv* env, jobject, jlong handle,
     return env->NewStringUTF(buffer.data());
 }
 
+JNIEXPORT jstring JNICALL
+Java_com_cactus_CactusJNI_nativeDiarize(JNIEnv* env, jobject, jlong handle,
+                                          jstring audioPath, jstring optionsJson, jbyteArray pcmData) {
+    if (handle == 0) { throwCactusException(env, "Model not initialized"); return nullptr; }
+
+    const char* path = jstring_to_cstr(env, audioPath);
+    const char* opts = jstring_to_cstr(env, optionsJson);
+
+    std::vector<char> buffer(1 << 20);
+
+    const uint8_t* pcmBuffer = nullptr;
+    size_t pcmSize = 0;
+    jbyte* pcmBytes = nullptr;
+
+    if (pcmData != nullptr) {
+        pcmSize = env->GetArrayLength(pcmData);
+        pcmBytes = env->GetByteArrayElements(pcmData, nullptr);
+        pcmBuffer = reinterpret_cast<const uint8_t*>(pcmBytes);
+    }
+
+    int result = cactus_diarize(
+        reinterpret_cast<cactus_model_t>(handle),
+        path,
+        buffer.data(),
+        buffer.size(),
+        opts,
+        pcmBuffer,
+        pcmSize
+    );
+
+    if (pcmBytes != nullptr) {
+        env->ReleaseByteArrayElements(pcmData, pcmBytes, JNI_ABORT);
+    }
+
+    release_jstring(env, audioPath, path);
+    release_jstring(env, optionsJson, opts);
+
+    if (result < 0) { throwOnError(env); return nullptr; }
+    return env->NewStringUTF(buffer.data());
+}
+
+JNIEXPORT jstring JNICALL
+Java_com_cactus_CactusJNI_nativeEmbedSpeaker(JNIEnv* env, jobject, jlong handle,
+                                               jstring audioPath, jstring optionsJson, jbyteArray pcmData) {
+    if (handle == 0) { throwCactusException(env, "Model not initialized"); return nullptr; }
+
+    const char* path = jstring_to_cstr(env, audioPath);
+    const char* opts = jstring_to_cstr(env, optionsJson);
+
+    std::vector<char> buffer(DEFAULT_BUFFER_SIZE);
+
+    const uint8_t* pcmBuffer = nullptr;
+    size_t pcmSize = 0;
+    jbyte* pcmBytes = nullptr;
+
+    if (pcmData != nullptr) {
+        pcmSize = env->GetArrayLength(pcmData);
+        pcmBytes = env->GetByteArrayElements(pcmData, nullptr);
+        pcmBuffer = reinterpret_cast<const uint8_t*>(pcmBytes);
+    }
+
+    int result = cactus_embed_speaker(
+        reinterpret_cast<cactus_model_t>(handle),
+        path,
+        buffer.data(),
+        buffer.size(),
+        opts,
+        pcmBuffer,
+        pcmSize
+    );
+
+    if (pcmBytes != nullptr) {
+        env->ReleaseByteArrayElements(pcmData, pcmBytes, JNI_ABORT);
+    }
+
+    release_jstring(env, audioPath, path);
+    release_jstring(env, optionsJson, opts);
+
+    if (result < 0) { throwOnError(env); return nullptr; }
+    return env->NewStringUTF(buffer.data());
+}
+
 JNIEXPORT jlong JNICALL
 Java_com_cactus_CactusJNI_nativeIndexInit(JNIEnv* env, jobject, jstring indexDir, jint embeddingDim) {
     const char* dir = jstring_to_cstr(env, indexDir);
@@ -620,6 +764,101 @@ Java_com_cactus_CactusJNI_nativeIndexDestroy(JNIEnv*, jobject, jlong handle) {
     if (handle != 0) {
         cactus_index_destroy(reinterpret_cast<cactus_index_t>(handle));
     }
+}
+
+JNIEXPORT jstring JNICALL
+Java_com_cactus_CactusJNI_nativeDetectLanguage(JNIEnv* env, jobject, jlong handle,
+                                                jstring audioPath, jstring optionsJson,
+                                                jbyteArray pcmData) {
+    if (handle == 0) { throwCactusException(env, "Model not initialized"); return nullptr; }
+
+    const char* path = jstring_to_cstr(env, audioPath);
+    const char* options = jstring_to_cstr(env, optionsJson);
+
+    std::vector<char> buffer(DEFAULT_BUFFER_SIZE);
+
+    const uint8_t* pcmBuffer = nullptr;
+    size_t pcmSize = 0;
+    jbyte* pcmBytes = nullptr;
+
+    if (pcmData != nullptr) {
+        pcmSize = env->GetArrayLength(pcmData);
+        pcmBytes = env->GetByteArrayElements(pcmData, nullptr);
+        pcmBuffer = reinterpret_cast<const uint8_t*>(pcmBytes);
+    }
+
+    int result = cactus_detect_language(
+        reinterpret_cast<cactus_model_t>(handle),
+        path,
+        buffer.data(),
+        buffer.size(),
+        options,
+        pcmBuffer,
+        pcmSize
+    );
+
+    if (pcmBytes != nullptr) {
+        env->ReleaseByteArrayElements(pcmData, pcmBytes, JNI_ABORT);
+    }
+
+    release_jstring(env, audioPath, path);
+    release_jstring(env, optionsJson, options);
+
+    if (result < 0) { throwOnError(env); return nullptr; }
+    return env->NewStringUTF(buffer.data());
+}
+
+struct LogCallbackContext {
+    JavaVM* jvm;
+    jobject callback;
+    jmethodID method;
+};
+
+static LogCallbackContext* g_log_callback_ctx = nullptr;
+
+static void log_callback_bridge(int level, const char* component, const char* message, void* user_data) {
+    if (!user_data) return;
+    auto* ctx = static_cast<LogCallbackContext*>(user_data);
+    JNIEnv* env = nullptr;
+    bool attached = false;
+    jint status = ctx->jvm->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6);
+    if (status == JNI_EDETACHED) {
+        ctx->jvm->AttachCurrentThread(&env, nullptr);
+        attached = true;
+    }
+    if (env) {
+        jstring jcomponent = env->NewStringUTF(component ? component : "");
+        jstring jmessage = env->NewStringUTF(message ? message : "");
+        env->CallVoidMethod(ctx->callback, ctx->method, static_cast<jint>(level), jcomponent, jmessage);
+        env->DeleteLocalRef(jcomponent);
+        env->DeleteLocalRef(jmessage);
+    }
+    if (attached) ctx->jvm->DetachCurrentThread();
+}
+
+JNIEXPORT void JNICALL
+Java_com_cactus_CactusJNI_nativeLogSetLevel(JNIEnv*, jobject, jint level) {
+    cactus_log_set_level(static_cast<int>(level));
+}
+
+JNIEXPORT void JNICALL
+Java_com_cactus_CactusJNI_nativeLogSetCallback(JNIEnv* env, jobject, jobject callback) {
+    if (g_log_callback_ctx != nullptr) {
+        env->DeleteGlobalRef(g_log_callback_ctx->callback);
+        delete g_log_callback_ctx;
+        g_log_callback_ctx = nullptr;
+    }
+    if (callback == nullptr) {
+        cactus_log_set_callback(nullptr, nullptr);
+        return;
+    }
+    JavaVM* jvm = nullptr;
+    env->GetJavaVM(&jvm);
+    jclass callbackClass = env->GetObjectClass(callback);
+    jmethodID method = env->GetMethodID(callbackClass, "onLog", "(ILjava/lang/String;Ljava/lang/String;)V");
+    if (method == nullptr) return;
+    g_log_callback_ctx = new LogCallbackContext{jvm, env->NewGlobalRef(callback), method};
+    cactus_log_set_callback(log_callback_bridge, g_log_callback_ctx);
 }
 
 JNIEXPORT jstring JNICALL

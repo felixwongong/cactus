@@ -419,7 +419,6 @@ cactus_model_t cactus_init(const char* model_path, const char* corpus_dir, bool 
                 delete handle;
                 return nullptr;
             }
-
         }
 
         if (corpus_dir != nullptr && strlen(corpus_dir) > 0) {
@@ -473,6 +472,7 @@ void cactus_reset(cactus_model_t model) {
     auto* handle = static_cast<CactusModelHandle*>(model);
     handle->model->reset_cache();
     handle->processed_tokens.clear();
+    handle->processed_images.clear();
 }
 
 void cactus_stop(cactus_model_t model) {
